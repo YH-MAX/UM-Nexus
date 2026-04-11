@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
+#using to find the .env file 
 def find_env_file() -> str | None:
     current = Path(__file__).resolve()
 
