@@ -1,7 +1,7 @@
 COMPOSE_FILE=infra/docker/docker-compose.yml
 ENV_FILE=.env
 
-.PHONY: up down logs api-dev web-dev
+.PHONY: up down logs api-dev web-dev api-migrate
 
 up:
 	docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE) up --build
@@ -17,3 +17,6 @@ api-dev:
 
 web-dev:
 	cd apps/web && npm run dev
+
+api-migrate:
+	cd apps/api && alembic upgrade head
