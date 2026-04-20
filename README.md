@@ -7,7 +7,43 @@ UM Nexus now includes the platform foundation for:
 - `apps/worker` as a Celery bootstrap
 - `infra/docker/docker-compose.yml` for local infrastructure and service startup
 
-Business modules such as forum, trade, and EventOps are still intentionally out of scope at this stage.
+Forum, societies, and EventOps remain out of scope. Trade now has a demo-mode decision intelligence slice.
+
+## Trade Intelligence Demo Slice
+
+The Trade Intelligence slice runs in demo mode without login/register. It uses a fixed demo user, historical campus comparables, deterministic scoring, and Celery-backed enrichment tasks:
+
+- `POST /api/v1/listings`
+- `POST /api/v1/listings/{id}/images`
+- `POST /api/v1/wanted-posts`
+- `POST /api/v1/ai/trade/enrich-listing/{listing_id}` returns an accepted job response
+- `GET /api/v1/ai/trade/result/{listing_id}` returns `not_started`, `pending`, `running`, `completed`, or `failed`
+- `GET /api/v1/listings/{id}/matches`
+
+The completed result includes recommendation, why, expected outcome, and action sections.
+
+Seed demo marketplace data after migrations:
+
+```bash
+cd apps/api
+python scripts/seed_trade_demo.py
+```
+
+Or with make:
+
+```bash
+make api-seed-trade
+```
+
+Frontend demo pages:
+
+- `/trade`
+- `/trade/sell`
+- `/trade/want`
+- `/trade/[id]`
+- `/wanted-posts/[id]`
+
+For local demos, `CELERY_TASK_ALWAYS_EAGER=true` runs Celery tasks immediately inside the API process. Set it to `false` and run a worker when you want real background processing.
 
 ## Project Structure
 

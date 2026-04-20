@@ -1,5 +1,15 @@
+from app.models.agent_output import AgentOutput  # noqa: F401
+from app.models.agent_run import AgentRun  # noqa: F401
+from app.models.historical_sale import HistoricalSale  # noqa: F401
+from app.models.listing import Listing  # noqa: F401
+from app.models.listing_embedding import ListingEmbedding  # noqa: F401
+from app.models.listing_image import ListingImage  # noqa: F401
+from app.models.listing_report import ListingReport  # noqa: F401
 from app.models.media_asset import MediaAsset  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.profile import Profile  # noqa: F401
 from app.models.society import Society  # noqa: F401
+from app.models.trade_match import TradeMatch  # noqa: F401
 from app.models.user import User  # noqa: F401
+from app.models.wanted_post import WantedPost  # noqa: F401
+from app.models.wanted_post_embedding import WantedPostEmbedding  # noqa: F401

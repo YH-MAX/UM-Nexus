@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Boolean, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base
+from app.models.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+
+if TYPE_CHECKING:
+    from app.models.listing_embedding import ListingEmbedding
+    from app.models.listing_image import ListingImage
+    from app.models.listing_report import ListingReport
+    from app.models.trade_match import TradeMatch
+    from app.models.user import User
+
+
+class Listing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "listings"
+
+    seller_id: Mapped[str] = mapped_column(
+        Uuid(as_uuid=False),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    item_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    brand: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    condition_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="MYR", server_default="MYR")
+    pickup_area: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    residential_college: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", server_default="active")
+    risk_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=0, server_default="0")
+    is_ai_enriched: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
+    seller: Mapped["User"] = relationship()
+    images: Mapped[list["ListingImage"]] = relationship(
+        back_populates="listing",
+        cascade="all, delete-orphan",
+        order_by="ListingImage.sort_order",
+    )
+    matches: Mapped[list["TradeMatch"]] = relationship(
+        back_populates="listing",
+        cascade="all, delete-orphan",
+    )
+    reports: Mapped[list["ListingReport"]] = relationship(
+        back_populates="listing",
+        cascade="all, delete-orphan",
+    )
+    embedding: Mapped["ListingEmbedding | None"] = relationship(
+        back_populates="listing",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )

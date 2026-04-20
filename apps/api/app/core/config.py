@@ -1,8 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import AliasChoices, Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 def find_env_file() -> str | None:
@@ -27,7 +28,7 @@ class Settings(BaseSettings):
     )
     supabase_service_role_key: str = ""
     supabase_jwks_url: str | None = None
-    allowed_email_domains: tuple[str, ...] = ("siswa.um.edu.my", "um.edu.my")
+    allowed_email_domains: Annotated[tuple[str, ...], NoDecode] = ("siswa.um.edu.my", "um.edu.my")
 
     model_config = SettingsConfigDict(
         env_file=find_env_file(),

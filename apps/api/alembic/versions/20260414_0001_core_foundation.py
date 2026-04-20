@@ -18,6 +18,7 @@ app_role_enum = postgresql.ENUM(
     "moderator",
     "admin",
     name="app_role",
+    create_type=False,
 )
 
 

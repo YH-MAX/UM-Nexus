@@ -14,6 +14,9 @@ from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.tasks.celery_app import celery_app
+import app.db.session as session_module
+import app.tasks.trade_intelligence_tasks as trade_task_module
 
 
 class StubTokenVerifier:
@@ -53,6 +56,9 @@ def reset_database() -> Generator[None, None, None]:
     settings = get_settings()
     original_domains = settings.allowed_email_domains
     settings.allowed_email_domains = ("siswa.um.edu.my", "um.edu.my")
+    celery_app.conf.task_always_eager = True
+    session_module.SessionLocal = TestingSessionLocal
+    trade_task_module.SessionLocal = TestingSessionLocal
 
     yield
 
