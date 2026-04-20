@@ -24,6 +24,10 @@ export type Listing = {
   residential_college: string | null;
   status: string;
   risk_score: number;
+  risk_level: string | null;
+  suggested_listing_price: number | null;
+  minimum_acceptable_price: number | null;
+  ai_explanation_cache: Record<string, unknown> | null;
   is_ai_enriched: boolean;
   created_at: string;
   updated_at: string;
@@ -121,8 +125,31 @@ export type TradeResultStatus = {
   listing_id: string;
   status: "not_started" | "pending" | "running" | "completed" | "failed" | string;
   agent_run_id: string | null;
+  last_run_id: string | null;
+  updated_at: string | null;
   error_message: string | null;
   result: TradeResult | null;
+};
+
+export type EvaluationSummary = {
+  case_count: number;
+  average_pricing_error: number;
+  risk_agreement_rate: number;
+  action_agreement_rate: number;
+  match_ranking_quality: number;
+  average_runtime_ms: number;
+  cases: Array<{
+    case_id: string;
+    suggested_listing_price: number;
+    expected_price_band: number[];
+    pricing_error: number;
+    risk_level: string;
+    risk_agreement: boolean;
+    action_type: string;
+    action_agreement: boolean;
+    top_match: string | null;
+    match_quality: number;
+  }>;
 };
 
 export type ListingPayload = {
@@ -236,6 +263,33 @@ export async function addListingImage(
   });
 }
 
+export async function uploadListingImage(
+  listingId: string,
+  file: File,
+  options: { sortOrder?: number; isPrimary?: boolean } = {},
+): Promise<ListingImage> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("sort_order", String(options.sortOrder ?? 0));
+  formData.append("is_primary", String(options.isPrimary ?? false));
+
+  const response = await fetch(`${API_BASE_URL}/listings/${listingId}/images`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const detail =
+      typeof body?.detail === "string"
+        ? body.detail
+        : `Upload failed with status ${response.status}`;
+    throw new Error(detail);
+  }
+
+  return response.json() as Promise<ListingImage>;
+}
+
 export async function createWantedPost(
   payload: WantedPostPayload,
 ): Promise<WantedPost> {
@@ -261,4 +315,10 @@ export async function enrichListing(id: string): Promise<EnrichListingAccepted> 
 
 export async function getTradeResultStatus(id: string): Promise<TradeResultStatus> {
   return fetchJson<TradeResultStatus>(`/ai/trade/result/${id}`);
+}
+
+export async function runTradeEvaluation(): Promise<EvaluationSummary> {
+  return fetchJson<EvaluationSummary>("/ai/trade/evaluate", {
+    method: "POST",
+  });
 }

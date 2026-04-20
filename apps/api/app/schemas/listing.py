@@ -71,6 +71,10 @@ class ListingRead(BaseModel):
     residential_college: str | None
     status: str
     risk_score: float
+    risk_level: str | None
+    suggested_listing_price: float | None
+    minimum_acceptable_price: float | None
+    ai_explanation_cache: dict | None
     is_ai_enriched: bool
     created_at: datetime
     updated_at: datetime

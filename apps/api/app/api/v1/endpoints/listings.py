@@ -1,13 +1,21 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.db.session import get_db
 from app.schemas.listing import ListingCreate, ListingImageCreate, ListingImageRead, ListingRead, ListingUpdate
 from app.schemas.trade_intelligence import TradeMatchRead
 from app.services.trade_intelligence import list_matches_for_listing
-from app.services.trade_service import add_listing_image, create_listing, get_listing, list_listings, update_listing
+from app.services.trade_service import (
+    add_listing_image,
+    add_uploaded_listing_image,
+    create_listing,
+    get_listing,
+    list_listings,
+    update_listing,
+)
 
 
 router = APIRouter()
@@ -46,11 +54,29 @@ def update_listing_endpoint(
 
 
 @router.post("/{listing_id}/images", response_model=ListingImageRead, status_code=status.HTTP_201_CREATED)
-def add_listing_image_endpoint(
+async def add_listing_image_endpoint(
     listing_id: UUID,
-    payload: ListingImageCreate,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> ListingImageRead:
+    content_type = request.headers.get("content-type", "")
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        file_value = form.get("file")
+        if not isinstance(file_value, StarletteUploadFile):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Image file field is required.")
+        sort_order = int(str(form.get("sort_order", "0") or "0"))
+        is_primary = str(form.get("is_primary", "false")).lower() in {"true", "1", "yes", "on"}
+        image = await add_uploaded_listing_image(
+            db,
+            str(listing_id),
+            file_value,
+            sort_order=sort_order,
+            is_primary=is_primary,
+        )
+        return ListingImageRead.model_validate(image)
+
+    payload = ListingImageCreate.model_validate(await request.json())
     image = add_listing_image(db, str(listing_id), payload)
     return ListingImageRead.model_validate(image)
 

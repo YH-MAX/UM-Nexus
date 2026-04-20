@@ -18,6 +18,8 @@ from app.schemas.trade_intelligence import (
     TradeIntelligenceResult,
     TradeIntelligenceResultStatus,
 )
+from app.services.embedding_service import make_demo_embedding_text
+from app.services.trade_intelligence_glm_service import build_multimodal_glm_payload, generate_glm_trade_result
 
 
 SUSPICIOUS_KEYWORDS = {
@@ -133,18 +135,31 @@ def compute_trade_intelligence(db: Session, listing_id: str, agent_run_id: str |
 
         historical_sales = list(repo.list_historical_sales_for_category(listing.category))
         reports_count = repo.count_listing_reports(listing.id)
-        result, matches, risk_score = build_trade_intelligence_result(
+        heuristic_result, matches, risk_score = build_trade_intelligence_result(
             listing=listing,
             wanted_posts=wanted_posts,
             historical_sales=historical_sales,
             reports_count=reports_count,
         )
+        glm_payload = build_multimodal_glm_payload(db, listing, historical_sales, wanted_posts, heuristic_result)
+        result = generate_glm_trade_result(glm_payload)
 
         for match_values in matches:
             wanted_post_id = match_values.pop("wanted_post_id")
             repo.upsert_trade_match(listing.id, wanted_post_id, match_values)
 
-        repo.update_listing(listing, {"risk_score": Decimal(str(risk_score)), "is_ai_enriched": True})
+        repo.update_listing(
+            listing,
+            {
+                "risk_score": Decimal(str(risk_score)),
+                "risk_level": result.recommendation.risk_level,
+                "suggested_listing_price": Decimal(str(result.recommendation.suggested_listing_price)),
+                "minimum_acceptable_price": Decimal(str(result.recommendation.minimum_acceptable_price)),
+                "ai_explanation_cache": result.model_dump(mode="json"),
+                "is_ai_enriched": True,
+            },
+        )
+        repo.create_agent_output(agent_run.id, "trade_intelligence_context", glm_payload)
         repo.create_agent_output(agent_run.id, "trade_intelligence_result", result.model_dump(mode="json"))
         repo.update_agent_run(agent_run, {"status": "completed", "finished_at": datetime.now(UTC)})
         return result
@@ -169,6 +184,8 @@ def get_trade_result_status(db: Session, listing_id: str) -> TradeIntelligenceRe
             listing_id=listing_id,
             status="completed",
             agent_run_id=latest_output.agent_run_id,
+            last_run_id=latest_output.agent_run_id,
+            updated_at=latest_output.created_at,
             result=TradeIntelligenceResult.model_validate(latest_output.content),
         )
     if latest_run is None:
@@ -177,6 +194,8 @@ def get_trade_result_status(db: Session, listing_id: str) -> TradeIntelligenceRe
         listing_id=listing_id,
         status=latest_run.status,
         agent_run_id=latest_run.id,
+        last_run_id=latest_run.id,
+        updated_at=latest_run.finished_at or latest_run.started_at or latest_run.created_at,
         error_message=latest_run.error_message,
     )
 
@@ -227,7 +246,8 @@ def create_or_update_listing_embedding(db: Session, listing_id: str):
     return TradeRepository(db).upsert_listing_embedding(
         listing_id,
         source_text,
-        model_name="demo-source-text-v2",
+        model_name="demo-hash-embedding-1536",
+        embedding_value=make_demo_embedding_text(source_text),
     )
 
 
@@ -236,7 +256,8 @@ def create_or_update_wanted_post_embedding(db: Session, wanted_post_id: str):
     return TradeRepository(db).upsert_wanted_post_embedding(
         wanted_post_id,
         source_text,
-        model_name="demo-source-text-v2",
+        model_name="demo-hash-embedding-1536",
+        embedding_value=make_demo_embedding_text(source_text),
     )
 
 

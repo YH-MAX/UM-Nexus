@@ -1,4 +1,4 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.models import Listing, ListingImage, WantedPost
@@ -6,6 +6,7 @@ from app.repositories.trade import TradeRepository
 from app.schemas.listing import ListingCreate, ListingImageCreate, ListingUpdate
 from app.schemas.wanted_post import WantedPostCreate
 from app.services.demo_user import get_or_create_demo_user
+from app.services.storage_service import store_listing_image_upload
 
 
 def create_listing(db: Session, payload: ListingCreate) -> Listing:
@@ -46,6 +47,43 @@ def add_listing_image(db: Session, listing_id: str, payload: ListingImageCreate)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
 
     return repo.add_listing_image(listing.id, payload.model_dump())
+
+
+async def add_uploaded_listing_image(
+    db: Session,
+    listing_id: str,
+    upload_file: UploadFile,
+    sort_order: int = 0,
+    is_primary: bool = False,
+) -> ListingImage:
+    demo_user = get_or_create_demo_user(db)
+    repo = TradeRepository(db)
+    listing = repo.get_listing_or_none(listing_id)
+    if listing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+
+    stored_file = await store_listing_image_upload(listing.id, upload_file)
+    repo.create_media_asset(
+        {
+            "owner_user_id": demo_user.id,
+            "entity_type": "listing",
+            "entity_id": listing.id,
+            "storage_bucket": "local-demo",
+            "storage_path": stored_file.storage_path,
+            "public_url": stored_file.public_url,
+            "mime_type": stored_file.mime_type,
+            "file_size": stored_file.file_size,
+        }
+    )
+    return repo.add_listing_image(
+        listing.id,
+        {
+            "storage_path": stored_file.storage_path,
+            "public_url": stored_file.public_url,
+            "sort_order": sort_order,
+            "is_primary": is_primary,
+        },
+    )
 
 
 def create_wanted_post(db: Session, payload: WantedPostCreate) -> WantedPost:

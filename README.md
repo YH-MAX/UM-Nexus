@@ -45,6 +45,37 @@ Frontend demo pages:
 
 For local demos, `CELERY_TASK_ALWAYS_EAGER=true` runs Celery tasks immediately inside the API process. Set it to `false` and run a worker when you want real background processing.
 
+## Z.AI GLM Backend Integration
+
+Trade Intelligence can run through Z.AI GLM from the backend only using the official `zai-sdk` package. The API key is never sent to the frontend and should only live in the backend environment.
+
+Required backend variables:
+
+```env
+GLM_PROVIDER=zai
+ZAI_API_KEY=your_zai_api_key
+ZAI_MODEL=glm-4.6v
+ZAI_TIMEOUT_SECONDS=60
+ZAI_MAX_RETRIES=2
+```
+
+`GLM_PROVIDER=demo` keeps the offline deterministic demo provider. Setting `GLM_PROVIDER=zai`, or providing `ZAI_API_KEY` for local backend runs, switches enrichment to the Z.AI provider. Change `ZAI_MODEL` to switch models later without code changes. `ZAI_BASE_URL` is optional and should usually be left empty because the SDK already defaults to Z.AI's production endpoint.
+
+Connectivity check:
+
+```bash
+curl http://localhost:8001/api/v1/ai/trade/test-glm
+```
+
+Run GLM-backed enrichment:
+
+```bash
+curl -X POST http://localhost:8001/api/v1/ai/trade/enrich-listing/<listing_id>
+curl http://localhost:8001/api/v1/ai/trade/result/<listing_id>
+```
+
+The SDK handles Bearer auth with the backend `ZAI_API_KEY`. Logs redact secrets and only record request status, model, and safe metadata. Multimodal image inputs must use public URLs; localhost and private network image URLs are rejected before a provider call.
+
 ## Project Structure
 
 ```text
@@ -152,6 +183,12 @@ The root `.env.example` defines the shared local contract:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAINS`
+- `GLM_PROVIDER`
+- `ZAI_API_KEY`
+- `ZAI_BASE_URL`
+- `ZAI_MODEL`
+- `ZAI_TIMEOUT_SECONDS`
+- `ZAI_MAX_RETRIES`
 
 If you run the API directly on your host instead of through Docker, use the real Supabase Postgres connection string in `DATABASE_URL` or switch hostnames like `postgres` and `redis` to `localhost`.
 

@@ -1,16 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
-  addListingImage,
   createListing,
   pickupAreas,
   tradeCategories,
+  uploadListingImage,
   type ListingPayload,
 } from "@/lib/trade/api";
+
+type PreviewFile = {
+  file: File;
+  previewUrl: string;
+};
 
 export default function SellPage() {
   const router = useRouter();
@@ -25,14 +30,30 @@ export default function SellPage() {
     price: "",
     pickup_area: "KK",
     residential_college: "",
-    storage_path: "",
-    public_url: "",
   });
+  const [images, setImages] = useState<PreviewFile[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    return () => {
+      images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    };
+  }, [images]);
+
   function updateField(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function handleImageSelection(event: React.ChangeEvent<HTMLInputElement>) {
+    const selectedFiles = Array.from(event.target.files ?? []).slice(0, 4);
+    images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
+    setImages(
+      selectedFiles.map((file) => ({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      })),
+    );
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -56,14 +77,14 @@ export default function SellPage() {
       };
 
       const listing = await createListing(payload);
-      if (form.storage_path.trim()) {
-        await addListingImage(listing.id, {
-          storage_path: form.storage_path.trim(),
-          public_url: form.public_url.trim() || null,
-          sort_order: 0,
-          is_primary: true,
-        });
-      }
+      await Promise.all(
+        images.map((image, index) =>
+          uploadListingImage(listing.id, image.file, {
+            sortOrder: index,
+            isPrimary: index === 0,
+          }),
+        ),
+      );
 
       router.push(`/trade/${listing.id}`);
     } catch (nextError) {
@@ -76,7 +97,7 @@ export default function SellPage() {
   return (
     <TradeShell
       title="Create a sell listing"
-      description="The listing is created with the temporary demo user. Image upload is represented as metadata for this first slice."
+      description="Upload item photos and listing details. Demo mode uses the fixed campus test user."
     >
       <form
         className="grid gap-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
@@ -92,8 +113,6 @@ export default function SellPage() {
           <TextField label="Condition" value={form.condition_label} onChange={(value) => updateField("condition_label", value)} />
           <SelectField label="Pickup area" value={form.pickup_area} options={pickupAreas} onChange={(value) => updateField("pickup_area", value)} />
           <TextField label="Residential college" value={form.residential_college} onChange={(value) => updateField("residential_college", value)} />
-          <TextField label="Image storage path" value={form.storage_path} onChange={(value) => updateField("storage_path", value)} />
-          <TextField label="Public image URL" value={form.public_url} onChange={(value) => updateField("public_url", value)} />
         </div>
 
         <label className="grid gap-2">
@@ -104,6 +123,35 @@ export default function SellPage() {
             onChange={(event) => updateField("description", event.target.value)}
           />
         </label>
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-slate-800">Item images</span>
+            <input
+              accept="image/jpeg,image/png,image/webp"
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+              multiple
+              onChange={handleImageSelection}
+              type="file"
+            />
+          </label>
+          {images.length > 0 ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {images.map((image, index) => (
+                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white" key={image.previewUrl}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    alt={`Upload preview ${index + 1}`}
+                    className="aspect-square w-full object-cover"
+                    src={image.previewUrl}
+                  />
+                  <p className="truncate px-3 py-2 text-xs text-slate-600">{image.file.name}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <p className="mt-3 text-xs text-slate-500">Select 1-4 jpg, png, or webp images.</p>
+        </div>
 
         {error ? (
           <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">

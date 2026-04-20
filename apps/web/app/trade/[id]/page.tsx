@@ -87,6 +87,8 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
         listing_id: accepted.listing_id,
         status: "pending",
         agent_run_id: accepted.agent_run_id,
+        last_run_id: accepted.agent_run_id,
+        updated_at: null,
         error_message: null,
         result: null,
       });
@@ -236,6 +238,14 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
               </button>
               <div className="mt-5 grid gap-3">
                 <SideMetric label="AI status" value={resultStatus?.status?.replaceAll("_", " ") ?? "not started"} />
+                <SideMetric
+                  label="Last analyzed"
+                  value={
+                    resultStatus?.updated_at
+                      ? new Date(resultStatus.updated_at).toLocaleString()
+                      : "Not analyzed"
+                  }
+                />
                 <SideMetric label="Risk score" value={String(Math.round(listing.risk_score))} />
                 <SideMetric label="Listing status" value={listing.status} />
                 <SideMetric label="Brand" value={listing.brand ?? "Not specified"} />

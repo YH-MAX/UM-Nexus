@@ -13,6 +13,7 @@ from app.models import (
     ListingEmbedding,
     ListingImage,
     ListingReport,
+    MediaAsset,
     TradeMatch,
     WantedPost,
     WantedPostEmbedding,
@@ -60,6 +61,13 @@ class TradeRepository:
         self.db.commit()
         self.db.refresh(image)
         return image
+
+    def create_media_asset(self, values: dict) -> MediaAsset:
+        media_asset = MediaAsset(**values)
+        self.db.add(media_asset)
+        self.db.commit()
+        self.db.refresh(media_asset)
+        return media_asset
 
     def create_wanted_post(self, buyer_id: str, values: dict) -> WantedPost:
         wanted_post = WantedPost(buyer_id=buyer_id, **values)
@@ -213,17 +221,24 @@ class TradeRepository:
         self.db.refresh(report)
         return report
 
-    def upsert_listing_embedding(self, listing_id: str, source_text: str, model_name: str | None = None) -> ListingEmbedding:
+    def upsert_listing_embedding(
+        self,
+        listing_id: str,
+        source_text: str,
+        model_name: str | None = None,
+        embedding_value=None,
+    ) -> ListingEmbedding:
         stmt = select(ListingEmbedding).where(ListingEmbedding.listing_id == listing_id)
         embedding = self.db.scalar(stmt)
         if embedding is None:
             embedding = ListingEmbedding(
                 listing_id=listing_id,
-                embedding=None,
+                embedding=embedding_value,
                 model_name=model_name,
                 source_text=source_text,
             )
         else:
+            embedding.embedding = embedding_value
             embedding.model_name = model_name
             embedding.source_text = source_text
 
@@ -237,17 +252,19 @@ class TradeRepository:
         wanted_post_id: str,
         source_text: str,
         model_name: str | None = None,
+        embedding_value=None,
     ) -> WantedPostEmbedding:
         stmt = select(WantedPostEmbedding).where(WantedPostEmbedding.wanted_post_id == wanted_post_id)
         embedding = self.db.scalar(stmt)
         if embedding is None:
             embedding = WantedPostEmbedding(
                 wanted_post_id=wanted_post_id,
-                embedding=None,
+                embedding=embedding_value,
                 model_name=model_name,
                 source_text=source_text,
             )
         else:
+            embedding.embedding = embedding_value
             embedding.model_name = model_name
             embedding.source_text = source_text
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+import shutil
+import tempfile
 from uuid import uuid4
 
 import pytest
@@ -16,7 +18,7 @@ from app.db.session import get_db
 from app.main import app
 from app.tasks.celery_app import celery_app
 import app.db.session as session_module
-import app.tasks.trade_intelligence_tasks as trade_task_module
+import app.tasks.trade_tasks as trade_task_module
 
 
 class StubTokenVerifier:
@@ -55,7 +57,20 @@ def reset_database() -> Generator[None, None, None]:
 
     settings = get_settings()
     original_domains = settings.allowed_email_domains
+    original_upload_dir = settings.upload_storage_dir
+    original_public_base_url = settings.upload_public_base_url
+    original_glm_provider = settings.glm_provider
+    original_zai_api_key = settings.zai_api_key
+    original_zai_base_url = settings.zai_base_url
+    original_zai_model = settings.zai_model
+    original_zai_timeout_seconds = settings.zai_timeout_seconds
+    original_zai_max_retries = settings.zai_max_retries
+    temp_upload_dir = tempfile.mkdtemp(prefix="umnexus-test-uploads-")
     settings.allowed_email_domains = ("siswa.um.edu.my", "um.edu.my")
+    settings.upload_storage_dir = temp_upload_dir
+    settings.upload_public_base_url = "http://testserver/uploads"
+    settings.glm_provider = "demo"
+    settings.zai_api_key = ""
     celery_app.conf.task_always_eager = True
     session_module.SessionLocal = TestingSessionLocal
     trade_task_module.SessionLocal = TestingSessionLocal
@@ -63,6 +78,15 @@ def reset_database() -> Generator[None, None, None]:
     yield
 
     settings.allowed_email_domains = original_domains
+    settings.upload_storage_dir = original_upload_dir
+    settings.upload_public_base_url = original_public_base_url
+    settings.glm_provider = original_glm_provider
+    settings.zai_api_key = original_zai_api_key
+    settings.zai_base_url = original_zai_base_url
+    settings.zai_model = original_zai_model
+    settings.zai_timeout_seconds = original_zai_timeout_seconds
+    settings.zai_max_retries = original_zai_max_retries
+    shutil.rmtree(temp_upload_dir, ignore_errors=True)
 
 
 @pytest.fixture
