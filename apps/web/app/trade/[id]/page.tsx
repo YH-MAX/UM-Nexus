@@ -31,6 +31,9 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const primaryImage =
+    listing?.images.find((image) => image.is_primary) ?? listing?.images[0] ?? null;
+  const galleryImages = listing?.images.filter((image) => image.id !== primaryImage?.id) ?? [];
 
   const loadData = useCallback(async () => {
     const [nextListing, nextResult, nextMatches] = await Promise.all([
@@ -184,31 +187,58 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
                   No image metadata has been uploaded for this listing.
                 </p>
               ) : (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {listing.images.map((image) => (
+                <div className="mt-4 space-y-4">
+                  {primaryImage ? (
                     <div
                       className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                      key={image.id}
+                      key={primaryImage.id}
                     >
                       <div className="flex aspect-video items-center justify-center bg-slate-100">
-                        {image.public_url ? (
+                        {primaryImage.public_url ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             alt={listing.title}
                             className="h-full w-full object-cover"
-                            src={image.public_url}
+                            src={primaryImage.public_url}
                           />
                         ) : (
                           <span className="px-4 text-center text-sm text-slate-500">
-                            {image.storage_path}
+                            {primaryImage.storage_path}
                           </span>
                         )}
                       </div>
                       <div className="p-3 text-xs text-slate-600">
-                        {image.is_primary ? "Primary image metadata" : "Image metadata"}
+                        Primary image
                       </div>
                     </div>
-                  ))}
+                  ) : null}
+
+                  {galleryImages.length > 0 ? (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {galleryImages.map((image) => (
+                        <div
+                          className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
+                          key={image.id}
+                        >
+                          <div className="flex aspect-video items-center justify-center bg-slate-100">
+                            {image.public_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                alt={listing.title}
+                                className="h-full w-full object-cover"
+                                src={image.public_url}
+                              />
+                            ) : (
+                              <span className="px-4 text-center text-sm text-slate-500">
+                                {image.storage_path}
+                              </span>
+                            )}
+                          </div>
+                          <div className="p-3 text-xs text-slate-600">Gallery image</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               )}
             </section>

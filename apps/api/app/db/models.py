@@ -1,5 +1,9 @@
 from app.models.agent_output import AgentOutput  # noqa: F401
 from app.models.agent_run import AgentRun  # noqa: F401
+from app.models.baseline_result import BaselineResult  # noqa: F401
+from app.models.benchmark_case import BenchmarkCase  # noqa: F401
+from app.models.benchmark_result import BenchmarkResult  # noqa: F401
+from app.models.benchmark_run import BenchmarkRun  # noqa: F401
 from app.models.historical_sale import HistoricalSale  # noqa: F401
 from app.models.listing import Listing  # noqa: F401
 from app.models.listing_embedding import ListingEmbedding  # noqa: F401

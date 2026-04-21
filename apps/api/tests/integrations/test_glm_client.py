@@ -150,20 +150,40 @@ def test_malformed_response_handling() -> None:
         )
 
 
-def test_localhost_image_urls_are_blocked_before_provider_call() -> None:
+def test_localhost_image_urls_fall_back_to_text_only_before_provider_call() -> None:
     completions = FakeCompletions(response=completion("{}"))
     client = ZAIGLMClient(zai_settings(), sdk_client=FakeSDKClient(completions))
 
-    with pytest.raises(GLMProviderError, match="public image URLs"):
-        client.analyze_trade_listing(
-            listing={"id": "listing-1", "category": "electronics"},
-            structured_context={},
-            comparable_sales_summary=[],
-            candidate_matches_summary=[],
-            image_references=[{"public_url": "http://localhost:8001/uploads/item.jpg"}],
-            retrieved_examples=[],
-            fallback_result={},
-            prompt="Return JSON.",
-        )
+    parsed = client.analyze_trade_listing(
+        listing={"id": "listing-1", "category": "electronics"},
+        structured_context={},
+        comparable_sales_summary=[],
+        candidate_matches_summary=[],
+        image_references=[{"public_url": "http://localhost:8001/uploads/item.jpg"}],
+        retrieved_examples=[],
+        fallback_result={},
+        prompt="Return JSON.",
+    )
 
-    assert completions.calls == []
+    assert parsed == {}
+    assert len(completions.calls) == 1
+    assert completions.calls[0]["messages"][1]["content"] == [{"type": "text", "text": "Return JSON."}]
+
+
+def test_plain_http_image_urls_fall_back_to_text_only() -> None:
+    completions = FakeCompletions(response=completion("{}"))
+    client = ZAIGLMClient(zai_settings(), sdk_client=FakeSDKClient(completions))
+
+    client.analyze_trade_listing(
+        listing={"id": "listing-1", "category": "electronics"},
+        structured_context={},
+        comparable_sales_summary=[],
+        candidate_matches_summary=[],
+        image_references=[{"public_url": "http://cdn.umnexus.edu.my/item.jpg"}],
+        retrieved_examples=[],
+        fallback_result={},
+        prompt="Return JSON.",
+    )
+
+    assert len(completions.calls) == 1
+    assert completions.calls[0]["messages"][1]["content"] == [{"type": "text", "text": "Return JSON."}]

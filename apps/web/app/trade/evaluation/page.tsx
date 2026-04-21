@@ -1,14 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { TradeShell } from "@/components/trade/trade-shell";
-import { runTradeEvaluation, type EvaluationSummary } from "@/lib/trade/api";
+import {
+  formatCategory,
+  formatMoney,
+  getTradeEvaluationSummary,
+  runTradeEvaluation,
+  type BenchmarkCaseDetail,
+  type BenchmarkSummary,
+} from "@/lib/trade/api";
 
 export default function TradeEvaluationPage() {
-  const [summary, setSummary] = useState<EvaluationSummary | null>(null);
+  const [summary, setSummary] = useState<BenchmarkSummary | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    void getTradeEvaluationSummary()
+      .then((nextSummary) => {
+        if (isMounted) {
+          setSummary(nextSummary);
+        }
+      })
+      .catch((nextError) => {
+        if (isMounted) {
+          setError(nextError instanceof Error ? nextError.message : "Unable to load evaluation summary.");
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   async function handleRunEvaluation() {
     setIsRunning(true);
@@ -25,16 +52,15 @@ export default function TradeEvaluationPage() {
   return (
     <TradeShell
       eyebrow="UM Nexus Evaluation"
-      title="Trade Intelligence benchmark"
-      description="Run internal demo benchmark cases for pricing, risk, matching, and action agreement."
+      title="AI vs baseline benchmark"
+      description="Scenario-based validation for pricing, matching, trust, and action quality against a simple manual-style baseline."
     >
       <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-950">Benchmark cases</h2>
+            <h2 className="text-xl font-semibold text-slate-950">Judge-ready impact run</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              The runner compares decision outputs against expected price bands,
-              risk levels, match presence, and action type.
+              The benchmark compares the GLM-centered decision engine against a category-average baseline.
             </p>
           </div>
           <button
@@ -43,7 +69,7 @@ export default function TradeEvaluationPage() {
             onClick={() => void handleRunEvaluation()}
             type="button"
           >
-            {isRunning ? "Running..." : "Run evaluation"}
+            {isRunning ? "Running..." : "Run benchmark"}
           </button>
         </div>
 
@@ -56,32 +82,28 @@ export default function TradeEvaluationPage() {
 
       {summary ? (
         <>
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <Metric label="Cases" value={String(summary.case_count)} />
-            <Metric label="Avg price error" value={`RM${summary.average_pricing_error}`} />
-            <Metric label="Risk agreement" value={`${Math.round(summary.risk_agreement_rate * 100)}%`} />
-            <Metric label="Action agreement" value={`${Math.round(summary.action_agreement_rate * 100)}%`} />
-            <Metric label="Match quality" value={`${Math.round(summary.match_ranking_quality * 100)}%`} />
+          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Metric label="AI score" value={`${summary.ai_overall_score}/100`} detail={`Baseline ${summary.baseline_overall_score}/100`} />
+            <Metric label="Pricing lift" value={formatDelta(summary.price_accuracy_delta)} detail={`${percent(summary.ai_pricing_accuracy_rate)} AI accuracy`} />
+            <Metric label="Risk lift" value={formatDelta(summary.risk_detection_delta)} detail={`${percent(summary.ai_risk_detection_rate)} risk agreement`} />
+            <Metric label="Time proxy saved" value={`${summary.time_to_sale_delta_days} days`} detail="Scenario average" />
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-4">
+            <ComparisonMetric label="Pricing accuracy" ai={summary.ai_pricing_accuracy_rate} baseline={summary.baseline_pricing_accuracy_rate} />
+            <ComparisonMetric label="Risk detection" ai={summary.ai_risk_detection_rate} baseline={summary.baseline_risk_detection_rate} />
+            <ComparisonMetric label="Match quality" ai={summary.ai_match_quality_rate} baseline={summary.baseline_match_quality_rate} />
+            <ComparisonMetric label="Action agreement" ai={summary.ai_action_agreement_rate} baseline={summary.baseline_action_agreement_rate} />
           </section>
 
           <section className="rounded-lg border border-slate-300 bg-white shadow-sm">
             <div className="border-b border-slate-200 p-5">
-              <h2 className="text-xl font-semibold text-slate-950">Case results</h2>
+              <h2 className="text-xl font-semibold text-slate-950">Benchmark cases</h2>
+              <p className="mt-2 text-sm text-slate-600">{summary.metrics_note}</p>
             </div>
             <div className="divide-y divide-slate-100">
               {summary.cases.map((item) => (
-                <div className="grid gap-3 p-5 lg:grid-cols-[1fr_140px_140px_160px]" key={item.case_id}>
-                  <div>
-                    <p className="font-semibold text-slate-950">{item.case_id.replaceAll("_", " ")}</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Expected RM{item.expected_price_band[0]}-RM{item.expected_price_band[1]}, got RM
-                      {item.suggested_listing_price}
-                    </p>
-                  </div>
-                  <Badge ok={item.pricing_error === 0}>Error RM{item.pricing_error}</Badge>
-                  <Badge ok={item.risk_agreement}>Risk {item.risk_level}</Badge>
-                  <Badge ok={item.action_agreement}>{item.action_type.replaceAll("_", " ")}</Badge>
-                </div>
+                <CaseRow detail={item} key={item.case.id} />
               ))}
             </div>
           </section>
@@ -91,27 +113,105 @@ export default function TradeEvaluationPage() {
   );
 }
 
-function Metric({ label, value }: Readonly<{ label: string; value: string }>) {
+function CaseRow({ detail }: Readonly<{ detail: BenchmarkCaseDetail }>) {
+  const item = detail.case;
+  const ai = detail.latest_ai_result;
+  const baseline = detail.latest_baseline_result;
+
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    <div className="grid gap-4 p-5 lg:grid-cols-[1fr_170px_170px_180px]">
+      <div>
+        <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+          <span>{formatCategory(item.category)}</span>
+          <span>Expected {item.expected_action_type?.replaceAll("_", " ")}</span>
+        </div>
+        <h3 className="mt-2 font-semibold text-slate-950">{item.title}</h3>
+        <p className="mt-1 text-sm leading-6 text-slate-600">{item.listing_title}</p>
+        <p className="mt-1 text-xs text-slate-500">
+          Fair band {formatMoney(item.expected_price_min)} - {formatMoney(item.expected_price_max)}
+        </p>
+      </div>
+      <ScoreBox label="AI" score={ai?.overall_score} price={ai?.predicted_price} action={ai?.predicted_action_type} />
+      <ScoreBox
+        label="Baseline"
+        score={baseline?.overall_score}
+        price={baseline?.predicted_price}
+        action={baseline?.predicted_action_type}
+      />
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Evidence</p>
+        <p className="mt-2 text-sm leading-5 text-slate-700">{detail.why_ai_is_better}</p>
+      </div>
     </div>
   );
 }
 
-function Badge({ ok, children }: Readonly<{ ok: boolean; children: React.ReactNode }>) {
+function ScoreBox({
+  label,
+  score,
+  price,
+  action,
+}: Readonly<{
+  label: string;
+  score?: number | null;
+  price?: number | null;
+  action?: string | null;
+}>) {
   return (
-    <div
-      className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
-        ok
-          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-          : "border-amber-200 bg-amber-50 text-amber-800"
-      }`}
-    >
-      {children}
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-950">{score ?? "-"} </p>
+      <p className="mt-1 text-sm text-slate-600">{formatMoney(price)}</p>
+      <p className="mt-1 text-xs font-semibold text-slate-500">{action?.replaceAll("_", " ") ?? "not run"}</p>
     </div>
   );
+}
+
+function ComparisonMetric({ label, ai, baseline }: Readonly<{ label: string; ai: number; baseline: number }>) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-semibold text-slate-950">{label}</p>
+        <p className="text-sm font-semibold text-emerald-800">{formatDelta(ai - baseline)}</p>
+      </div>
+      <div className="mt-3 space-y-2">
+        <Bar label="AI" value={ai} tone="emerald" />
+        <Bar label="Baseline" value={baseline} tone="slate" />
+      </div>
+    </div>
+  );
+}
+
+function Bar({ label, value, tone }: Readonly<{ label: string; value: number; tone: "emerald" | "slate" }>) {
+  const color = tone === "emerald" ? "bg-emerald-600" : "bg-slate-500";
+  return (
+    <div>
+      <div className="flex justify-between text-xs font-medium text-slate-600">
+        <span>{label}</span>
+        <span>{percent(value)}</span>
+      </div>
+      <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className={`h-full ${color}`} style={{ width: `${Math.max(0, Math.min(100, value * 100))}%` }} />
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value, detail }: Readonly<{ label: string; value: string; detail: string }>) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-600">{detail}</p>
+    </div>
+  );
+}
+
+function percent(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatDelta(value: number) {
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${Math.round(value * 100)}%`;
 }

@@ -19,6 +19,9 @@ The Trade Intelligence slice runs in demo mode without login/register. It uses a
 - `POST /api/v1/ai/trade/enrich-listing/{listing_id}` returns an accepted job response
 - `GET /api/v1/ai/trade/result/{listing_id}` returns `not_started`, `pending`, `running`, `completed`, or `failed`
 - `GET /api/v1/listings/{id}/matches`
+- `POST /api/v1/ai/trade/evaluation/run`
+- `GET /api/v1/ai/trade/evaluation/summary`
+- `GET /api/v1/ai/trade/evaluation/cases`
 
 The completed result includes recommendation, why, expected outcome, and action sections.
 
@@ -35,13 +38,21 @@ Or with make:
 make api-seed-trade
 ```
 
+Seed the labelled benchmark scenarios separately if you want them before opening the evaluation pages:
+
+```bash
+make api-seed-benchmarks
+```
+
 Frontend demo pages:
 
 - `/trade`
+- `/trade/demo`
 - `/trade/sell`
 - `/trade/want`
 - `/trade/[id]`
 - `/wanted-posts/[id]`
+- `/trade/evaluation`
 
 For local demos, `CELERY_TASK_ALWAYS_EAGER=true` runs Celery tasks immediately inside the API process. Set it to `false` and run a worker when you want real background processing.
 
@@ -57,6 +68,9 @@ ZAI_API_KEY=your_zai_api_key
 ZAI_MODEL=glm-4.6v
 ZAI_TIMEOUT_SECONDS=60
 ZAI_MAX_RETRIES=2
+SUPABASE_URL=https://your-project-ref.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+SUPABASE_STORAGE_BUCKET=listing-images
 ```
 
 `GLM_PROVIDER=demo` keeps the offline deterministic demo provider. Setting `GLM_PROVIDER=zai`, or providing `ZAI_API_KEY` for local backend runs, switches enrichment to the Z.AI provider. Change `ZAI_MODEL` to switch models later without code changes. `ZAI_BASE_URL` is optional and should usually be left empty because the SDK already defaults to Z.AI's production endpoint.
@@ -74,7 +88,97 @@ curl -X POST http://localhost:8001/api/v1/ai/trade/enrich-listing/<listing_id>
 curl http://localhost:8001/api/v1/ai/trade/result/<listing_id>
 ```
 
-The SDK handles Bearer auth with the backend `ZAI_API_KEY`. Logs redact secrets and only record request status, model, and safe metadata. Multimodal image inputs must use public URLs; localhost and private network image URLs are rejected before a provider call.
+The SDK handles Bearer auth with the backend `ZAI_API_KEY`. Logs redact secrets and only record request status, model, and safe metadata. Multimodal image inputs must use public HTTPS URLs; localhost, plain HTTP, and private network image URLs are skipped and the decision pipeline continues with text-only analysis.
+
+## Benchmark Evaluation And Judge Demo
+
+The hackathon-facing validation layer compares UM Nexus Trade Intelligence against a deliberately simple baseline. This is not a production marketplace KPI system yet; it is a scenario-based decision-intelligence benchmark that makes the economic value visible to judges.
+
+Benchmark cases represent common campus resale decisions:
+
+- fair textbook pricing
+- overpriced calculator
+- underpriced rice cooker
+- suspicious electronics listing
+- low-detail dorm item
+- strong same-KK buyer match
+- weak match/no exact buyer case
+- move-out mini fridge demand
+- missing-image study lamp
+- counterfeit or unsafe electronics listing
+
+The baseline engine is intentionally simple:
+
+- price = same-category historical average
+- matches = same category and budget overlap
+- risk = a small suspicious-keyword list plus broad price deviation
+- action = simple threshold rules
+
+The AI decision engine is scored against the same labelled cases using:
+
+- pricing accuracy against the expected fair price band
+- risk-level agreement
+- action-type agreement
+- match-count quality
+- composite score from pricing, risk, action, and match quality
+
+The evaluation summary also reports demo-stage impact metrics:
+
+- AI overall score vs baseline score
+- pricing accuracy lift
+- risky-listing detection lift
+- action agreement lift
+- match quality lift
+- average time-to-sale proxy improvement
+- estimated buyer search time saved
+
+The time-to-sale metric is a transparent proxy derived from expected outcome text, action type, risk, price fit, and match availability. It is useful for scenario validation because the competition allows simulated validation, but it should not be presented as a live deployment metric.
+
+Run the benchmark from the API:
+
+```bash
+curl -X POST http://localhost:8001/api/v1/ai/trade/evaluation/run
+curl http://localhost:8001/api/v1/ai/trade/evaluation/summary
+```
+
+Or open:
+
+- `http://localhost:3000/trade/demo`
+- `http://localhost:3000/trade/evaluation`
+
+This supports the core competition claim: if the GLM decision layer is removed, the system falls back to category averages and simple thresholds, losing multimodal condition reasoning, context-aware buyer matching, explainable action recommendations, and measurable decision-quality lift.
+
+### Supabase Storage Listing Images
+
+Real listing uploads go through backend Supabase Storage using the service role key. Create a public Storage bucket, for example:
+
+```env
+SUPABASE_STORAGE_BUCKET=listing-images
+```
+
+The upload flow is:
+
+1. `POST /api/v1/listings` creates the listing in demo mode.
+2. `POST /api/v1/listings/{listing_id}/images` accepts `multipart/form-data` with a `file` field.
+3. The backend validates `jpg`, `jpeg`, `png`, or `webp`, enforces `MAX_UPLOAD_FILE_SIZE_BYTES`, and uploads to:
+
+   ```text
+   listings/{listing_id}/{generated_filename}
+   ```
+
+4. The backend stores both `media_assets` and `listing_images` rows with the Supabase bucket, storage path, public URL, MIME type, and file size.
+5. Trade enrichment sends only valid public HTTPS image URLs to Z.AI alongside listing text, historical comparables, wanted-post matches, and risk signals.
+
+Public URLs are required because Z.AI must be able to fetch the image from outside your local machine. If you run the API locally and keep images only at `localhost`, the model cannot access them, so the pipeline logs the skipped images and falls back to text-only analysis.
+
+To test locally without live provider or live storage, run:
+
+```bash
+cd apps/api
+.venv\Scripts\python.exe -m pytest
+```
+
+The test suite mocks Supabase Storage and Z.AI SDK calls. To test the full multimodal path manually, configure the Supabase bucket as public, set `GLM_PROVIDER=zai`, set `ZAI_API_KEY`, upload a listing image from `/trade/sell`, then run enrichment from `/trade/{id}`.
 
 ## Project Structure
 
@@ -179,6 +283,7 @@ The root `.env.example` defines the shared local contract:
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_JWKS_URL`
+- `SUPABASE_STORAGE_BUCKET`
 - `ALLOWED_EMAIL_DOMAINS`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`

@@ -6,6 +6,8 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import get_settings
+from app.core.exceptions import ConfigurationError, ExternalProviderError
+from app.integrations.supabase_storage import upload_listing_image_to_supabase
 
 
 ALLOWED_IMAGE_MIME_TYPES = {
@@ -17,7 +19,15 @@ ALLOWED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 class StoredFile:
-    def __init__(self, storage_path: str, public_url: str, mime_type: str, file_size: int) -> None:
+    def __init__(
+        self,
+        storage_bucket: str,
+        storage_path: str,
+        public_url: str,
+        mime_type: str,
+        file_size: int,
+    ) -> None:
+        self.storage_bucket = storage_bucket
         self.storage_path = storage_path
         self.public_url = public_url
         self.mime_type = mime_type
@@ -45,20 +55,22 @@ async def store_listing_image_upload(listing_id: str, upload_file: UploadFile) -
     if len(content) > settings.max_upload_file_size_bytes:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Uploaded file is too large.")
 
-    storage_root = Path(settings.upload_storage_dir)
-    relative_dir = Path("listing-images") / listing_id
-    target_dir = storage_root / relative_dir
-    target_dir.mkdir(parents=True, exist_ok=True)
-
     filename = f"{uuid4()}{suffix}"
-    target_path = target_dir / filename
-    target_path.write_bytes(content)
+    storage_path = f"listings/{listing_id}/{filename}"
+    try:
+        uploaded = await upload_listing_image_to_supabase(
+            storage_path=storage_path,
+            content=content,
+            mime_type=content_type,
+            settings=settings,
+        )
+    except (ConfigurationError, ExternalProviderError) as exc:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
 
-    storage_path = str(relative_dir / filename).replace("\\", "/")
-    public_url = f"{settings.upload_public_base_url.rstrip('/')}/{storage_path}"
     return StoredFile(
-        storage_path=storage_path,
-        public_url=public_url,
-        mime_type=content_type,
-        file_size=len(content),
+        storage_bucket=uploaded.storage_bucket,
+        storage_path=uploaded.storage_path,
+        public_url=uploaded.public_url,
+        mime_type=uploaded.mime_type,
+        file_size=uploaded.file_size,
     )

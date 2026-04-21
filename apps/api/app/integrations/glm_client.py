@@ -98,7 +98,18 @@ class ZAIGLMClient:
         fallback_result: dict[str, Any],
         prompt: str,
     ) -> dict[str, Any]:
-        public_image_urls = _validated_public_image_urls(image_references)
+        public_image_urls = collect_public_image_urls(image_references)
+        skipped_image_count = len([image for image in image_references if image.get("public_url")]) - len(public_image_urls)
+        if skipped_image_count:
+            logger.info(
+                "Skipping non-public image URL(s) for Z.AI multimodal analysis",
+                extra={"skipped_image_count": skipped_image_count, "listing_id": listing.get("id")},
+            )
+        if not public_image_urls and image_references:
+            logger.info(
+                "Running Z.AI trade analysis in text-only mode because no valid public HTTPS image URLs were available",
+                extra={"listing_id": listing.get("id")},
+            )
         content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
         for image_url in public_image_urls:
             content.append({"type": "image_url", "image_url": {"url": image_url}})
@@ -121,6 +132,7 @@ class ZAIGLMClient:
                 "comparable_count": len(comparable_sales_summary),
                 "candidate_count": len(candidate_matches_summary),
                 "image_count": len(public_image_urls),
+                "skipped_image_count": max(skipped_image_count, 0),
                 "retrieved_count": len(retrieved_examples),
                 "has_fallback": bool(fallback_result),
             },
@@ -272,21 +284,20 @@ def _strip_json_fence(content: str) -> str:
     return stripped
 
 
-def _validated_public_image_urls(image_references: list[dict[str, Any]]) -> list[str]:
+def collect_public_image_urls(image_references: list[dict[str, Any]]) -> list[str]:
     urls: list[str] = []
     for image in image_references:
         public_url = image.get("public_url")
         if not public_url:
             continue
-        if not _is_public_image_url(public_url):
-            raise GLMProviderError("Z.AI multimodal analysis requires public image URLs; localhost and private URLs are not supported.")
-        urls.append(public_url)
+        if _is_public_https_image_url(public_url):
+            urls.append(public_url)
     return urls
 
 
-def _is_public_image_url(url: str) -> bool:
+def _is_public_https_image_url(url: str) -> bool:
     parsed = urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    if parsed.scheme != "https" or not parsed.hostname:
         return False
 
     hostname = parsed.hostname.lower()

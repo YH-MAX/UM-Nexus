@@ -1,6 +1,8 @@
 from app.integrations.glm_client import DemoGLMClient
+from app.integrations.supabase_storage import SupabaseStoredFile
 from app.models import HistoricalSale, ListingEmbedding, ListingReport, MediaAsset
 from app.services.embedding_service import make_demo_embedding_text
+from app.services import storage_service as storage_module
 from app.services.trade_intelligence_glm_service import retrieve_similar_examples
 from app.services.trade_intelligence import create_pending_trade_intelligence_run
 from scripts.seed_trade_demo import HISTORICAL_SALES, LISTINGS, WANTED_POSTS
@@ -116,8 +118,19 @@ def test_upload_listing_image_metadata(client) -> None:
     assert body["is_primary"] is True
 
 
-def test_real_image_upload_persists_listing_image_and_media_asset(client, db_session) -> None:
+def test_real_image_upload_persists_listing_image_and_media_asset(client, db_session, monkeypatch) -> None:
     listing = create_listing(client)
+
+    async def fake_upload_listing_image_to_supabase(*, storage_path, content, mime_type, settings):
+        return SupabaseStoredFile(
+            storage_bucket=settings.supabase_storage_bucket,
+            storage_path=storage_path,
+            public_url=f"https://project-ref.supabase.co/storage/v1/object/public/{settings.supabase_storage_bucket}/{storage_path}",
+            mime_type=mime_type,
+            file_size=len(content),
+        )
+
+    monkeypatch.setattr(storage_module, "upload_listing_image_to_supabase", fake_upload_listing_image_to_supabase)
 
     response = client.post(
         f"/api/v1/listings/{listing['id']}/images",
@@ -128,12 +141,27 @@ def test_real_image_upload_persists_listing_image_and_media_asset(client, db_ses
     assert response.status_code == 201
     body = response.json()
     assert body["listing_id"] == listing["id"]
-    assert body["public_url"].startswith("http://testserver/uploads/")
+    assert body["public_url"].startswith("https://project-ref.supabase.co/storage/v1/object/public/listing-images/")
+    assert body["storage_path"].startswith(f"listings/{listing['id']}/")
     assert body["is_primary"] is True
 
     media_asset = db_session.query(MediaAsset).filter(MediaAsset.entity_id == listing["id"]).one()
+    assert media_asset.storage_bucket == "listing-images"
     assert media_asset.mime_type == "image/jpeg"
     assert media_asset.file_size == len(b"fake-image-bytes")
+
+
+def test_real_image_upload_rejects_unsupported_file(client) -> None:
+    listing = create_listing(client)
+
+    response = client.post(
+        f"/api/v1/listings/{listing['id']}/images",
+        files={"file": ("notes.txt", b"not-image", "text/plain")},
+        data={"sort_order": "0", "is_primary": "true"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Only jpg, jpeg, png, and webp images are allowed."
 
 
 def test_glm_provider_abstraction_with_mocked_response() -> None:

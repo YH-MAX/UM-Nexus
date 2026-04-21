@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     )
     supabase_service_role_key: str = ""
     supabase_jwks_url: str | None = None
+    supabase_storage_bucket: str = "listing-images"
     allowed_email_domains: Annotated[tuple[str, ...], NoDecode] = ("siswa.um.edu.my", "um.edu.my")
     upload_storage_dir: str = "storage/uploads"
     upload_public_base_url: str = "http://localhost:8001/uploads"

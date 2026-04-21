@@ -1,5 +1,9 @@
 from app.models.agent_output import AgentOutput
 from app.models.agent_run import AgentRun
+from app.models.baseline_result import BaselineResult
+from app.models.benchmark_case import BenchmarkCase
+from app.models.benchmark_result import BenchmarkResult
+from app.models.benchmark_run import BenchmarkRun
 from app.models.enums import AppRole
 from app.models.historical_sale import HistoricalSale
 from app.models.listing import Listing
@@ -19,6 +23,10 @@ __all__ = [
     "AgentOutput",
     "AgentRun",
     "AppRole",
+    "BaselineResult",
+    "BenchmarkCase",
+    "BenchmarkResult",
+    "BenchmarkRun",
     "HistoricalSale",
     "Listing",
     "ListingEmbedding",

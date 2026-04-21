@@ -59,6 +59,9 @@ def reset_database() -> Generator[None, None, None]:
     original_domains = settings.allowed_email_domains
     original_upload_dir = settings.upload_storage_dir
     original_public_base_url = settings.upload_public_base_url
+    original_supabase_url = settings.supabase_url
+    original_supabase_service_role_key = settings.supabase_service_role_key
+    original_supabase_storage_bucket = settings.supabase_storage_bucket
     original_glm_provider = settings.glm_provider
     original_zai_api_key = settings.zai_api_key
     original_zai_base_url = settings.zai_base_url
@@ -69,6 +72,9 @@ def reset_database() -> Generator[None, None, None]:
     settings.allowed_email_domains = ("siswa.um.edu.my", "um.edu.my")
     settings.upload_storage_dir = temp_upload_dir
     settings.upload_public_base_url = "http://testserver/uploads"
+    settings.supabase_url = "https://project-ref.supabase.co"
+    settings.supabase_service_role_key = "test-service-role"
+    settings.supabase_storage_bucket = "listing-images"
     settings.glm_provider = "demo"
     settings.zai_api_key = ""
     celery_app.conf.task_always_eager = True
@@ -80,6 +86,9 @@ def reset_database() -> Generator[None, None, None]:
     settings.allowed_email_domains = original_domains
     settings.upload_storage_dir = original_upload_dir
     settings.upload_public_base_url = original_public_base_url
+    settings.supabase_url = original_supabase_url
+    settings.supabase_service_role_key = original_supabase_service_role_key
+    settings.supabase_storage_bucket = original_supabase_storage_bucket
     settings.glm_provider = original_glm_provider
     settings.zai_api_key = original_zai_api_key
     settings.zai_base_url = original_zai_base_url

@@ -131,7 +131,7 @@ export type TradeResultStatus = {
   result: TradeResult | null;
 };
 
-export type EvaluationSummary = {
+export type LegacyEvaluationSummary = {
   case_count: number;
   average_pricing_error: number;
   risk_agreement_rate: number;
@@ -150,6 +150,95 @@ export type EvaluationSummary = {
     top_match: string | null;
     match_quality: number;
   }>;
+};
+
+export type BenchmarkCase = {
+  id: string;
+  title: string;
+  category: string;
+  listing_title: string;
+  listing_description: string | null;
+  condition_label: string | null;
+  pickup_area: string | null;
+  residential_college: string | null;
+  image_urls: string[];
+  expected_price_min: number | null;
+  expected_price_max: number | null;
+  expected_risk_level: string | null;
+  expected_action_type: string | null;
+  expected_best_match_count: number | null;
+  expected_best_match_ids: string[];
+  notes: string | null;
+  listing_price_used: number;
+};
+
+export type BenchmarkAIResult = {
+  id: string;
+  benchmark_run_id: string;
+  predicted_price: number | null;
+  predicted_minimum_price: number | null;
+  predicted_risk_level: string | null;
+  predicted_action_type: string | null;
+  predicted_match_count: number | null;
+  pricing_within_band: boolean | null;
+  risk_match: boolean | null;
+  action_match: boolean | null;
+  match_count_reasonable: boolean | null;
+  overall_score: number;
+  raw_result: TradeResult & {
+    evaluation_score?: Record<string, unknown>;
+    listing_price_used?: number;
+  };
+  created_at: string | null;
+};
+
+export type BenchmarkBaselineResult = {
+  id: string;
+  benchmark_case_id: string;
+  baseline_name: string;
+  predicted_price: number | null;
+  predicted_risk_level: string | null;
+  predicted_action_type: string | null;
+  predicted_match_count: number | null;
+  pricing_within_band: boolean | null;
+  risk_match: boolean | null;
+  action_match: boolean | null;
+  overall_score: number;
+  raw_result: Record<string, unknown>;
+  created_at: string | null;
+};
+
+export type BenchmarkCaseDetail = {
+  case: BenchmarkCase;
+  latest_ai_result: BenchmarkAIResult | null;
+  latest_baseline_result: BenchmarkBaselineResult | null;
+  why_ai_is_better: string;
+};
+
+export type BenchmarkSummary = {
+  case_count: number;
+  evaluated_case_count: number;
+  ai_overall_score: number;
+  baseline_overall_score: number;
+  overall_score_delta: number;
+  ai_pricing_accuracy_rate: number;
+  baseline_pricing_accuracy_rate: number;
+  price_accuracy_delta: number;
+  ai_risk_detection_rate: number;
+  baseline_risk_detection_rate: number;
+  risk_detection_delta: number;
+  ai_action_agreement_rate: number;
+  baseline_action_agreement_rate: number;
+  action_agreement_delta: number;
+  ai_match_quality_rate: number;
+  baseline_match_quality_rate: number;
+  match_quality_delta: number;
+  ai_time_to_sale_proxy_days: number;
+  baseline_time_to_sale_proxy_days: number;
+  time_to_sale_delta_days: number;
+  estimated_search_time_saved_minutes: number;
+  metrics_note: string;
+  cases: BenchmarkCaseDetail[];
 };
 
 export type ListingPayload = {
@@ -317,8 +406,22 @@ export async function getTradeResultStatus(id: string): Promise<TradeResultStatu
   return fetchJson<TradeResultStatus>(`/ai/trade/result/${id}`);
 }
 
-export async function runTradeEvaluation(): Promise<EvaluationSummary> {
-  return fetchJson<EvaluationSummary>("/ai/trade/evaluate", {
+export async function runLegacyTradeEvaluation(): Promise<LegacyEvaluationSummary> {
+  return fetchJson<LegacyEvaluationSummary>("/ai/trade/evaluate", {
     method: "POST",
   });
+}
+
+export async function runTradeEvaluation(): Promise<BenchmarkSummary> {
+  return fetchJson<BenchmarkSummary>("/ai/trade/evaluation/run", {
+    method: "POST",
+  });
+}
+
+export async function getTradeEvaluationSummary(): Promise<BenchmarkSummary> {
+  return fetchJson<BenchmarkSummary>("/ai/trade/evaluation/summary");
+}
+
+export async function getTradeEvaluationCases(): Promise<BenchmarkCaseDetail[]> {
+  return fetchJson<BenchmarkCaseDetail[]>("/ai/trade/evaluation/cases");
 }

@@ -58,12 +58,14 @@ def test_enrich_listing_uses_mocked_zai_provider_and_persists_output(client, db_
     settings.glm_provider = "zai"
     settings.zai_api_key = "test-secret"
     settings.zai_model = "GLM-4.6V"
+    captured_payloads: list[dict] = []
 
     class FakeZAIGLMClient:
         def __init__(self, settings) -> None:
             self.settings = settings
 
         def generate_trade_decision(self, payload: dict) -> dict:
+            captured_payloads.append(payload)
             result = payload["fallback_result"]
             result["why"]["condition_estimate"] = "Mocked Z.AI reviewed image and seller text together."
             result["action"]["action_type"] = "list_now"
@@ -101,6 +103,9 @@ def test_enrich_listing_uses_mocked_zai_provider_and_persists_output(client, db_
     assert body["last_run_id"] == accepted.json()["agent_run_id"]
     assert body["result"]["why"]["condition_estimate"] == "Mocked Z.AI reviewed image and seller text together."
     assert body["result"]["action"]["action_type"] == "list_now"
+    assert captured_payloads
+    assert captured_payloads[0]["image_references"][0]["public_url"] == "https://cdn.umnexus.edu.my/calculator.jpg"
+    assert captured_payloads[0]["structured_context"]["image_analysis"]["mode"] == "multimodal"
 
     outputs = db_session.query(AgentOutput).all()
     assert any(output.output_type == "trade_intelligence_result" for output in outputs)

@@ -68,7 +68,7 @@ async def add_uploaded_listing_image(
             "owner_user_id": demo_user.id,
             "entity_type": "listing",
             "entity_id": listing.id,
-            "storage_bucket": "local-demo",
+            "storage_bucket": stored_file.storage_bucket,
             "storage_path": stored_file.storage_path,
             "public_url": stored_file.public_url,
             "mime_type": stored_file.mime_type,
