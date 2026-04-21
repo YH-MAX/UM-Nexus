@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from math import sqrt
 from re import findall
 
@@ -15,7 +16,7 @@ def make_demo_embedding_text(source_text: str) -> str:
 def make_demo_embedding(source_text: str) -> list[float]:
     vector = [0.0] * VECTOR_DIMENSIONS
     for token in findall(r"[a-z0-9]+", source_text.lower()):
-        index = hash(token) % VECTOR_DIMENSIONS
+        index = int.from_bytes(sha256(token.encode("utf-8")).digest()[:8], "big") % VECTOR_DIMENSIONS
         vector[index] += 1.0
     magnitude = sqrt(sum(value * value for value in vector)) or 1.0
     return [value / magnitude for value in vector]

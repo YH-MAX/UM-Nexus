@@ -8,6 +8,7 @@ from app.trade.constants import PickupArea, TradeCategory
 class ListingImageCreate(BaseModel):
     storage_path: str = Field(..., min_length=1, max_length=500)
     public_url: str | None = Field(default=None, max_length=500)
+    content_hash: str | None = Field(default=None, max_length=128)
     sort_order: int = Field(default=0, ge=0)
     is_primary: bool = False
 
@@ -19,6 +20,7 @@ class ListingImageRead(BaseModel):
     listing_id: str
     storage_path: str
     public_url: str | None
+    content_hash: str | None
     sort_order: int
     is_primary: bool
     created_at: datetime
@@ -72,10 +74,40 @@ class ListingRead(BaseModel):
     status: str
     risk_score: float
     risk_level: str | None
+    risk_evidence: dict | None
+    moderation_status: str
     suggested_listing_price: float | None
     minimum_acceptable_price: float | None
+    accepted_recommended_price: float | None
+    recommendation_applied_at: datetime | None
     ai_explanation_cache: dict | None
     is_ai_enriched: bool
     created_at: datetime
     updated_at: datetime
     images: list[ListingImageRead] = Field(default_factory=list)
+
+
+class ListingReportCreate(BaseModel):
+    report_type: str = Field(..., min_length=1, max_length=100)
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class ListingReportReview(BaseModel):
+    status: str = Field(..., min_length=1, max_length=32)
+    moderation_status: str | None = Field(default=None, max_length=32)
+    resolution: str | None = Field(default=None, max_length=2000)
+
+
+class ListingReportRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    listing_id: str
+    reporter_user_id: str | None
+    report_type: str
+    reason: str | None
+    status: str
+    moderator_user_id: str | None
+    resolution: str | None
+    reviewed_at: datetime | None
+    created_at: datetime

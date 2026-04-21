@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from zai.core import APIReachLimitError
 
 from app.core.config import Settings
-from app.integrations.glm_client import GLMProviderError, ZAIGLMClient
+from app.integrations.glm_client import DEFAULT_ZAI_BASE_URL, GLMProviderError, ZAIGLMClient
 
 
 def zai_settings(**overrides) -> Settings:
@@ -76,6 +76,21 @@ def test_simple_test_uses_sdk_model_and_timeout() -> None:
     assert call["model"] == "glm-4.6v"
     assert call["timeout"] == 3
     assert call["messages"][0]["role"] == "user"
+
+
+def test_zai_client_uses_default_base_url_when_env_is_blank(monkeypatch) -> None:
+    captured_kwargs = {}
+
+    class FakeZaiClient:
+        def __init__(self, **kwargs) -> None:
+            captured_kwargs.update(kwargs)
+
+    monkeypatch.setenv("ZAI_BASE_URL", "")
+    monkeypatch.setattr("app.integrations.glm_client.ZaiClient", FakeZaiClient)
+
+    ZAIGLMClient(zai_settings(zai_base_url=""))
+
+    assert captured_kwargs["base_url"] == DEFAULT_ZAI_BASE_URL
 
 
 def test_analyze_trade_listing_parses_successful_multimodal_sdk_response() -> None:

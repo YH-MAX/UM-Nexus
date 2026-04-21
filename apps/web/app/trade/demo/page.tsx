@@ -53,7 +53,7 @@ export default function TradeDemoPage() {
     <TradeShell
       eyebrow="UM Nexus Judge Demo"
       title="Decision engine evidence"
-      description="Five labelled scenarios showing how GLM-centered recommendations outperform a simple campus resale baseline."
+      description="Labelled simulation scenarios showing how GLM-centered recommendations compare with a simple campus resale baseline."
     >
       <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

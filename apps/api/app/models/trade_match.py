@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Numeric, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -36,6 +37,14 @@ class TradeMatch(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     semantic_fit_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="suggested", server_default="suggested")
     explanation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    contacted_by_user_id: Mapped[str | None] = mapped_column(
+        Uuid(as_uuid=False),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    contacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    contact_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     listing: Mapped["Listing"] = relationship(back_populates="matches")
     wanted_post: Mapped["WantedPost"] = relationship(back_populates="matches")

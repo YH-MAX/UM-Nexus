@@ -38,6 +38,12 @@ export function TradeShell({
               Listings
             </Link>
             <Link
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
+              href="/trade/dashboard"
+            >
+              Dashboard
+            </Link>
+            <Link
               className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
               href="/trade/sell"
             >
@@ -48,6 +54,12 @@ export function TradeShell({
               href="/trade/want"
             >
               Want
+            </Link>
+            <Link
+              className="rounded-lg border border-cyan-700 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 shadow-sm transition hover:bg-cyan-100"
+              href="/trade/moderation"
+            >
+              Review
             </Link>
             <Link
               className="rounded-lg border border-cyan-700 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 shadow-sm transition hover:bg-cyan-100"

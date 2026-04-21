@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import require_authenticated_user
 from app.db.session import get_db
 from app.schemas.wanted_post import WantedPostCreate, WantedPostRead
 from app.services.trade_service import create_wanted_post, get_wanted_post, list_wanted_posts
@@ -15,8 +16,9 @@ router = APIRouter()
 def create_wanted_post_endpoint(
     payload: WantedPostCreate,
     db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
 ) -> WantedPostRead:
-    wanted_post = create_wanted_post(db, payload)
+    wanted_post = create_wanted_post(db, payload, current_user)
     return WantedPostRead.model_validate(wanted_post)
 
 

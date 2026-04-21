@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.wanted_post import WantedPostRead
 from app.trade.constants import RiskLevel, TradeActionType
@@ -36,6 +36,9 @@ class TradeMatchRead(BaseModel):
     semantic_fit_score: float | None
     status: str
     explanation: str | None
+    contacted_by_user_id: str | None = None
+    contacted_at: datetime | None = None
+    contact_message: str | None = None
     created_at: datetime
     updated_at: datetime
     wanted_post: WantedPostRead
@@ -49,6 +52,8 @@ class PriceRangeBlock(BaseModel):
 class TradeRecommendation(BaseModel):
     suggested_listing_price: float
     minimum_acceptable_price: float
+    sell_fast_price: float | None = None
+    risk_score: float | None = None
     risk_level: RiskLevel
     best_match_candidates: list[MatchCandidate]
     fair_price_range: PriceRangeBlock | None = None
@@ -59,17 +64,27 @@ class TradeWhy(BaseModel):
     condition_estimate: str
     local_demand_context: str
     price_competitiveness: str
+    evidence: list[str] = Field(default_factory=list)
 
 
 class TradeExpectedOutcome(BaseModel):
     expected_time_to_sell: str
     expected_buyer_interest: str
     confidence_level: str
+    confidence_factors: list[str] = Field(default_factory=list)
 
 
 class TradeAction(BaseModel):
     action_type: TradeActionType
     action_reason: str
+    next_steps: list[str] = Field(default_factory=list)
+
+
+class TradeDecisionMetadata(BaseModel):
+    provider: str = "heuristic"
+    model: str | None = None
+    used_fallback: bool = False
+    generated_at: datetime | None = None
 
 
 class TradeDecisionResult(BaseModel):
@@ -77,6 +92,7 @@ class TradeDecisionResult(BaseModel):
     why: TradeWhy
     expected_outcome: TradeExpectedOutcome
     action: TradeAction
+    metadata: TradeDecisionMetadata = Field(default_factory=TradeDecisionMetadata)
 
 
 class GLMTestResponse(BaseModel):

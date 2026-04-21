@@ -40,6 +40,14 @@ export function ListingCard({ listing }: ListingCardProps) {
           <StatusPill tone={listing.is_ai_enriched ? "good" : "warn"}>
             {listing.is_ai_enriched ? "AI enriched" : "Not enriched"}
           </StatusPill>
+          {listing.risk_level ? (
+            <StatusPill tone={listing.risk_level === "high" ? "danger" : listing.risk_level === "medium" ? "warn" : "good"}>
+              {listing.risk_level} risk
+            </StatusPill>
+          ) : null}
+          {listing.moderation_status !== "approved" ? (
+            <StatusPill tone="warn">{listing.moderation_status.replaceAll("_", " ")}</StatusPill>
+          ) : null}
         </div>
         <div>
           <h2 className="line-clamp-2 text-lg font-semibold text-slate-950">

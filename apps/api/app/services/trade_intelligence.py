@@ -10,7 +10,9 @@ from statistics import median
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.integrations.glm_client import GLMProviderError
 from app.models import AgentRun, HistoricalSale, Listing, TradeMatch, WantedPost
+from app.models.user import User
 from app.repositories.trade import TradeRepository
 from app.schemas.trade_intelligence import (
     EnrichListingAccepted,
@@ -62,6 +64,9 @@ CATEGORY_FALLBACK_PRICES = {
     "small_appliances": (45.0, 95.0, 180.0),
     "dorm_essentials": (18.0, 35.0, 70.0),
 }
+MIN_SUGGESTED_MATCH_SCORE = 58.0
+MIN_RECOMMENDED_MATCH_SCORE = 74.0
+MIN_RECOMMENDED_ITEM_FIT_SCORE = 58.0
 CONDITION_MULTIPLIERS = {
     "new": 1.18,
     "like new": 1.12,
@@ -93,11 +98,17 @@ class RiskDecision:
     summary: str
 
 
-def create_pending_trade_intelligence_run(db: Session, listing_id: str) -> EnrichListingAccepted:
+def create_pending_trade_intelligence_run(
+    db: Session,
+    listing_id: str,
+    current_user: User | None = None,
+) -> EnrichListingAccepted:
     repo = TradeRepository(db)
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    if current_user is not None and listing.seller_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can enrich this listing.")
 
     agent_run = repo.create_agent_run(
         {
@@ -135,31 +146,49 @@ def compute_trade_intelligence(db: Session, listing_id: str, agent_run_id: str |
 
         historical_sales = list(repo.list_historical_sales_for_category(listing.category))
         reports_count = repo.count_listing_reports(listing.id)
+        duplicate_image_count = repo.count_duplicate_image_hashes(listing.id)
         heuristic_result, matches, risk_score = build_trade_intelligence_result(
             listing=listing,
             wanted_posts=wanted_posts,
             historical_sales=historical_sales,
             reports_count=reports_count,
+            duplicate_image_count=duplicate_image_count,
         )
         glm_payload = build_multimodal_glm_payload(db, listing, historical_sales, wanted_posts, heuristic_result)
-        result = generate_glm_trade_result(glm_payload)
+        provider_error: Exception | None = None
+        try:
+            result = generate_glm_trade_result(glm_payload)
+        except (GLMProviderError, ValueError, TypeError) as exc:
+            provider_error = exc
+            result = _mark_fallback_result(heuristic_result, str(exc))
 
-        for match_values in matches:
+        decision_match_values = _match_values_from_result_candidates(result.recommendation.best_match_candidates, matches)
+        for match_values in decision_match_values:
             wanted_post_id = match_values.pop("wanted_post_id")
             repo.upsert_trade_match(listing.id, wanted_post_id, match_values)
 
+        decision_risk_score = _risk_score_for_decision(
+            result.recommendation.risk_level,
+            result.recommendation.risk_score,
+            risk_score,
+        )
+        moderation_status = "review_required" if result.recommendation.risk_level == "high" else (listing.moderation_status or "approved")
         repo.update_listing(
             listing,
             {
-                "risk_score": Decimal(str(risk_score)),
+                "risk_score": Decimal(str(decision_risk_score)),
                 "risk_level": result.recommendation.risk_level,
                 "suggested_listing_price": Decimal(str(result.recommendation.suggested_listing_price)),
                 "minimum_acceptable_price": Decimal(str(result.recommendation.minimum_acceptable_price)),
+                "risk_evidence": _risk_evidence_payload(result, decision_risk_score, duplicate_image_count),
+                "moderation_status": moderation_status,
                 "ai_explanation_cache": result.model_dump(mode="json"),
                 "is_ai_enriched": True,
             },
         )
         repo.create_agent_output(agent_run.id, "trade_intelligence_context", glm_payload)
+        if provider_error is not None:
+            repo.create_agent_output(agent_run.id, "trade_intelligence_provider_error", {"error": str(provider_error)})
         repo.create_agent_output(agent_run.id, "trade_intelligence_result", result.model_dump(mode="json"))
         repo.update_agent_run(agent_run, {"status": "completed", "finished_at": datetime.now(UTC)})
         return result
@@ -279,37 +308,54 @@ def build_trade_intelligence_result(
     wanted_posts: list[WantedPost],
     historical_sales: list[HistoricalSale],
     reports_count: int = 0,
+    duplicate_image_count: int = 0,
 ) -> tuple[TradeIntelligenceResult, list[dict], float]:
     pricing = _pricing_decision(listing, historical_sales)
-    risk = _risk_decision(listing, pricing, reports_count)
+    risk = _risk_decision(listing, pricing, reports_count, duplicate_image_count)
     candidates, match_values = _score_matches(listing, wanted_posts, pricing)
+    recommended_candidates = _recommended_candidates(candidates)
 
-    top_score = candidates[0].match_score if candidates else 0
+    top_score = recommended_candidates[0].match_score if recommended_candidates else 0
     interest = _buyer_interest(top_score, len(candidates), pricing, listing)
     expected_time = _expected_time_to_sell(top_score, pricing, listing, risk.risk_level)
     confidence = _confidence_level(pricing.comparable_count, candidates, listing)
-    action_type, action_reason = _choose_action(listing, pricing, risk, candidates)
+    action_type, action_reason = _choose_action(listing, pricing, risk, recommended_candidates)
+    sell_fast_price = _money(max(pricing.minimum_price, pricing.suggested_price * 0.92))
 
     result = TradeIntelligenceResult(
         recommendation={
             "suggested_listing_price": pricing.suggested_price,
             "minimum_acceptable_price": pricing.minimum_price,
+            "sell_fast_price": sell_fast_price,
+            "risk_score": risk.risk_score,
             "fair_price_range": {"low": pricing.fair_low, "high": pricing.fair_high},
             "risk_level": risk.risk_level,
-            "best_match_candidates": candidates[:3],
+            "best_match_candidates": recommended_candidates[:3],
         },
         why={
             "similar_item_pattern": pricing.pattern_summary,
             "condition_estimate": _condition_summary(listing),
             "local_demand_context": _demand_context(listing, candidates),
             "price_competitiveness": pricing.price_competitiveness,
+            "evidence": _decision_evidence(pricing, risk, len(candidates), duplicate_image_count),
         },
         expected_outcome={
             "expected_time_to_sell": expected_time,
             "expected_buyer_interest": interest,
             "confidence_level": confidence,
+            "confidence_factors": _confidence_factors(pricing.comparable_count, recommended_candidates, listing),
         },
-        action={"action_type": action_type, "action_reason": action_reason},
+        action={
+            "action_type": action_type,
+            "action_reason": action_reason,
+            "next_steps": _next_steps(action_type, pricing, recommended_candidates),
+        },
+        metadata={
+            "provider": "heuristic",
+            "model": "deterministic-campus-pricing-v1",
+            "used_fallback": False,
+            "generated_at": datetime.now(UTC),
+        },
     )
     return result, match_values, risk.risk_score
 
@@ -345,9 +391,10 @@ def _pricing_decision(listing: Listing, historical_sales: list[HistoricalSale]) 
         comparable_count = 0
 
     location_multiplier = 1.04 if _is_kk_related(listing.pickup_area, listing.residential_college) else 1.0
-    suggested = _money(base_price * location_multiplier)
-    fair_low = _money(fair_low * location_multiplier)
-    fair_high = _money(max(fair_high * location_multiplier, suggested * 1.08))
+    timing_multiplier = 1.06 if _has_move_out_context(listing) else 1.0
+    suggested = _money(base_price * location_multiplier * timing_multiplier)
+    fair_low = _money(fair_low * location_multiplier * timing_multiplier)
+    fair_high = _money(max(fair_high * location_multiplier * timing_multiplier, suggested * 1.08))
     minimum = _money(max(fair_low * 0.82, suggested * 0.78))
 
     item = listing.item_name or listing.title
@@ -357,6 +404,8 @@ def _pricing_decision(listing: Listing, historical_sales: list[HistoricalSale]) 
             f"including {similar_count} close {item} comparable(s), point to a fair range of "
             f"RM{fair_low:.0f}-RM{fair_high:.0f}."
         )
+        if timing_multiplier > 1:
+            pattern += " Move-out timing adds a small demand premium for fast campus resale."
     else:
         pattern = (
             f"No close historical sale exists yet, so the engine uses the campus fallback band "
@@ -402,10 +451,22 @@ def _adjust_historical_price_for_listing(sale: HistoricalSale, listing: Listing)
     price = float(sale.sold_price) * (listing_condition / max(sale_condition, 0.1))
     if _same_location_context(listing.pickup_area, listing.residential_college, sale.location, sale.residential_college):
         price *= 1.02
+    if sale.sold_at:
+        sold_at = sale.sold_at if sale.sold_at.tzinfo else sale.sold_at.replace(tzinfo=UTC)
+        age_days = max((datetime.now(UTC) - sold_at).days, 0)
+        if age_days <= 21:
+            price *= 1.03
+        elif age_days > 180:
+            price *= 0.96
     return price
 
 
-def _risk_decision(listing: Listing, pricing: PricingDecision, reports_count: int) -> RiskDecision:
+def _risk_decision(
+    listing: Listing,
+    pricing: PricingDecision,
+    reports_count: int,
+    duplicate_image_count: int = 0,
+) -> RiskDecision:
     text = f"{listing.title} {listing.description or ''} {listing.condition_label or ''}".lower()
     risk_score = 8.0
     reasons: list[str] = []
@@ -423,6 +484,15 @@ def _risk_decision(listing: Listing, pricing: PricingDecision, reports_count: in
     if reports_count:
         risk_score += min(reports_count * 18, 42)
         reasons.append(f"{reports_count} user report(s)")
+    if duplicate_image_count:
+        risk_score += min(duplicate_image_count * 20, 36)
+        reasons.append("duplicated image hash")
+    if any(term in text for term in {"replica", "fake", "counterfeit"}):
+        risk_score += 18
+        reasons.append("counterfeit/prohibited wording")
+    if any(term in text for term in {"icloud locked", "password locked", "locked ipad", "locked iphone"}):
+        risk_score += 18
+        reasons.append("locked-device wording")
 
     price = float(listing.price)
     if price < pricing.fair_low * 0.68:
@@ -481,21 +551,31 @@ def _score_matches(
             preferred_pickup_area=wanted_post.preferred_pickup_area,
         )
         candidates.append(candidate)
-        match_values.append(
-            {
-                "wanted_post_id": wanted_post.id,
-                "match_score": Decimal(str(match_score)),
-                "price_fit_score": Decimal(str(price_fit)),
-                "location_fit_score": Decimal(str(location_fit)),
-                "semantic_fit_score": Decimal(str(item_fit)),
-                "status": "suggested",
-                "explanation": explanation,
-            }
-        )
+        if match_score >= MIN_SUGGESTED_MATCH_SCORE:
+            match_values.append(
+                {
+                    "wanted_post_id": wanted_post.id,
+                    "match_score": Decimal(str(match_score)),
+                    "price_fit_score": Decimal(str(price_fit)),
+                    "location_fit_score": Decimal(str(location_fit)),
+                    "semantic_fit_score": Decimal(str(item_fit)),
+                    "status": "suggested",
+                    "explanation": explanation,
+                }
+            )
 
     candidates.sort(key=lambda candidate: candidate.match_score, reverse=True)
     match_values.sort(key=lambda values: values["match_score"], reverse=True)
     return candidates, match_values
+
+
+def _recommended_candidates(candidates: list[MatchCandidate]) -> list[MatchCandidate]:
+    return [
+        candidate
+        for candidate in candidates
+        if candidate.match_score >= MIN_RECOMMENDED_MATCH_SCORE
+        and (candidate.semantic_fit_score or 0) >= MIN_RECOMMENDED_ITEM_FIT_SCORE
+    ]
 
 
 def _price_fit_score(price: float, max_budget: float | None) -> float:
@@ -673,6 +753,112 @@ def _choose_action(
     return "list_now", "The listing is fairly priced and clear enough to publish now."
 
 
+def _match_values_from_result_candidates(candidates: list[MatchCandidate], fallback_matches: list[dict]) -> list[dict]:
+    fallback_by_id = {values["wanted_post_id"]: values for values in fallback_matches}
+    selected: list[dict] = []
+    if candidates:
+        for candidate in candidates:
+            fallback = fallback_by_id.get(candidate.wanted_post_id)
+            if fallback is None:
+                continue
+            selected.append(
+                {
+                    **fallback,
+                    "match_score": Decimal(str(candidate.match_score)),
+                    "price_fit_score": Decimal(str(candidate.price_fit_score or 0)),
+                    "location_fit_score": Decimal(str(candidate.location_fit_score or 0)),
+                    "semantic_fit_score": Decimal(str(candidate.semantic_fit_score or 0)),
+                    "explanation": candidate.explanation,
+                }
+            )
+    return selected or [dict(values) for values in fallback_matches]
+
+
+def _risk_score_for_decision(risk_level: str, model_score: float | None, heuristic_score: float) -> float:
+    if model_score is not None:
+        score = float(model_score)
+    else:
+        score = float(heuristic_score)
+    if risk_level == "high":
+        return round(max(score, 75.0), 2)
+    if risk_level == "medium":
+        return round(min(max(score, 40.0), 74.0), 2)
+    return round(min(score, 34.0), 2)
+
+
+def _risk_evidence_payload(
+    result: TradeIntelligenceResult,
+    risk_score: float,
+    duplicate_image_count: int,
+) -> dict:
+    return {
+        "risk_score": risk_score,
+        "risk_level": result.recommendation.risk_level,
+        "evidence": result.why.evidence,
+        "duplicate_image_count": duplicate_image_count,
+        "recommended_action": result.action.action_type,
+        "generated_at": result.metadata.generated_at.isoformat() if result.metadata.generated_at else None,
+        "used_fallback": result.metadata.used_fallback,
+    }
+
+
+def _mark_fallback_result(result: TradeIntelligenceResult, error_message: str) -> TradeIntelligenceResult:
+    data = result.model_dump(mode="json")
+    evidence = data.setdefault("why", {}).setdefault("evidence", [])
+    evidence.append("Provider fallback: GLM provider was unavailable, so deterministic campus heuristics were used.")
+    data["metadata"] = {
+        "provider": "heuristic",
+        "model": "deterministic-campus-pricing-v1",
+        "used_fallback": True,
+        "generated_at": datetime.now(UTC).isoformat(),
+    }
+    data.setdefault("action", {}).setdefault("next_steps", [])
+    data["action"]["next_steps"].append("Review the recommendation once the GLM provider is available again.")
+    data["provider_error"] = error_message
+    return TradeIntelligenceResult.model_validate(data)
+
+
+def _decision_evidence(
+    pricing: PricingDecision,
+    risk: RiskDecision,
+    candidate_count: int,
+    duplicate_image_count: int,
+) -> list[str]:
+    evidence = [
+        f"{pricing.comparable_count} comparable sale(s) evaluated; {pricing.similar_count} close item match(es).",
+        f"Fair range RM{pricing.fair_low:.0f}-RM{pricing.fair_high:.0f}; suggested RM{pricing.suggested_price:.0f}.",
+        f"{candidate_count} same-category wanted post(s) scored for price, item, urgency, and location fit.",
+        f"Risk score {risk.risk_score:.0f}/100: {risk.summary}",
+    ]
+    if duplicate_image_count:
+        evidence.append(f"{duplicate_image_count} duplicate image hash signal(s) found across other listings.")
+    return evidence
+
+
+def _confidence_factors(comparable_count: int, candidates: list[MatchCandidate], listing: Listing) -> list[str]:
+    factors: list[str] = []
+    factors.append("Strong comparable history" if comparable_count >= 5 else "Limited comparable history")
+    factors.append("Strong buyer demand signal" if candidates else "No strong buyer match yet")
+    factors.append("Listing has enough item detail" if listing.description and len(listing.description) >= 35 else "Listing detail is thin")
+    if listing.images:
+        factors.append("Image metadata is present")
+    else:
+        factors.append("No image metadata is present")
+    return factors
+
+
+def _next_steps(action_type: str, pricing: PricingDecision, candidates: list[MatchCandidate]) -> list[str]:
+    if action_type == "flag_for_review":
+        return ["Pause promotion until a moderator reviews trust signals.", "Ask the seller for proof of ownership if needed."]
+    if action_type == "upload_better_image":
+        return ["Upload at least one clear photo from multiple angles.", "Run enrichment again after images are available."]
+    if action_type == "revise_price":
+        return [f"Update listing price near RM{pricing.suggested_price:.0f}.", f"Use RM{pricing.minimum_price:.0f} as the negotiation floor."]
+    if action_type == "match_with_buyers" and candidates:
+        return [f"Contact {candidates[0].title} first.", "Keep the listing active until a buyer confirms pickup."]
+    return ["Publish or keep the listing active.", "Monitor buyer interest and rerun analysis if demand changes."]
+
+
 def _match_confidence(score: float) -> str:
     if score >= 84:
         return "very high"
@@ -685,6 +871,11 @@ def _match_confidence(score: float) -> str:
 
 def _tokens(value: str) -> set[str]:
     return {token for token in findall(r"[a-z0-9]+", value.lower()) if len(token) > 2 and token not in STOPWORDS}
+
+
+def _has_move_out_context(listing: Listing) -> bool:
+    text = f"{listing.title} {listing.description or ''}".lower()
+    return any(term in text for term in ("move-out", "move out", "moving out", "move-in", "move in", "semester end"))
 
 
 def _condition_multiplier(condition_label: str | None) -> float:

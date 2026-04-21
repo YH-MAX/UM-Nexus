@@ -8,6 +8,7 @@ from app.schemas.ai_trade import (  # noqa: F401
     RecommendationBlock,
     TradeAction,
     TradeDecisionResult,
+    TradeDecisionMetadata,
     TradeExpectedOutcome,
     TradeIntelligenceResult,
     TradeIntelligenceResultStatus,

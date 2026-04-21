@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
@@ -26,12 +27,14 @@ class StoredFile:
         public_url: str,
         mime_type: str,
         file_size: int,
+        content_hash: str,
     ) -> None:
         self.storage_bucket = storage_bucket
         self.storage_path = storage_path
         self.public_url = public_url
         self.mime_type = mime_type
         self.file_size = file_size
+        self.content_hash = content_hash
 
 
 async def store_listing_image_upload(listing_id: str, upload_file: UploadFile) -> StoredFile:
@@ -73,4 +76,5 @@ async def store_listing_image_upload(listing_id: str, upload_file: UploadFile) -
         public_url=uploaded.public_url,
         mime_type=uploaded.mime_type,
         file_size=uploaded.file_size,
+        content_hash=sha256(content).hexdigest(),
     )

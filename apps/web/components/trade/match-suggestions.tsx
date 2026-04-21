@@ -37,7 +37,7 @@ export function MatchSuggestions({ matches }: MatchSuggestionsProps) {
                     {Math.round(match.match_score)}%
                   </p>
                   <p className="text-xs uppercase tracking-[0.12em] text-slate-500">
-                    match
+                    {match.status}
                   </p>
                 </div>
               </div>
@@ -47,6 +47,7 @@ export function MatchSuggestions({ matches }: MatchSuggestionsProps) {
                 <span>Price fit {Math.round(match.price_fit_score ?? 0)}%</span>
                 <span>Location fit {Math.round(match.location_fit_score ?? 0)}%</span>
                 <span>Item fit {Math.round(match.semantic_fit_score ?? 0)}%</span>
+                {match.contacted_at ? <span>Contacted {new Date(match.contacted_at).toLocaleDateString()}</span> : null}
               </div>
             </Link>
           ))}

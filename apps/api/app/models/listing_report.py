@@ -22,8 +22,23 @@ class ListingReport(UUIDPrimaryKeyMixin, Base):
         nullable=False,
         index=True,
     )
+    reporter_user_id: Mapped[str | None] = mapped_column(
+        Uuid(as_uuid=False),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     report_type: Mapped[str] = mapped_column(String(100), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="open", server_default="open")
+    moderator_user_id: Mapped[str | None] = mapped_column(
+        Uuid(as_uuid=False),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

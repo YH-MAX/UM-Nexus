@@ -87,6 +87,13 @@ class TradeIntelligenceGLMService:
         try:
             raw_result = self.client.generate_trade_decision(payload)
             normalized = normalize_trade_decision(raw_result, payload.get("fallback_result") or {})
+            normalized["metadata"] = {
+                **(normalized.get("metadata") or {}),
+                "provider": _provider_name(self.client),
+                "model": getattr(self.client, "model_name", None),
+                "used_fallback": False,
+                "generated_at": datetime.now(UTC).isoformat(),
+            }
             return TradeIntelligenceResult.model_validate(normalized)
         except ValidationError as exc:
             raise GLMProviderError("GLM decision payload failed normalized schema validation.") from exc
@@ -113,6 +120,7 @@ def build_multimodal_glm_payload(
     ]
     valid_public_image_urls = collect_public_image_urls(image_references)
     reports_count = repo.count_listing_reports(listing.id)
+    duplicate_image_count = repo.count_duplicate_image_hashes(listing.id)
     return {
         "listing": {
             "id": listing.id,
@@ -134,6 +142,7 @@ def build_multimodal_glm_payload(
             "location_context": _location_context(listing),
             "listing_age_hours": _listing_age_hours(listing),
             "reports_count": reports_count,
+            "duplicate_image_count": duplicate_image_count,
             "campus": "University of Malaya",
             "image_analysis": {
                 "mode": "multimodal" if valid_public_image_urls else "text_only",
@@ -149,7 +158,7 @@ def build_multimodal_glm_payload(
                     else "No valid public HTTPS image URL was available; GLM should analyze text and structured context only."
                 ),
             },
-            "risk_signals": _risk_signal_summary(listing, fallback_result, reports_count),
+            "risk_signals": _risk_signal_summary(listing, fallback_result, reports_count, duplicate_image_count),
         },
         "comparable_sales": [_sale_summary(sale) for sale in historical_sales[:12]],
         "candidate_wanted_posts": [_wanted_summary(wanted_post) for wanted_post in wanted_posts[:12]],
@@ -188,6 +197,9 @@ def normalize_trade_decision(raw_result: dict[str, Any], fallback_result: dict[s
         normalized = _deep_merge(normalized, deepcopy(fallback_result))
     if not isinstance(raw_result, dict):
         raise ValueError("GLM result must be a JSON object.")
+    raw_recommendation = raw_result.get("recommendation")
+    raw_risk_level_supplied = isinstance(raw_recommendation, dict) and raw_recommendation.get("risk_level") is not None
+    raw_risk_score_supplied = isinstance(raw_recommendation, dict) and raw_recommendation.get("risk_score") is not None
 
     for block_name in ("why", "expected_outcome", "action"):
         raw_block = raw_result.get(block_name)
@@ -197,12 +209,13 @@ def normalize_trade_decision(raw_result: dict[str, Any], fallback_result: dict[s
                 if value is not None:
                     normalized[block_name][key] = value
 
-    raw_recommendation = raw_result.get("recommendation")
     if isinstance(raw_recommendation, dict):
         normalized.setdefault("recommendation", {})
         for key in (
             "suggested_listing_price",
             "minimum_acceptable_price",
+            "sell_fast_price",
+            "risk_score",
             "fair_price_range",
             "risk_level",
         ):
@@ -231,11 +244,21 @@ def normalize_trade_decision(raw_result: dict[str, Any], fallback_result: dict[s
         recommendation.get("minimum_acceptable_price"),
         max(recommendation["suggested_listing_price"] * 0.78, 0.0),
     )
+    recommendation["sell_fast_price"] = _coerce_number(
+        recommendation.get("sell_fast_price"),
+        max(recommendation["minimum_acceptable_price"], recommendation["suggested_listing_price"] * 0.92),
+    )
     recommendation["risk_level"] = _normalize_choice(
         recommendation.get("risk_level"),
         RISK_LEVELS,
         "low",
     )
+    default_risk_score = _default_risk_score_for_level(recommendation["risk_level"])
+    if raw_risk_level_supplied and not raw_risk_score_supplied:
+        recommendation["risk_score"] = default_risk_score
+    else:
+        recommendation["risk_score"] = _coerce_number(recommendation.get("risk_score"), default_risk_score)
+    recommendation["risk_score"] = _align_risk_score(recommendation["risk_level"], recommendation["risk_score"])
     recommendation["best_match_candidates"] = recommendation.get("best_match_candidates") or []
     fair_range = recommendation.get("fair_price_range")
     if not isinstance(fair_range, dict):
@@ -252,17 +275,26 @@ def normalize_trade_decision(raw_result: dict[str, Any], fallback_result: dict[s
         "list_now",
     )
     action["action_reason"] = str(action.get("action_reason") or "The listing is ready for a campus resale decision.")
+    action["next_steps"] = [str(item) for item in action.get("next_steps") or [] if item is not None]
 
     why = normalized.setdefault("why", {})
     why.setdefault("similar_item_pattern", "Comparable evidence was limited, so the system used available campus context.")
     why.setdefault("condition_estimate", "Condition confidence is limited by the available listing details.")
     why.setdefault("local_demand_context", "Demand confidence is based on available wanted posts and campus location context.")
     why.setdefault("price_competitiveness", "Price competitiveness was normalized against the available fair-price signal.")
+    why["evidence"] = [str(item) for item in why.get("evidence") or [] if item is not None]
 
     expected = normalized.setdefault("expected_outcome", {})
     expected.setdefault("expected_time_to_sell", "5-10 days")
     expected.setdefault("expected_buyer_interest", "moderate")
     expected.setdefault("confidence_level", "medium")
+    expected["confidence_factors"] = [str(item) for item in expected.get("confidence_factors") or [] if item is not None]
+
+    metadata = normalized.setdefault("metadata", {})
+    metadata.setdefault("provider", "glm")
+    metadata.setdefault("model", None)
+    metadata.setdefault("used_fallback", False)
+    metadata.setdefault("generated_at", datetime.now(UTC).isoformat())
 
     return normalized
 
@@ -278,14 +310,20 @@ def _normalize_match_candidates(raw_candidates: list[Any], fallback_candidates: 
     for index, raw_candidate in enumerate(raw_candidates[:3]):
         if not isinstance(raw_candidate, dict):
             continue
-        fallback = fallback_by_id.get(raw_candidate.get("wanted_post_id"))
+        raw_id = raw_candidate.get("wanted_post_id")
+        fallback = fallback_by_id.get(raw_id)
+        if raw_id and fallback is None:
+            continue
         if fallback is None and index < len(fallback_candidates) and isinstance(fallback_candidates[index], dict):
             fallback = fallback_candidates[index]
+        if fallback is None:
+            continue
         base = deepcopy(fallback or {})
         for key, value in raw_candidate.items():
             if value is not None:
                 base[key] = value
-        base.setdefault("wanted_post_id", str(raw_candidate.get("wanted_post_id") or f"candidate-{index + 1}"))
+        if not base.get("wanted_post_id"):
+            continue
         base.setdefault("title", raw_candidate.get("title") or "Candidate wanted post")
         base.setdefault("match_score", 0.0)
         base.setdefault("price_fit_score", None)
@@ -298,7 +336,9 @@ def _normalize_match_candidates(raw_candidates: list[Any], fallback_candidates: 
         base.setdefault("final_match_confidence", raw_candidate.get("final_match_confidence") or "medium")
         base.setdefault("max_budget", None)
         base.setdefault("preferred_pickup_area", None)
-        normalized_candidates.append(base)
+        base["match_score"] = _coerce_number(base.get("match_score"), 0.0)
+        if base["match_score"] >= 58:
+            normalized_candidates.append(base)
 
     return normalized_candidates
 
@@ -308,6 +348,8 @@ def _default_trade_decision() -> dict[str, Any]:
         "recommendation": {
             "suggested_listing_price": 0.0,
             "minimum_acceptable_price": 0.0,
+            "sell_fast_price": 0.0,
+            "risk_score": 8.0,
             "fair_price_range": {"low": 0.0, "high": 0.0},
             "risk_level": "low",
             "best_match_candidates": [],
@@ -326,6 +368,13 @@ def _default_trade_decision() -> dict[str, Any]:
         "action": {
             "action_type": "list_now",
             "action_reason": "The listing is ready for a campus resale decision.",
+            "next_steps": [],
+        },
+        "metadata": {
+            "provider": "heuristic",
+            "model": None,
+            "used_fallback": False,
+            "generated_at": datetime.now(UTC).isoformat(),
         },
     }
 
@@ -358,6 +407,31 @@ def _normalize_choice(value: Any, allowed: tuple[str, ...], default: str) -> str
     }
     normalized = aliases.get(normalized, normalized)
     return normalized if normalized in allowed else default
+
+
+def _provider_name(client: GLMDecisionClient) -> str:
+    name = client.__class__.__name__.lower()
+    if "zai" in name:
+        return "zai"
+    if "demo" in name:
+        return "demo"
+    return name or "glm"
+
+
+def _default_risk_score_for_level(risk_level: str) -> float:
+    if risk_level == "high":
+        return 78.0
+    if risk_level == "medium":
+        return 48.0
+    return 18.0
+
+
+def _align_risk_score(risk_level: str, risk_score: float) -> float:
+    if risk_level == "high":
+        return round(max(float(risk_score), 75.0), 2)
+    if risk_level == "medium":
+        return round(min(max(float(risk_score), 40.0), 74.0), 2)
+    return round(min(float(risk_score), 34.0), 2)
 
 
 def retrieve_similar_examples(db: Session, listing: Listing, limit: int = 5) -> list[dict[str, Any]]:
@@ -439,10 +513,13 @@ def _risk_signal_summary(
     listing: Listing,
     fallback_result: TradeIntelligenceResult,
     reports_count: int,
+    duplicate_image_count: int,
 ) -> dict[str, Any]:
     return {
         "heuristic_risk_level": fallback_result.recommendation.risk_level,
+        "heuristic_risk_score": fallback_result.recommendation.risk_score,
         "reports_count": reports_count,
+        "duplicate_image_count": duplicate_image_count,
         "has_uploaded_image_metadata": bool(listing.images),
         "current_listing_price": float(listing.price),
         "suggested_listing_price": fallback_result.recommendation.suggested_listing_price,

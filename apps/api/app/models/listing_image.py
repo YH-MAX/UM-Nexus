@@ -24,6 +24,7 @@ class ListingImage(UUIDPrimaryKeyMixin, Base):
     )
     storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
     public_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
     created_at: Mapped[datetime] = mapped_column(

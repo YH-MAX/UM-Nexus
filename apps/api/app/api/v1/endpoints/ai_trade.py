@@ -4,9 +4,11 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.auth.dependencies import require_app_role, require_authenticated_user
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.integrations.glm_client import ZAIGLMClient
+from app.models import AppRole
 from app.schemas.trade_intelligence import EnrichListingAccepted, GLMTestResponse, TradeIntelligenceResultStatus
 from app.services.trade_evaluation import run_trade_evaluation
 from app.services.trade_intelligence import create_pending_trade_intelligence_run, get_trade_result_status
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 # Development-only endpoint for backend Z.AI connectivity checks.
 # Remove or protect this before exposing admin surfaces publicly.
 @router.get("/trade/test-glm", response_model=GLMTestResponse)
-def test_glm_endpoint() -> GLMTestResponse:
+def test_glm_endpoint(_admin=Depends(require_app_role(AppRole.ADMIN))) -> GLMTestResponse:
     settings = get_settings()
     try:
         client = ZAIGLMClient(settings)
@@ -35,8 +37,9 @@ def test_glm_endpoint() -> GLMTestResponse:
 def enrich_listing_endpoint(
     listing_id: UUID,
     db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
 ) -> EnrichListingAccepted:
-    accepted = create_pending_trade_intelligence_run(db, str(listing_id))
+    accepted = create_pending_trade_intelligence_run(db, str(listing_id), current_user)
     try:
         compute_trade_intelligence_task.delay(accepted.listing_id, accepted.agent_run_id)
     except Exception as exc:

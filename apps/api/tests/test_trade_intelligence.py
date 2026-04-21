@@ -1,6 +1,10 @@
+from uuid import uuid4
+
+from sqlalchemy import select
+
 from app.integrations.glm_client import DemoGLMClient
 from app.integrations.supabase_storage import SupabaseStoredFile
-from app.models import HistoricalSale, ListingEmbedding, ListingReport, MediaAsset
+from app.models import AppRole, HistoricalSale, ListingEmbedding, ListingReport, MediaAsset, Profile
 from app.services.embedding_service import make_demo_embedding_text
 from app.services import storage_service as storage_module
 from app.services.trade_intelligence_glm_service import retrieve_similar_examples
@@ -9,6 +13,7 @@ from scripts.seed_trade_demo import HISTORICAL_SALES, LISTINGS, WANTED_POSTS
 
 
 AUTHLESS_HEADERS: dict[str, str] = {}
+AUTH_HEADERS = {"Authorization": "Bearer test-token"}
 
 
 def listing_payload() -> dict:
@@ -39,13 +44,13 @@ def wanted_post_payload() -> dict:
 
 
 def create_listing(client, payload: dict | None = None) -> dict:
-    response = client.post("/api/v1/listings", json=payload or listing_payload(), headers=AUTHLESS_HEADERS)
+    response = client.post("/api/v1/listings", json=payload or listing_payload(), headers=AUTH_HEADERS)
     assert response.status_code == 201
     return response.json()
 
 
 def create_wanted_post(client, payload: dict | None = None) -> dict:
-    response = client.post("/api/v1/wanted-posts", json=payload or wanted_post_payload(), headers=AUTHLESS_HEADERS)
+    response = client.post("/api/v1/wanted-posts", json=payload or wanted_post_payload(), headers=AUTH_HEADERS)
     assert response.status_code == 201
     return response.json()
 
@@ -53,6 +58,7 @@ def create_wanted_post(client, payload: dict | None = None) -> dict:
 def add_image(client, listing_id: str) -> None:
     response = client.post(
         f"/api/v1/listings/{listing_id}/images",
+        headers=AUTH_HEADERS,
         json={"storage_path": "demo/listings/casio-fx570ex.jpg", "is_primary": True},
     )
     assert response.status_code == 201
@@ -70,7 +76,7 @@ def seed_historical_sales(db_session, item_name: str = "scientific calculator", 
 
 
 def enrich_and_fetch_result(client, listing_id: str) -> dict:
-    response = client.post(f"/api/v1/ai/trade/enrich-listing/{listing_id}")
+    response = client.post(f"/api/v1/ai/trade/enrich-listing/{listing_id}", headers=AUTH_HEADERS)
     assert response.status_code == 202
     accepted = response.json()
     assert accepted["status"] == "accepted"
@@ -83,19 +89,25 @@ def enrich_and_fetch_result(client, listing_id: str) -> dict:
     return body["result"]
 
 
-def test_create_listing_without_auth(client) -> None:
+def test_create_listing_uses_authenticated_user(client, token_verifier) -> None:
     listing = create_listing(client)
 
     assert listing["title"] == "Casio FX-570EX calculator"
-    assert listing["seller_id"] == "00000000-0000-4000-8000-000000000001"
+    assert listing["seller_id"] == str(token_verifier.claims.sub)
     assert listing["is_ai_enriched"] is False
 
 
-def test_create_wanted_post_without_auth(client) -> None:
+def test_create_listing_requires_auth(client) -> None:
+    response = client.post("/api/v1/listings", json=listing_payload(), headers=AUTHLESS_HEADERS)
+
+    assert response.status_code == 401
+
+
+def test_create_wanted_post_uses_authenticated_user(client, token_verifier) -> None:
     wanted_post = create_wanted_post(client)
 
     assert wanted_post["title"] == "Looking for Casio calculator near FSKTM"
-    assert wanted_post["buyer_id"] == "00000000-0000-4000-8000-000000000001"
+    assert wanted_post["buyer_id"] == str(token_verifier.claims.sub)
 
 
 def test_upload_listing_image_metadata(client) -> None:
@@ -103,6 +115,7 @@ def test_upload_listing_image_metadata(client) -> None:
 
     response = client.post(
         f"/api/v1/listings/{listing['id']}/images",
+        headers=AUTH_HEADERS,
         json={
             "storage_path": "demo/listings/casio-fx570ex.jpg",
             "public_url": None,
@@ -134,6 +147,7 @@ def test_real_image_upload_persists_listing_image_and_media_asset(client, db_ses
 
     response = client.post(
         f"/api/v1/listings/{listing['id']}/images",
+        headers=AUTH_HEADERS,
         files={"file": ("rice-cooker.jpg", b"fake-image-bytes", "image/jpeg")},
         data={"sort_order": "0", "is_primary": "true"},
     )
@@ -156,6 +170,7 @@ def test_real_image_upload_rejects_unsupported_file(client) -> None:
 
     response = client.post(
         f"/api/v1/listings/{listing['id']}/images",
+        headers=AUTH_HEADERS,
         files={"file": ("notes.txt", b"not-image", "text/plain")},
         data={"sort_order": "0", "is_primary": "true"},
     )
@@ -259,13 +274,111 @@ def test_async_enrich_listing_flow_returns_accepted(client, db_session) -> None:
     seed_historical_sales(db_session)
     listing = create_listing(client)
 
-    response = client.post(f"/api/v1/ai/trade/enrich-listing/{listing['id']}")
+    response = client.post(f"/api/v1/ai/trade/enrich-listing/{listing['id']}", headers=AUTH_HEADERS)
 
     assert response.status_code == 202
     body = response.json()
     assert body["listing_id"] == listing["id"]
     assert body["agent_run_id"]
     assert body["status"] == "accepted"
+
+
+def test_enrich_listing_for_other_user_forbidden(client, db_session, token_verifier) -> None:
+    listing = create_listing(client)
+    token_verifier.claims = token_verifier.claims.model_copy(
+        update={"sub": uuid4(), "email": "other@siswa.um.edu.my"}
+    )
+
+    response = client.post(f"/api/v1/ai/trade/enrich-listing/{listing['id']}", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+
+
+def test_authenticated_trade_flow_apply_contact_and_complete(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+    add_image(client, listing["id"])
+    create_wanted_post(client)
+    result = enrich_and_fetch_result(client, listing["id"])
+
+    apply_response = client.post(
+        f"/api/v1/listings/{listing['id']}/apply-recommended-price",
+        headers=AUTH_HEADERS,
+    )
+    assert apply_response.status_code == 200
+    assert apply_response.json()["accepted_recommended_price"] == result["recommendation"]["suggested_listing_price"]
+
+    matches_response = client.get(f"/api/v1/listings/{listing['id']}/matches")
+    match_id = matches_response.json()[0]["id"]
+    contact_response = client.post(
+        f"/api/v1/matches/{match_id}/contact",
+        headers=AUTH_HEADERS,
+        json={"message": "Can we meet at FSKTM today?"},
+    )
+    assert contact_response.status_code == 200
+    transaction = contact_response.json()
+    assert transaction["status"] == "contacted"
+
+    complete_response = client.patch(
+        f"/api/v1/trade-transactions/{transaction['id']}",
+        headers=AUTH_HEADERS,
+        json={
+            "status": "completed",
+            "agreed_price": result["recommendation"]["suggested_listing_price"],
+            "followed_ai_recommendation": True,
+        },
+    )
+
+    assert complete_response.status_code == 200
+    assert complete_response.json()["completed_at"] is not None
+    assert db_session.query(HistoricalSale).filter(HistoricalSale.source_type == "transaction").count() == 1
+
+
+def test_report_submission_and_moderation_review(client, db_session, token_verifier) -> None:
+    listing = create_listing(client)
+
+    report_response = client.post(
+        f"/api/v1/listings/{listing['id']}/reports",
+        headers=AUTH_HEADERS,
+        json={"report_type": "suspicious_payment", "reason": "Seller asks for payment before meetup."},
+    )
+    assert report_response.status_code == 201
+
+    forbidden_response = client.get("/api/v1/moderation/listings", headers=AUTH_HEADERS)
+    assert forbidden_response.status_code == 403
+
+    profile = db_session.scalar(select(Profile).where(Profile.user_id == str(token_verifier.claims.sub)))
+    profile.app_role = AppRole.MODERATOR
+    db_session.add(profile)
+    db_session.commit()
+
+    queue_response = client.get("/api/v1/moderation/listings", headers=AUTH_HEADERS)
+    assert queue_response.status_code == 200
+    assert any(item["listing"]["id"] == listing["id"] for item in queue_response.json())
+
+    review_response = client.patch(
+        f"/api/v1/moderation/listings/{listing['id']}/review",
+        headers=AUTH_HEADERS,
+        json={"status": "resolved", "moderation_status": "approved", "resolution": "Seller verified."},
+    )
+
+    assert review_response.status_code == 200
+    assert review_response.json()["moderation_status"] == "approved"
+
+
+def test_trade_dashboard_returns_owned_state(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+    create_wanted_post(client)
+    enrich_and_fetch_result(client, listing["id"])
+
+    response = client.get("/api/v1/users/me/trade-dashboard", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["listings"]) == 1
+    assert len(body["wanted_posts"]) == 1
+    assert body["matches"]
 
 
 def test_fetch_trade_result_pending_vs_completed(client, db_session) -> None:

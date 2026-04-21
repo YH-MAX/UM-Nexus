@@ -55,6 +55,37 @@ services:
     ports:
       - "${API_PORT:-8001}:8000"
 
+  worker:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    command: celery -A app.tasks.celery_app.celery_app worker --loglevel=info -P solo
+    environment:
+      APP_ENV: ${APP_ENV}
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CELERY_TASK_ALWAYS_EAGER: "false"
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_JWKS_URL: ${SUPABASE_JWKS_URL}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-listing-images}
+      ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS}
+      GLM_PROVIDER: ${GLM_PROVIDER:-demo}
+      ZAI_API_KEY: ${ZAI_API_KEY}
+      ZAI_BASE_URL: ${ZAI_BASE_URL:-}
+      ZAI_MODEL: ${ZAI_MODEL:-glm-4.6v}
+      ZAI_TIMEOUT_SECONDS: ${ZAI_TIMEOUT_SECONDS:-60}
+      ZAI_MAX_RETRIES: ${ZAI_MAX_RETRIES:-2}
+      UPLOAD_STORAGE_DIR: ${UPLOAD_STORAGE_DIR:-storage/uploads}
+      UPLOAD_PUBLIC_BASE_URL: ${UPLOAD_PUBLIC_BASE_URL:-http://localhost:8001/uploads}
+      MAX_UPLOAD_FILE_SIZE_BYTES: ${MAX_UPLOAD_FILE_SIZE_BYTES:-5242880}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   web:
     build:
       context: ../../apps/web

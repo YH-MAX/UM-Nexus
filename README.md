@@ -65,6 +65,7 @@ Required backend variables:
 ```env
 GLM_PROVIDER=zai
 ZAI_API_KEY=your_zai_api_key
+ZAI_BASE_URL=https://api.z.ai/api/paas/v4
 ZAI_MODEL=glm-4.6v
 ZAI_TIMEOUT_SECONDS=60
 ZAI_MAX_RETRIES=2
@@ -73,7 +74,7 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 SUPABASE_STORAGE_BUCKET=listing-images
 ```
 
-`GLM_PROVIDER=demo` keeps the offline deterministic demo provider. Setting `GLM_PROVIDER=zai`, or providing `ZAI_API_KEY` for local backend runs, switches enrichment to the Z.AI provider. Change `ZAI_MODEL` to switch models later without code changes. `ZAI_BASE_URL` is optional and should usually be left empty because the SDK already defaults to Z.AI's production endpoint.
+`GLM_PROVIDER=demo` keeps the offline deterministic demo provider. Setting `GLM_PROVIDER=zai`, or providing `ZAI_API_KEY` for local backend runs, switches enrichment to the Z.AI provider. Change `ZAI_MODEL` to switch models later without code changes. `ZAI_BASE_URL` defaults to Z.AI's production endpoint: `https://api.z.ai/api/paas/v4`.
 
 Connectivity check:
 

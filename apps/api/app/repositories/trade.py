@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
@@ -14,7 +14,9 @@ from app.models import (
     ListingImage,
     ListingReport,
     MediaAsset,
+    TradeDecisionFeedback,
     TradeMatch,
+    TradeTransaction,
     WantedPost,
     WantedPostEmbedding,
 )
@@ -30,11 +32,68 @@ class TradeRepository:
         self.db.commit()
         return self.get_listing_or_none(listing.id) or listing
 
-    def list_listings(self, status: str = "active") -> Sequence[Listing]:
+    def list_listings(
+        self,
+        *,
+        status: str | None = "active",
+        category: str | None = None,
+        search: str | None = None,
+        min_price: float | None = None,
+        max_price: float | None = None,
+        pickup_area: str | None = None,
+        risk_level: str | None = None,
+        sort: str = "newest",
+    ) -> Sequence[Listing]:
         stmt = (
             select(Listing)
             .options(selectinload(Listing.images))
-            .where(Listing.status == status)
+        )
+        if status:
+            stmt = stmt.where(Listing.status == status)
+        if category:
+            stmt = stmt.where(Listing.category == category)
+        if pickup_area:
+            stmt = stmt.where(Listing.pickup_area == pickup_area)
+        if risk_level:
+            stmt = stmt.where(Listing.risk_level == risk_level)
+        if min_price is not None:
+            stmt = stmt.where(Listing.price >= min_price)
+        if max_price is not None:
+            stmt = stmt.where(Listing.price <= max_price)
+        if search:
+            pattern = f"%{search.lower()}%"
+            stmt = stmt.where(
+                or_(
+                    func.lower(Listing.title).like(pattern),
+                    func.lower(Listing.item_name).like(pattern),
+                    func.lower(Listing.brand).like(pattern),
+                    func.lower(Listing.description).like(pattern),
+                )
+            )
+        if sort == "price_asc":
+            stmt = stmt.order_by(asc(Listing.price), desc(Listing.created_at))
+        elif sort == "price_desc":
+            stmt = stmt.order_by(desc(Listing.price), desc(Listing.created_at))
+        elif sort == "risk":
+            stmt = stmt.order_by(desc(Listing.risk_score), desc(Listing.created_at))
+        else:
+            stmt = stmt.order_by(desc(Listing.created_at))
+        return self.db.scalars(stmt).all()
+
+    def list_listings_by_seller(self, seller_id: str) -> Sequence[Listing]:
+        stmt = (
+            select(Listing)
+            .options(selectinload(Listing.images))
+            .where(Listing.seller_id == seller_id)
+            .order_by(desc(Listing.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
+    def list_listings_by_category(self, category: str, status: str = "active") -> Sequence[Listing]:
+        stmt = (
+            select(Listing)
+            .options(selectinload(Listing.images))
+            .where(Listing.category == category, Listing.status == status)
             .order_by(desc(Listing.created_at))
         )
         return self.db.scalars(stmt).all()
@@ -78,6 +137,10 @@ class TradeRepository:
 
     def list_wanted_posts(self, status: str = "active") -> Sequence[WantedPost]:
         stmt = select(WantedPost).where(WantedPost.status == status).order_by(desc(WantedPost.created_at))
+        return self.db.scalars(stmt).all()
+
+    def list_wanted_posts_by_buyer(self, buyer_id: str) -> Sequence[WantedPost]:
+        stmt = select(WantedPost).where(WantedPost.buyer_id == buyer_id).order_by(desc(WantedPost.created_at))
         return self.db.scalars(stmt).all()
 
     def list_wanted_posts_by_category(self, category: str, status: str = "active") -> Sequence[WantedPost]:
@@ -138,6 +201,17 @@ class TradeRepository:
             .where(TradeMatch.id == trade_match_id)
         )
         return self.db.scalar(stmt)
+
+    def list_matches_for_user(self, user_id: str) -> Sequence[TradeMatch]:
+        stmt = (
+            select(TradeMatch)
+            .join(Listing, TradeMatch.listing_id == Listing.id)
+            .join(WantedPost, TradeMatch.wanted_post_id == WantedPost.id)
+            .options(selectinload(TradeMatch.wanted_post), selectinload(TradeMatch.listing))
+            .where(or_(Listing.seller_id == user_id, WantedPost.buyer_id == user_id))
+            .order_by(desc(TradeMatch.updated_at), desc(TradeMatch.match_score))
+        )
+        return self.db.scalars(stmt).all()
 
     def create_agent_run(self, values: dict) -> AgentRun:
         agent_run = AgentRun(**values)
@@ -214,12 +288,83 @@ class TradeRepository:
         stmt = select(func.count()).select_from(ListingReport).where(ListingReport.listing_id == listing_id)
         return int(self.db.scalar(stmt) or 0)
 
+    def count_duplicate_image_hashes(self, listing_id: str) -> int:
+        hashes_stmt = select(ListingImage.content_hash).where(
+            ListingImage.listing_id == listing_id,
+            ListingImage.content_hash.is_not(None),
+        )
+        hashes = [value for value in self.db.scalars(hashes_stmt).all() if value]
+        if not hashes:
+            return 0
+        stmt = (
+            select(func.count())
+            .select_from(ListingImage)
+            .where(ListingImage.listing_id != listing_id, ListingImage.content_hash.in_(hashes))
+        )
+        return int(self.db.scalar(stmt) or 0)
+
     def create_listing_report(self, values: dict) -> ListingReport:
         report = ListingReport(**values)
         self.db.add(report)
         self.db.commit()
         self.db.refresh(report)
         return report
+
+    def list_reports_for_listing(self, listing_id: str) -> Sequence[ListingReport]:
+        stmt = (
+            select(ListingReport)
+            .where(ListingReport.listing_id == listing_id)
+            .order_by(desc(ListingReport.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
+    def list_moderation_listings(self) -> Sequence[Listing]:
+        stmt = (
+            select(Listing)
+            .options(selectinload(Listing.images), selectinload(Listing.reports))
+            .where(
+                or_(
+                    Listing.moderation_status != "approved",
+                    Listing.risk_level == "high",
+                    Listing.reports.any(ListingReport.status == "open"),
+                )
+            )
+            .order_by(desc(Listing.risk_score), desc(Listing.updated_at))
+        )
+        return self.db.scalars(stmt).all()
+
+    def create_trade_transaction(self, values: dict) -> TradeTransaction:
+        transaction = TradeTransaction(**values)
+        self.db.add(transaction)
+        self.db.commit()
+        self.db.refresh(transaction)
+        return transaction
+
+    def get_trade_transaction_or_none(self, transaction_id: str) -> TradeTransaction | None:
+        return self.db.get(TradeTransaction, transaction_id)
+
+    def list_transactions_for_user(self, user_id: str) -> Sequence[TradeTransaction]:
+        stmt = (
+            select(TradeTransaction)
+            .where(or_(TradeTransaction.seller_id == user_id, TradeTransaction.buyer_id == user_id))
+            .order_by(desc(TradeTransaction.updated_at), desc(TradeTransaction.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
+    def update_trade_transaction(self, transaction: TradeTransaction, values: dict) -> TradeTransaction:
+        for field_name, value in values.items():
+            setattr(transaction, field_name, value)
+        self.db.add(transaction)
+        self.db.commit()
+        self.db.refresh(transaction)
+        return transaction
+
+    def create_decision_feedback(self, values: dict) -> TradeDecisionFeedback:
+        feedback = TradeDecisionFeedback(**values)
+        self.db.add(feedback)
+        self.db.commit()
+        self.db.refresh(feedback)
+        return feedback
 
     def upsert_listing_embedding(
         self,

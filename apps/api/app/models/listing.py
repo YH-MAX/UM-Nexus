@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Numeric, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Numeric, String, Text, Uuid
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -47,8 +48,17 @@ class Listing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", server_default="active")
     risk_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=0, server_default="0")
     risk_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    risk_evidence: Mapped[dict[str, Any] | None] = mapped_column(JsonPayload, nullable=True)
+    moderation_status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="approved",
+        server_default="approved",
+    )
     suggested_listing_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     minimum_acceptable_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    accepted_recommended_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    recommendation_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ai_explanation_cache: Mapped[dict[str, Any] | None] = mapped_column(JsonPayload, nullable=True)
     is_ai_enriched: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 

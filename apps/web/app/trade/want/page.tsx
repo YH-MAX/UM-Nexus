@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { RequireAuthCard } from "@/components/auth/require-auth-card";
+import { useAuth } from "@/components/auth/auth-provider";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   createWantedPost,
@@ -13,6 +15,7 @@ import {
 
 export default function WantPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -57,8 +60,12 @@ export default function WantPage() {
   return (
     <TradeShell
       title="Create a wanted post"
-      description="Wanted posts give the match engine demand signals for budget, location, and item fit."
+      description="Tell the engine what you want so sellers can see stronger demand, budget, and pickup signals."
     >
+      {!user ? (
+        <RequireAuthCard description="Sign in with your UM account before creating buyer wanted posts." />
+      ) : null}
+      {user ? (
       <form
         className="grid gap-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
         onSubmit={handleSubmit}
@@ -95,6 +102,7 @@ export default function WantPage() {
           {isSubmitting ? "Creating..." : "Create wanted post"}
         </button>
       </form>
+      ) : null}
     </TradeShell>
   );
 }

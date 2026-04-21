@@ -16,6 +16,7 @@ from app.core.exceptions import ConfigurationError, ExternalProviderError
 
 
 logger = logging.getLogger(__name__)
+DEFAULT_ZAI_BASE_URL = "https://api.z.ai/api/paas/v4"
 
 
 class GLMProviderError(ExternalProviderError):
@@ -153,13 +154,16 @@ class ZAIGLMClient:
         )
 
     def _create_sdk_client(self) -> ZaiClient:
+        base_url = (self.settings.zai_base_url or "").strip() or DEFAULT_ZAI_BASE_URL
+        parsed_base_url = urlparse(base_url)
+        if parsed_base_url.scheme not in {"http", "https"} or not parsed_base_url.netloc:
+            raise ConfigurationError("ZAI_BASE_URL must be a full http(s) URL.")
         kwargs: dict[str, Any] = {
             "api_key": self.settings.zai_api_key,
+            "base_url": base_url,
             "timeout": self.settings.zai_timeout_seconds,
             "max_retries": self.settings.zai_max_retries,
         }
-        if self.settings.zai_base_url:
-            kwargs["base_url"] = self.settings.zai_base_url
         return ZaiClient(**kwargs)
 
     def _chat_completion(

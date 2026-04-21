@@ -16,6 +16,18 @@ type AuthFormProps = {
 
 const allowedDomains = getAllowedEmailDomainsFromEnv();
 
+function formatAuthErrorMessage(message: string | undefined): string {
+  if (!message) {
+    return "Authentication failed. Please try again.";
+  }
+
+  if (message.toLowerCase().includes("failed to fetch")) {
+    return "Cannot reach Supabase Auth. Check the Supabase project URL/public key and make sure the project is active, then restart the web app.";
+  }
+
+  return message;
+}
+
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const { supabase } = useAuth();
@@ -50,7 +62,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         });
 
         if (signUpError) {
-          setError(signUpError.message);
+          setError(formatAuthErrorMessage(signUpError.message));
           return;
         }
 
@@ -72,12 +84,18 @@ export function AuthForm({ mode }: AuthFormProps) {
       });
 
       if (signInError) {
-        setError(signInError.message);
+        setError(formatAuthErrorMessage(signInError.message));
         return;
       }
 
       router.push("/");
       router.refresh();
+    } catch (authError) {
+      setError(
+        formatAuthErrorMessage(
+          authError instanceof Error ? authError.message : undefined,
+        ),
+      );
     } finally {
       setIsSubmitting(false);
     }

@@ -1,8 +1,11 @@
+import { createBrowserSupabaseClient } from "@/lib/supabase/browser-client";
+
 export type ListingImage = {
   id: string;
   listing_id: string;
   storage_path: string;
   public_url: string | null;
+  content_hash: string | null;
   sort_order: number;
   is_primary: boolean;
   created_at: string;
@@ -25,8 +28,12 @@ export type Listing = {
   status: string;
   risk_score: number;
   risk_level: string | null;
+  risk_evidence: Record<string, unknown> | null;
+  moderation_status: string;
   suggested_listing_price: number | null;
   minimum_acceptable_price: number | null;
+  accepted_recommended_price: number | null;
+  recommendation_applied_at: string | null;
   ai_explanation_cache: Record<string, unknown> | null;
   is_ai_enriched: boolean;
   created_at: string;
@@ -76,6 +83,9 @@ export type TradeMatch = {
   semantic_fit_score: number | null;
   status: string;
   explanation: string | null;
+  contacted_by_user_id: string | null;
+  contacted_at: string | null;
+  contact_message: string | null;
   created_at: string;
   updated_at: string;
   wanted_post: WantedPost;
@@ -85,6 +95,8 @@ export type TradeResult = {
   recommendation: {
     suggested_listing_price: number;
     minimum_acceptable_price: number;
+    sell_fast_price: number | null;
+    risk_score: number | null;
     fair_price_range: {
       low: number;
       high: number;
@@ -97,11 +109,13 @@ export type TradeResult = {
     condition_estimate: string;
     local_demand_context: string;
     price_competitiveness: string;
+    evidence: string[];
   };
   expected_outcome: {
     expected_time_to_sell: string;
     expected_buyer_interest: string;
     confidence_level: string;
+    confidence_factors: string[];
   };
   action: {
     action_type:
@@ -111,6 +125,13 @@ export type TradeResult = {
       | "match_with_buyers"
       | "flag_for_review";
     action_reason: string;
+    next_steps: string[];
+  };
+  metadata: {
+    provider: string;
+    model: string | null;
+    used_fallback: boolean;
+    generated_at: string | null;
   };
 };
 
@@ -266,6 +287,48 @@ export type WantedPostPayload = {
   residential_college?: string;
 };
 
+export type ListingReport = {
+  id: string;
+  listing_id: string;
+  reporter_user_id: string | null;
+  report_type: string;
+  reason: string | null;
+  status: string;
+  moderator_user_id: string | null;
+  resolution: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+};
+
+export type TradeTransaction = {
+  id: string;
+  listing_id: string;
+  trade_match_id: string | null;
+  seller_id: string;
+  buyer_id: string;
+  status: string;
+  agreed_price: number | null;
+  currency: string;
+  seller_feedback: string | null;
+  buyer_feedback: string | null;
+  followed_ai_recommendation: boolean | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TradeDashboard = {
+  listings: Listing[];
+  wanted_posts: WantedPost[];
+  matches: TradeMatch[];
+  transactions: TradeTransaction[];
+};
+
+export type ModerationListing = {
+  listing: Listing;
+  reports: ListingReport[];
+};
+
 export const tradeCategories = [
   { value: "textbooks", label: "Textbooks" },
   { value: "electronics", label: "Electronics" },
@@ -284,11 +347,20 @@ export const pickupAreas = [
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001/api/v1";
 
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  const supabase = createBrowserSupabaseClient();
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const authHeaders = await getAuthHeaders();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders,
       ...init?.headers,
     },
     cache: "no-store",
@@ -322,8 +394,15 @@ export function formatMoney(value: number | null | undefined, currency = "MYR") 
   }).format(value);
 }
 
-export async function getListings(): Promise<Listing[]> {
-  return fetchJson<Listing[]>("/listings");
+export async function getListings(filters: Record<string, string> = {}): Promise<Listing[]> {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value) {
+      params.set(key, value);
+    }
+  });
+  const query = params.toString();
+  return fetchJson<Listing[]>(`/listings${query ? `?${query}` : ""}`);
 }
 
 export async function getListing(id: string): Promise<Listing> {
@@ -362,9 +441,11 @@ export async function uploadListingImage(
   formData.append("sort_order", String(options.sortOrder ?? 0));
   formData.append("is_primary", String(options.isPrimary ?? false));
 
+  const authHeaders = await getAuthHeaders();
   const response = await fetch(`${API_BASE_URL}/listings/${listingId}/images`, {
     method: "POST",
     body: formData,
+    headers: authHeaders,
   });
 
   if (!response.ok) {
@@ -394,6 +475,66 @@ export async function getWantedPost(id: string): Promise<WantedPost> {
 
 export async function getListingMatches(id: string): Promise<TradeMatch[]> {
   return fetchJson<TradeMatch[]>(`/listings/${id}/matches`);
+}
+
+export async function applyRecommendedPrice(id: string): Promise<Listing> {
+  return fetchJson<Listing>(`/listings/${id}/apply-recommended-price`, {
+    method: "POST",
+  });
+}
+
+export async function reportListing(
+  id: string,
+  payload: { report_type: string; reason?: string },
+): Promise<ListingReport> {
+  return fetchJson<ListingReport>(`/listings/${id}/reports`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function contactMatch(
+  id: string,
+  payload: { message?: string },
+): Promise<TradeTransaction> {
+  return fetchJson<TradeTransaction>(`/matches/${id}/contact`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateTradeTransaction(
+  id: string,
+  payload: {
+    status?: string;
+    agreed_price?: number;
+    seller_feedback?: string;
+    buyer_feedback?: string;
+    followed_ai_recommendation?: boolean;
+  },
+): Promise<TradeTransaction> {
+  return fetchJson<TradeTransaction>(`/trade-transactions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getTradeDashboard(): Promise<TradeDashboard> {
+  return fetchJson<TradeDashboard>("/users/me/trade-dashboard");
+}
+
+export async function getModerationListings(): Promise<ModerationListing[]> {
+  return fetchJson<ModerationListing[]>("/moderation/listings");
+}
+
+export async function reviewModerationListing(
+  id: string,
+  payload: { status: string; moderation_status?: string; resolution?: string },
+): Promise<Listing> {
+  return fetchJson<Listing>(`/moderation/listings/${id}/review`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function enrichListing(id: string): Promise<EnrichListingAccepted> {

@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { RequireAuthCard } from "@/components/auth/require-auth-card";
+import { useAuth } from "@/components/auth/auth-provider";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   createListing,
@@ -19,6 +21,7 @@ type PreviewFile = {
 
 export default function SellPage() {
   const router = useRouter();
+  const { user } = useAuth();
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -97,8 +100,12 @@ export default function SellPage() {
   return (
     <TradeShell
       title="Create a sell listing"
-      description="Upload item photos and listing details. Demo mode uses the fixed campus test user."
+      description="Upload item photos and listing details so Trade Intelligence can price, match, and screen the item."
     >
+      {!user ? (
+        <RequireAuthCard description="Sign in with your UM account before creating seller listings." />
+      ) : null}
+      {user ? (
       <form
         className="grid gap-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
         onSubmit={handleSubmit}
@@ -167,6 +174,7 @@ export default function SellPage() {
           {isSubmitting ? "Creating..." : "Create listing"}
         </button>
       </form>
+      ) : null}
     </TradeShell>
   );
 }

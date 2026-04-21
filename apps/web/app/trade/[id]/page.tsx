@@ -7,12 +7,15 @@ import { StatusPill } from "@/components/trade/status-pill";
 import { TradeResultCard } from "@/components/trade/trade-result-card";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
+  applyRecommendedPrice,
+  contactMatch,
   enrichListing,
   formatCategory,
   formatMoney,
   getListing,
   getListingMatches,
   getTradeResultStatus,
+  reportListing,
   type Listing,
   type TradeMatch,
   type TradeResultStatus,
@@ -30,6 +33,8 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
   const [matches, setMatches] = useState<TradeMatch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [isActing, setIsActing] = useState(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const primaryImage =
     listing?.images.find((image) => image.is_primary) ?? listing?.images[0] ?? null;
@@ -103,6 +108,61 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
     }
   }
 
+  async function handleApplyPrice() {
+    setIsActing(true);
+    setError(null);
+    setActionNotice(null);
+    try {
+      const updated = await applyRecommendedPrice(params.id);
+      setListing(updated);
+      setActionNotice("Recommended price applied to this listing.");
+      await loadData();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to apply recommended price.");
+    } finally {
+      setIsActing(false);
+    }
+  }
+
+  async function handleReportListing() {
+    setIsActing(true);
+    setError(null);
+    setActionNotice(null);
+    try {
+      await reportListing(params.id, {
+        report_type: "suspicious_listing",
+        reason: "Reported from listing detail for moderator review.",
+      });
+      setActionNotice("Report submitted for moderator review.");
+      await loadData();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to report listing.");
+    } finally {
+      setIsActing(false);
+    }
+  }
+
+  async function handleContactTopMatch() {
+    const topMatch = matches[0];
+    if (!topMatch) {
+      return;
+    }
+    setIsActing(true);
+    setError(null);
+    setActionNotice(null);
+    try {
+      await contactMatch(topMatch.id, {
+        message: "I am interested in this AI-ranked campus resale match.",
+      });
+      setActionNotice("Match contacted and transaction intent recorded.");
+      await loadData();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to contact this match.");
+    } finally {
+      setIsActing(false);
+    }
+  }
+
   return (
     <TradeShell
       title={listing?.title ?? "Listing detail"}
@@ -111,6 +171,11 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
       {error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           {error}
+        </div>
+      ) : null}
+      {actionNotice ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          {actionNotice}
         </div>
       ) : null}
 
@@ -266,6 +331,32 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
               >
                 {isEnriching ? "Enqueueing..." : "Enrich Listing"}
               </button>
+              <div className="mt-3 grid gap-2">
+                <button
+                  className="w-full rounded-lg border border-emerald-700 bg-white px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+                  disabled={isActing || !resultStatus?.result}
+                  onClick={() => void handleApplyPrice()}
+                  type="button"
+                >
+                  Apply suggested price
+                </button>
+                <button
+                  className="w-full rounded-lg border border-cyan-700 bg-white px-4 py-3 text-sm font-semibold text-cyan-900 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
+                  disabled={isActing || matches.length === 0}
+                  onClick={() => void handleContactTopMatch()}
+                  type="button"
+                >
+                  Contact top match
+                </button>
+                <button
+                  className="w-full rounded-lg border border-rose-300 bg-white px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                  disabled={isActing}
+                  onClick={() => void handleReportListing()}
+                  type="button"
+                >
+                  Report listing
+                </button>
+              </div>
               <div className="mt-5 grid gap-3">
                 <SideMetric label="AI status" value={resultStatus?.status?.replaceAll("_", " ") ?? "not started"} />
                 <SideMetric
@@ -277,6 +368,7 @@ export default function ListingDetailPage({ params }: ListingDetailPageProps) {
                   }
                 />
                 <SideMetric label="Risk score" value={String(Math.round(listing.risk_score))} />
+                <SideMetric label="Moderation" value={listing.moderation_status.replaceAll("_", " ")} />
                 <SideMetric label="Listing status" value={listing.status} />
                 <SideMetric label="Brand" value={listing.brand ?? "Not specified"} />
                 <SideMetric label="Model" value={listing.model ?? "Not specified"} />

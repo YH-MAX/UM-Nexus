@@ -91,6 +91,9 @@ export function TradeResultCard({
             <StatusPill tone="good">
               {result.expected_outcome.confidence_level} confidence
             </StatusPill>
+            {result.metadata.used_fallback ? (
+              <StatusPill tone="warn">fallback used</StatusPill>
+            ) : null}
           </div>
         </div>
       </div>
@@ -110,9 +113,9 @@ export function TradeResultCard({
         />
         <DecisionMetric
           accent="amber"
-          label="Fair comparable range"
-          value={`${formatMoney(result.recommendation.fair_price_range.low, currency)} - ${formatMoney(result.recommendation.fair_price_range.high, currency)}`}
-          detail="Historical campus band"
+          label="Sell-fast price"
+          value={formatMoney(result.recommendation.sell_fast_price, currency)}
+          detail={`${formatMoney(result.recommendation.fair_price_range.low, currency)} - ${formatMoney(result.recommendation.fair_price_range.high, currency)} fair band`}
         />
         <DecisionMetric
           accent="indigo"
@@ -131,6 +134,16 @@ export function TradeResultCard({
             <Reason title="Local demand" body={result.why.local_demand_context} />
             <Reason title="Price competitiveness" body={result.why.price_competitiveness} />
           </div>
+          {result.why.evidence.length > 0 ? (
+            <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <h4 className="text-sm font-semibold text-slate-950">Decision evidence</h4>
+              <ul className="mt-2 space-y-2 text-sm leading-5 text-slate-600">
+                {result.why.evidence.slice(0, 4).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
 
         <div className="p-5">
@@ -174,6 +187,16 @@ export function TradeResultCard({
               ))}
             </div>
           )}
+          {result.action.next_steps.length > 0 ? (
+            <div className="mt-5 rounded-lg border border-emerald-100 bg-emerald-50 p-4">
+              <h4 className="text-sm font-semibold text-emerald-950">Next steps</h4>
+              <ul className="mt-2 space-y-2 text-sm leading-5 text-emerald-900">
+                {result.action.next_steps.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       </div>
     </section>
