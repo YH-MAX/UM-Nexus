@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_authenticated_user
 from app.db.session import get_db
+from app.schemas.listing import ListingRead
+from app.schemas.trade_product import WantedListingRecommendation
 from app.schemas.wanted_post import WantedPostCreate, WantedPostRead
+from app.services.trade_intelligence import recommend_listings_for_wanted_post
 from app.services.trade_service import create_wanted_post, get_wanted_post, list_wanted_posts
 
 
@@ -33,3 +36,27 @@ def get_wanted_post_endpoint(
     db: Session = Depends(get_db),
 ) -> WantedPostRead:
     return WantedPostRead.model_validate(get_wanted_post(db, str(wanted_post_id)))
+
+
+@router.get("/{wanted_post_id}/recommended-listings", response_model=list[WantedListingRecommendation])
+def get_wanted_post_recommendations_endpoint(
+    wanted_post_id: UUID,
+    db: Session = Depends(get_db),
+) -> list[WantedListingRecommendation]:
+    return [
+        WantedListingRecommendation(
+            listing=ListingRead.model_validate(item["listing"]),
+            match_score=item["match_score"],
+            price_fit_score=item["price_fit_score"],
+            location_fit_score=item["location_fit_score"],
+            semantic_fit_score=item["semantic_fit_score"],
+            final_match_confidence=item["final_match_confidence"],
+            explanation=item["explanation"],
+            price_fit_summary=item["price_fit_summary"],
+            location_fit_summary=item["location_fit_summary"],
+            item_fit_summary=item["item_fit_summary"],
+            risk_note=item["risk_note"],
+            recommended_action=item["recommended_action"],
+        )
+        for item in recommend_listings_for_wanted_post(db, str(wanted_post_id))
+    ]

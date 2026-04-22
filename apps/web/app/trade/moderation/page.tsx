@@ -10,19 +10,24 @@ import {
   formatCategory,
   formatMoney,
   getModerationListings,
+  getModerationSummary,
   reviewModerationListing,
   type ModerationListing,
+  type ModerationSummary,
 } from "@/lib/trade/api";
 
 export default function TradeModerationPage() {
   const { isLoading: isAuthLoading, user } = useAuth();
   const [items, setItems] = useState<ModerationListing[]>([]);
+  const [summary, setSummary] = useState<ModerationSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function loadQueue() {
-    setItems(await getModerationListings());
+    const [nextItems, nextSummary] = await Promise.all([getModerationListings(), getModerationSummary()]);
+    setItems(nextItems);
+    setSummary(nextSummary);
   }
 
   useEffect(() => {
@@ -91,6 +96,14 @@ export default function TradeModerationPage() {
         </section>
       ) : user ? (
         <section className="grid gap-5">
+          {summary ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Metric label="High risk" value={summary.high_risk_count} />
+              <Metric label="Pending review" value={summary.pending_review_count} />
+              <Metric label="Rejected" value={summary.rejected_count} />
+              <Metric label="Approved" value={summary.approved_count} />
+            </div>
+          ) : null}
           {items.map(({ listing, reports }) => (
             <article className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm" key={listing.id}>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -133,9 +146,7 @@ export default function TradeModerationPage() {
               <div className="mt-4 grid gap-3 lg:grid-cols-2">
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <h3 className="text-sm font-semibold text-slate-950">Risk evidence</h3>
-                  <pre className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-600">
-                    {JSON.stringify(listing.risk_evidence ?? {}, null, 2)}
-                  </pre>
+                  <RiskCards evidence={listing.risk_evidence} />
                 </div>
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                   <h3 className="text-sm font-semibold text-slate-950">Reports</h3>
@@ -160,4 +171,72 @@ export default function TradeModerationPage() {
       ) : null}
     </TradeShell>
   );
+}
+
+function Metric({ label, value }: Readonly<{ label: string; value: number }>) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function RiskCards({ evidence }: Readonly<{ evidence: Record<string, unknown> | null }>) {
+  const cards = riskCards(evidence);
+  if (cards.length === 0) {
+    return <p className="mt-2 text-sm text-slate-600">No structured evidence recorded yet.</p>;
+  }
+  return (
+    <div className="mt-3 grid gap-2">
+      {cards.map((card) => (
+        <div className="rounded-lg bg-white p-3 text-sm text-slate-700" key={card.title}>
+          <p className="font-semibold text-slate-950">{card.title}</p>
+          <p className="mt-1 leading-5">{card.body}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function riskCards(evidence: Record<string, unknown> | null): Array<{ title: string; body: string }> {
+  if (!evidence) {
+    return [];
+  }
+  const cards: Array<{ title: string; body: string }> = [];
+  const rawEvidence = evidence.evidence;
+  if (Array.isArray(rawEvidence)) {
+    for (const item of rawEvidence.slice(0, 5)) {
+      const text = String(item);
+      const lowered = text.toLowerCase();
+      let title = "Decision evidence";
+      if (lowered.includes("price")) {
+        title = "Abnormal pricing";
+      } else if (lowered.includes("image")) {
+        title = "Image trust signal";
+      } else if (lowered.includes("report")) {
+        title = "User report";
+      } else if (lowered.includes("risk")) {
+        title = "Risk score";
+      } else if (lowered.includes("suspicious") || lowered.includes("counterfeit")) {
+        title = "Suspicious wording";
+      }
+      cards.push({ title, body: text });
+    }
+  }
+  const duplicateCount = Number(evidence.duplicate_image_count ?? 0);
+  if (duplicateCount > 0) {
+    cards.push({
+      title: "Duplicated image",
+      body: `${duplicateCount} duplicate image signal(s) were found across listing media.`,
+    });
+  }
+  const action = evidence.recommended_action;
+  if (typeof action === "string") {
+    cards.push({
+      title: "Recommended moderation action",
+      body: action.replaceAll("_", " "),
+    });
+  }
+  return cards;
 }

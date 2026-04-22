@@ -62,8 +62,9 @@ class SupabaseStorageClient:
                 await client.aclose()
 
         if response.status_code not in {200, 201}:
+            body_preview = response.text[:300].replace("\n", " ").strip()
             raise ExternalProviderError(
-                f"Supabase Storage upload failed with status {response.status_code}."
+                f"Supabase Storage upload failed with status {response.status_code}: {body_preview}"
             )
 
         return SupabaseStoredFile(
@@ -123,4 +124,3 @@ def _normalize_storage_path(storage_path: str) -> str:
 
 def _quote_storage_path(storage_path: str) -> str:
     return "/".join(quote(part, safe="") for part in _normalize_storage_path(storage_path).split("/"))
-

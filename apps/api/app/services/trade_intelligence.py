@@ -6,19 +6,23 @@ from decimal import Decimal, ROUND_HALF_UP
 from math import ceil
 from re import findall
 from statistics import median
+from types import SimpleNamespace
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.integrations.glm_client import GLMProviderError
+from app.core.config import get_settings
+from app.integrations.glm_client import GLMProviderError, get_glm_client
 from app.models import AgentRun, HistoricalSale, Listing, TradeMatch, WantedPost
 from app.models.user import User
 from app.repositories.trade import TradeRepository
 from app.schemas.trade_intelligence import (
     EnrichListingAccepted,
     MatchCandidate,
+    PriceSimulationResponse,
     TradeIntelligenceResult,
     TradeIntelligenceResultStatus,
+    TradeProviderStatus,
 )
 from app.services.embedding_service import make_demo_embedding_text
 from app.services.trade_intelligence_glm_service import build_multimodal_glm_payload, generate_glm_trade_result
@@ -229,12 +233,143 @@ def get_trade_result_status(db: Session, listing_id: str) -> TradeIntelligenceRe
     )
 
 
+def get_trade_provider_status(db: Session, *, live_check: bool = False) -> TradeProviderStatus:
+    settings = get_settings()
+    provider = "zai" if settings.should_use_zai_provider else "demo"
+    status_label = "configured" if settings.should_use_zai_provider else "demo"
+    message = "Provider settings are configured; live check was not requested."
+    last_success = (
+        db.query(AgentRun)
+        .filter(
+            AgentRun.agent_name == "trade_intelligence_orchestrator",
+            AgentRun.status == "completed",
+        )
+        .order_by(AgentRun.finished_at.desc(), AgentRun.created_at.desc())
+        .first()
+    )
+
+    if live_check:
+        try:
+            client = get_glm_client(settings)
+            if hasattr(client, "health_check"):
+                message = str(client.health_check())  # type: ignore[attr-defined]
+            else:
+                message = "Demo GLM provider is available."
+            status_label = "healthy"
+        except Exception as exc:
+            status_label = "unhealthy"
+            message = str(exc)
+
+    return TradeProviderStatus(
+        provider=provider,
+        model=settings.zai_model if settings.should_use_zai_provider else "demo-glm-trade-intelligence",
+        status=status_label,
+        should_use_zai_provider=settings.should_use_zai_provider,
+        fallback_mode="deterministic-campus-pricing-v1",
+        live_checked=live_check,
+        last_successful_call_at=last_success.finished_at if last_success else None,
+        message=message,
+    )
+
+
 def list_matches_for_listing(db: Session, listing_id: str) -> list[TradeMatch]:
     repo = TradeRepository(db)
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
     return list(repo.list_matches_for_listing(listing_id))
+
+
+def recommend_listings_for_wanted_post(db: Session, wanted_post_id: str) -> list[dict]:
+    repo = TradeRepository(db)
+    wanted_post = repo.get_wanted_post_or_none(wanted_post_id)
+    if wanted_post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted post not found")
+
+    recommendations: list[dict] = []
+    historical_sales = list(repo.list_historical_sales_for_category(wanted_post.category))
+    for listing in repo.list_listings_by_category(wanted_post.category):
+        if listing.status != "active":
+            continue
+        pricing = _pricing_decision(listing, historical_sales)
+        candidates, _match_values = _score_matches(listing, [wanted_post], pricing)
+        if not candidates:
+            continue
+        candidate = candidates[0]
+        if candidate.match_score < MIN_SUGGESTED_MATCH_SCORE:
+            continue
+        risk_note = _buyer_risk_note(listing)
+        recommendations.append(
+            {
+                "listing": listing,
+                "match_score": candidate.match_score,
+                "price_fit_score": candidate.price_fit_score,
+                "location_fit_score": candidate.location_fit_score,
+                "semantic_fit_score": candidate.semantic_fit_score,
+                "final_match_confidence": candidate.final_match_confidence,
+                "explanation": candidate.explanation,
+                "price_fit_summary": candidate.price_fit_summary,
+                "location_fit_summary": candidate.location_fit_summary,
+                "item_fit_summary": candidate.item_fit_summary,
+                "risk_note": risk_note,
+                "recommended_action": _buyer_recommended_action(listing, pricing, candidate),
+            }
+        )
+
+    recommendations.sort(key=lambda item: (item["match_score"], item["price_fit_score"] or 0), reverse=True)
+    return recommendations
+
+
+def simulate_listing_price(
+    db: Session,
+    listing_id: str,
+    proposed_price: float,
+) -> PriceSimulationResponse:
+    repo = TradeRepository(db)
+    listing = repo.get_listing_or_none(listing_id)
+    if listing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+
+    simulated_listing = SimpleNamespace(
+        id=listing.id,
+        seller_id=listing.seller_id,
+        title=listing.title,
+        description=listing.description,
+        category=listing.category,
+        item_name=listing.item_name,
+        brand=listing.brand,
+        model=listing.model,
+        condition_label=listing.condition_label,
+        price=Decimal(str(proposed_price)),
+        currency=listing.currency,
+        pickup_area=listing.pickup_area,
+        residential_college=listing.residential_college,
+        status=listing.status,
+        images=listing.images,
+        created_at=listing.created_at,
+    )
+    result, _matches, _risk_score = build_trade_intelligence_result(
+        listing=simulated_listing,  # type: ignore[arg-type]
+        wanted_posts=list(repo.list_wanted_posts_by_category(listing.category)),
+        historical_sales=list(repo.list_historical_sales_for_category(listing.category)),
+        reports_count=repo.count_listing_reports(listing.id),
+        duplicate_image_count=repo.count_duplicate_image_hashes(listing.id),
+    )
+    return PriceSimulationResponse(
+        listing_id=listing.id,
+        proposed_price=proposed_price,
+        current_price=float(listing.price),
+        suggested_listing_price=result.recommendation.suggested_listing_price,
+        minimum_acceptable_price=result.recommendation.minimum_acceptable_price,
+        fair_price_range=result.recommendation.fair_price_range,
+        price_competitiveness=result.why.price_competitiveness,
+        expected_time_to_sell=result.expected_outcome.expected_time_to_sell,
+        expected_buyer_interest=result.expected_outcome.expected_buyer_interest,
+        risk_level=result.recommendation.risk_level,
+        action_type=result.action.action_type,
+        action_reason=result.action.action_reason,
+        confidence_level=result.expected_outcome.confidence_level,
+    )
 
 
 def generate_listing_source_text(db: Session, listing_id: str) -> str:
@@ -355,6 +490,9 @@ def build_trade_intelligence_result(
             "model": "deterministic-campus-pricing-v1",
             "used_fallback": False,
             "generated_at": datetime.now(UTC),
+            "analysis_mode": "heuristic_text_structured_context",
+            "image_analysis_skipped": not bool(listing.images),
+            "data_source": "historical_sales_and_wanted_posts",
         },
     )
     return result, match_values, risk.risk_score
@@ -578,6 +716,27 @@ def _recommended_candidates(candidates: list[MatchCandidate]) -> list[MatchCandi
     ]
 
 
+def _buyer_risk_note(listing: Listing) -> str:
+    risk_level = listing.risk_level or "unscored"
+    if risk_level == "high":
+        return "High trust risk: review seller details or wait for moderation before contacting."
+    if risk_level == "medium":
+        return "Medium trust risk: ask for clearer photos or proof before committing."
+    if listing.risk_score and float(listing.risk_score) >= 35:
+        return "Some trust signals need checking before pickup."
+    return "Low visible risk based on current listing signals."
+
+
+def _buyer_recommended_action(listing: Listing, pricing: PricingDecision, candidate: MatchCandidate) -> str:
+    if listing.risk_level == "high":
+        return "wait_for_review"
+    if float(listing.price) > pricing.fair_high * 1.12:
+        return "negotiate_price"
+    if candidate.match_score >= MIN_RECOMMENDED_MATCH_SCORE:
+        return "contact_seller"
+    return "watch_listing"
+
+
 def _price_fit_score(price: float, max_budget: float | None) -> float:
     if max_budget is None:
         return 68.0
@@ -799,6 +958,9 @@ def _risk_evidence_payload(
         "recommended_action": result.action.action_type,
         "generated_at": result.metadata.generated_at.isoformat() if result.metadata.generated_at else None,
         "used_fallback": result.metadata.used_fallback,
+        "analysis_mode": result.metadata.analysis_mode,
+        "image_analysis_skipped": result.metadata.image_analysis_skipped,
+        "data_source": result.metadata.data_source,
     }
 
 
@@ -811,6 +973,9 @@ def _mark_fallback_result(result: TradeIntelligenceResult, error_message: str) -
         "model": "deterministic-campus-pricing-v1",
         "used_fallback": True,
         "generated_at": datetime.now(UTC).isoformat(),
+        "analysis_mode": "deterministic_fallback",
+        "image_analysis_skipped": True,
+        "data_source": "heuristic_resale_context",
     }
     data.setdefault("action", {}).setdefault("next_steps", [])
     data["action"]["next_steps"].append("Review the recommendation once the GLM provider is available again.")

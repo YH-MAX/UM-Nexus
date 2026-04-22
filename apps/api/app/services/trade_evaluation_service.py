@@ -44,7 +44,7 @@ DEFAULT_BENCHMARK_CASES: list[dict[str, Any]] = [
         "condition_label": "good",
         "pickup_area": "library",
         "residential_college": "KK2",
-        "image_urls": ["https://placehold.co/800x600/png?text=Data+Structures+Book"],
+        "image_urls": ["https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=900&q=80"],
         "expected_price_min": 36,
         "expected_price_max": 55,
         "expected_risk_level": "low",
@@ -62,7 +62,7 @@ DEFAULT_BENCHMARK_CASES: list[dict[str, Any]] = [
         "condition_label": "good",
         "pickup_area": "FSKTM",
         "residential_college": "KK12",
-        "image_urls": ["https://placehold.co/800x600/png?text=Casio+Calculator"],
+        "image_urls": ["https://images.unsplash.com/photo-1587145820266-a5951ee6f620?auto=format&fit=crop&w=900&q=80"],
         "expected_price_min": 45,
         "expected_price_max": 70,
         "expected_risk_level": "medium",
@@ -80,7 +80,7 @@ DEFAULT_BENCHMARK_CASES: list[dict[str, Any]] = [
         "condition_label": "good",
         "pickup_area": "KK",
         "residential_college": "KK7",
-        "image_urls": ["https://placehold.co/800x600/png?text=Rice+Cooker"],
+        "image_urls": ["https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=900&q=80"],
         "expected_price_min": 40,
         "expected_price_max": 60,
         "expected_risk_level": "medium",
@@ -134,7 +134,7 @@ DEFAULT_BENCHMARK_CASES: list[dict[str, Any]] = [
         "condition_label": "good",
         "pickup_area": "KK",
         "residential_college": "KK7",
-        "image_urls": ["https://placehold.co/800x600/png?text=KK+Rice+Cooker"],
+        "image_urls": ["https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?auto=format&fit=crop&w=900&q=80"],
         "expected_price_min": 40,
         "expected_price_max": 60,
         "expected_risk_level": "low",
@@ -152,7 +152,7 @@ DEFAULT_BENCHMARK_CASES: list[dict[str, Any]] = [
         "condition_label": "good",
         "pickup_area": "faculty_pickup",
         "residential_college": "KK9",
-        "image_urls": ["https://placehold.co/800x600/png?text=USB-C+Hub"],
+        "image_urls": ["https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80"],
         "expected_price_min": 35,
         "expected_price_max": 55,
         "expected_risk_level": "low",
@@ -170,7 +170,7 @@ DEFAULT_BENCHMARK_CASES: list[dict[str, Any]] = [
         "condition_label": "fair",
         "pickup_area": "KK",
         "residential_college": "KK10",
-        "image_urls": ["https://placehold.co/800x600/png?text=Mini+Fridge"],
+        "image_urls": ["https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=900&q=80"],
         "expected_price_min": 125,
         "expected_price_max": 180,
         "expected_risk_level": "low",
@@ -252,13 +252,19 @@ WANTED_CONTEXT = [
 
 def seed_benchmark_cases(db: Session) -> list[BenchmarkCase]:
     get_or_create_demo_user(db)
-    created = False
+    changed = False
     for item in DEFAULT_BENCHMARK_CASES:
         existing = db.get(BenchmarkCase, item["id"])
         if existing is None:
             db.add(BenchmarkCase(**item))
-            created = True
-    if created:
+            changed = True
+        else:
+            for key, value in item.items():
+                if getattr(existing, key) != value:
+                    setattr(existing, key, value)
+                    changed = True
+            db.add(existing)
+    if changed:
         db.commit()
     return list_benchmark_cases(db)
 

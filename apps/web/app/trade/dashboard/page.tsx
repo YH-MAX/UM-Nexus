@@ -20,11 +20,22 @@ export default function TradeDashboardPage() {
   const [dashboard, setDashboard] = useState<TradeDashboard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
+  const [transactionDrafts, setTransactionDrafts] = useState<Record<string, { agreedPrice: string; followedAi: boolean }>>({});
   const [error, setError] = useState<string | null>(null);
 
   async function loadDashboard() {
     const nextDashboard = await getTradeDashboard();
     setDashboard(nextDashboard);
+    setTransactionDrafts((current) => {
+      const next = { ...current };
+      for (const transaction of nextDashboard.transactions) {
+        next[transaction.id] ??= {
+          agreedPrice: transaction.agreed_price ? String(Math.round(transaction.agreed_price)) : "",
+          followedAi: transaction.followed_ai_recommendation ?? true,
+        };
+      }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -51,13 +62,19 @@ export default function TradeDashboardPage() {
   }, [isAuthLoading, user]);
 
   async function markCompleted(transaction: TradeTransaction) {
+    const draft = transactionDrafts[transaction.id];
+    const agreedPrice = Number(draft?.agreedPrice);
+    if (!Number.isFinite(agreedPrice) || agreedPrice <= 0) {
+      setError("Enter an agreed price before completing the transaction.");
+      return;
+    }
     setIsUpdating(transaction.id);
     setError(null);
     try {
       await updateTradeTransaction(transaction.id, {
         status: "completed",
-        agreed_price: transaction.agreed_price ?? undefined,
-        followed_ai_recommendation: transaction.followed_ai_recommendation ?? undefined,
+        agreed_price: agreedPrice,
+        followed_ai_recommendation: draft?.followedAi ?? true,
       });
       await loadDashboard();
     } catch (nextError) {
@@ -92,7 +109,15 @@ export default function TradeDashboardPage() {
             <Metric label="My listings" value={dashboard.listings.length} />
             <Metric label="Wanted posts" value={dashboard.wanted_posts.length} />
             <Metric label="Suggested matches" value={dashboard.matches.length} />
-            <Metric label="Transactions" value={dashboard.transactions.length} />
+            <Metric label="AI sales closed" value={dashboard.metrics.completed_sales_after_ai_recommendation} />
+          </section>
+          <section className="grid gap-4 sm:grid-cols-3">
+            <SmallMetric label="Recommendations accepted" value={dashboard.metrics.recommendations_accepted} />
+            <SmallMetric label="Decision feedback" value={dashboard.metrics.decision_feedback_count} />
+            <SmallMetric
+              label="Avg price adjustment"
+              value={dashboard.metrics.average_price_adjustment === null ? "No data" : formatMoney(dashboard.metrics.average_price_adjustment)}
+            />
           </section>
 
           <section className="grid gap-5 lg:grid-cols-2">
@@ -170,14 +195,51 @@ export default function TradeDashboardPage() {
                       {transaction.completed_at ? <StatusPill tone="good">completed</StatusPill> : <StatusPill tone="warn">open</StatusPill>}
                     </div>
                     {!transaction.completed_at ? (
-                      <button
-                        className="mt-3 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                        disabled={isUpdating === transaction.id}
-                        onClick={() => void markCompleted(transaction)}
-                        type="button"
-                      >
-                        {isUpdating === transaction.id ? "Updating..." : "Mark completed"}
-                      </button>
+                      <div className="mt-3 grid gap-3">
+                        <label className="text-sm font-semibold text-slate-700">
+                          Agreed price
+                          <input
+                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                            min="1"
+                            onChange={(event) =>
+                              setTransactionDrafts((current) => ({
+                                ...current,
+                                [transaction.id]: {
+                                  agreedPrice: event.target.value,
+                                  followedAi: current[transaction.id]?.followedAi ?? true,
+                                },
+                              }))
+                            }
+                            type="number"
+                            value={transactionDrafts[transaction.id]?.agreedPrice ?? ""}
+                          />
+                        </label>
+                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                          <input
+                            checked={transactionDrafts[transaction.id]?.followedAi ?? true}
+                            onChange={(event) =>
+                              setTransactionDrafts((current) => ({
+                                ...current,
+                                [transaction.id]: {
+                                  agreedPrice: current[transaction.id]?.agreedPrice ?? "",
+                                  followedAi: event.target.checked,
+                                },
+                              }))
+                            }
+                            type="checkbox"
+                          />
+                          Followed AI recommendation
+                        </label>
+                        <RevenueDelta dashboard={dashboard} transaction={transaction} draft={transactionDrafts[transaction.id]} />
+                        <button
+                          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                          disabled={isUpdating === transaction.id}
+                          onClick={() => void markCompleted(transaction)}
+                          type="button"
+                        >
+                          {isUpdating === transaction.id ? "Updating..." : "Mark completed"}
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 ))
@@ -196,6 +258,39 @@ function Metric({ label, value }: Readonly<{ label: string; value: number }>) {
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className="mt-2 text-3xl font-semibold text-slate-950">{value}</p>
     </div>
+  );
+}
+
+function SmallMetric({ label, value }: Readonly<{ label: string; value: number | string }>) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-2 text-lg font-semibold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function RevenueDelta({
+  dashboard,
+  transaction,
+  draft,
+}: Readonly<{
+  dashboard: TradeDashboard;
+  transaction: TradeTransaction;
+  draft?: { agreedPrice: string; followedAi: boolean };
+}>) {
+  const listing = dashboard.listings.find((item) => item.id === transaction.listing_id);
+  const suggestedPrice = listing?.suggested_listing_price;
+  const agreedPrice = Number(draft?.agreedPrice);
+  if (!suggestedPrice || !Number.isFinite(agreedPrice) || agreedPrice <= 0) {
+    return null;
+  }
+  const delta = agreedPrice - suggestedPrice;
+  return (
+    <p className={`text-sm font-semibold ${delta >= 0 ? "text-emerald-800" : "text-amber-800"}`}>
+      {delta >= 0 ? "+" : ""}
+      {formatMoney(delta, listing.currency)} versus AI suggested price
+    </p>
   );
 }
 

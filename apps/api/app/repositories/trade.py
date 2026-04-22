@@ -194,6 +194,15 @@ class TradeRepository:
         )
         return self.db.scalars(stmt).all()
 
+    def list_matches_for_wanted_post(self, wanted_post_id: str) -> Sequence[TradeMatch]:
+        stmt = (
+            select(TradeMatch)
+            .options(selectinload(TradeMatch.wanted_post), selectinload(TradeMatch.listing).selectinload(Listing.images))
+            .where(TradeMatch.wanted_post_id == wanted_post_id)
+            .order_by(desc(TradeMatch.match_score), desc(TradeMatch.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
     def get_trade_match_or_none(self, trade_match_id: str) -> TradeMatch | None:
         stmt = (
             select(TradeMatch)
@@ -365,6 +374,14 @@ class TradeRepository:
         self.db.commit()
         self.db.refresh(feedback)
         return feedback
+
+    def list_decision_feedback_for_user(self, user_id: str) -> Sequence[TradeDecisionFeedback]:
+        stmt = (
+            select(TradeDecisionFeedback)
+            .where(TradeDecisionFeedback.user_id == user_id)
+            .order_by(desc(TradeDecisionFeedback.created_at))
+        )
+        return self.db.scalars(stmt).all()
 
     def upsert_listing_embedding(
         self,

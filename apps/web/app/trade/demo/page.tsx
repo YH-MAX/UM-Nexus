@@ -7,22 +7,26 @@ import {
   formatCategory,
   formatMoney,
   getTradeEvaluationCases,
+  getTradeProviderStatus,
   runTradeEvaluation,
   type BenchmarkCaseDetail,
+  type TradeProviderStatus,
 } from "@/lib/trade/api";
 
 export default function TradeDemoPage() {
   const [cases, setCases] = useState<BenchmarkCaseDetail[]>([]);
+  const [providerStatus, setProviderStatus] = useState<TradeProviderStatus | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    void getTradeEvaluationCases()
-      .then((items) => {
+    void Promise.all([getTradeEvaluationCases(), getTradeProviderStatus()])
+      .then(([items, status]) => {
         if (isMounted) {
           setCases(items);
+          setProviderStatus(status);
         }
       })
       .catch((nextError) => {
@@ -79,12 +83,40 @@ export default function TradeDemoPage() {
         ) : null}
       </section>
 
+      <section className="grid gap-4 lg:grid-cols-3">
+        <ProviderCard status={providerStatus} />
+        <EvidenceCard label="Validation mode" value="Scenario-based" detail="Benchmark labels represent common UM resale decisions." />
+        <EvidenceCard label="Decision pillars" value="3" detail="Pricing, matching, and trust/risk are shown together." />
+      </section>
+
       <section className="space-y-5">
         {cases.slice(0, 5).map((item) => (
           <DemoCase key={item.case.id} detail={item} />
         ))}
       </section>
     </TradeShell>
+  );
+}
+
+function ProviderCard({ status }: Readonly<{ status: TradeProviderStatus | null }>) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">GLM provider</p>
+      <p className="mt-2 text-lg font-semibold text-slate-950">{status?.provider ?? "loading"} · {status?.model ?? ""}</p>
+      <p className="mt-1 text-sm text-slate-600">
+        {status ? `${status.status.replaceAll("_", " ")} with ${status.fallback_mode} fallback` : "Checking provider configuration."}
+      </p>
+    </div>
+  );
+}
+
+function EvidenceCard({ label, value, detail }: Readonly<{ label: string; value: string; detail: string }>) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
+      <p className="mt-2 text-lg font-semibold text-slate-950">{value}</p>
+      <p className="mt-1 text-sm text-slate-600">{detail}</p>
+    </div>
   );
 }
 

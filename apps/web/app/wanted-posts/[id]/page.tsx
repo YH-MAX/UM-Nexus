@@ -9,6 +9,8 @@ import {
   formatCategory,
   formatMoney,
   getWantedPost,
+  getWantedPostRecommendations,
+  type WantedListingRecommendation,
   type WantedPost,
 } from "@/lib/trade/api";
 
@@ -22,16 +24,18 @@ export default function WantedPostDetailPage({
   params,
 }: WantedPostDetailPageProps) {
   const [wantedPost, setWantedPost] = useState<WantedPost | null>(null);
+  const [recommendations, setRecommendations] = useState<WantedListingRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    void getWantedPost(params.id)
-      .then((post) => {
+    void Promise.all([getWantedPost(params.id), getWantedPostRecommendations(params.id)])
+      .then(([post, items]) => {
         if (isMounted) {
           setWantedPost(post);
+          setRecommendations(items);
           setError(null);
         }
       })
@@ -68,6 +72,7 @@ export default function WantedPostDetailPage({
           Loading wanted post...
         </div>
       ) : wantedPost ? (
+        <div className="grid gap-5">
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -106,6 +111,59 @@ export default function WantedPostDetailPage({
             Back to listings
           </Link>
         </section>
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-950">Best listings for this wanted post</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Ranked by item fit, price compatibility, pickup convenience, risk, and listing freshness.
+              </p>
+            </div>
+            <StatusPill tone={recommendations.length > 0 ? "good" : "warn"}>
+              {recommendations.length} recommendation(s)
+            </StatusPill>
+          </div>
+          {recommendations.length === 0 ? (
+            <p className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+              No strong listing match yet. The engine suppresses weak matches so buyers do not waste time.
+            </p>
+          ) : (
+            <div className="mt-4 grid gap-3">
+              {recommendations.map((item) => (
+                <Link
+                  className="rounded-lg border border-slate-200 p-4 transition hover:border-emerald-300"
+                  href={`/trade/${item.listing.id}`}
+                  key={item.listing.id}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold text-slate-950">{item.listing.title}</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {formatMoney(item.listing.price, item.listing.currency)} · {item.listing.pickup_area ?? "Pickup TBD"}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-emerald-700 px-3 py-2 text-right text-white">
+                      <p className="text-lg font-semibold">{Math.round(item.match_score)}%</p>
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-emerald-100">
+                        {item.final_match_confidence}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm leading-5 text-slate-600 md:grid-cols-2">
+                    <p>{item.item_fit_summary}</p>
+                    <p>{item.price_fit_summary}</p>
+                    <p>{item.location_fit_summary}</p>
+                    <p>{item.risk_note}</p>
+                  </div>
+                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                    Next action: {item.recommended_action.replaceAll("_", " ")}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+        </div>
       ) : null}
     </TradeShell>
   );

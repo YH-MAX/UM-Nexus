@@ -27,9 +27,14 @@ class GLMDecisionClient(Protocol):
     def generate_trade_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Return a decision result using the canonical Trade Intelligence shape."""
 
+    def generate_sell_listing_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Return a seller-approved listing draft using the sell-agent shape."""
+
 
 class DemoGLMClient:
     """Demo multimodal GLM stand-in that preserves local offline behavior."""
+
+    model_name = "demo-glm"
 
     def generate_trade_decision(self, payload: dict[str, Any]) -> dict[str, Any]:
         fallback = payload["fallback_result"]
@@ -48,6 +53,20 @@ class DemoGLMClient:
         fallback["why"]["local_demand_context"] = (
             f"Demo GLM checked {candidate_count} candidate wanted post(s). "
             f"{fallback['why']['local_demand_context']}"
+        )
+        return fallback
+
+    def generate_sell_listing_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
+        fallback = payload["fallback_draft"]
+        image_count = len(payload.get("draft_image_references", []))
+        comparable_count = len(payload.get("historical_comparable_sales", []))
+        fallback["assistant_message"] = (
+            f"Demo GLM drafted this listing from {image_count} image reference(s) "
+            f"and {comparable_count} campus comparable(s). Please review before publishing."
+        )
+        fallback["why"]["condition_estimate"] = (
+            f"Demo GLM considered seller clues and {image_count} uploaded image reference(s). "
+            f"{fallback['why']['condition_estimate']}"
         )
         return fallback
 
@@ -153,6 +172,35 @@ class ZAIGLMClient:
             prompt=prompt,
         )
 
+    def generate_sell_listing_draft(self, payload: dict[str, Any]) -> dict[str, Any]:
+        prompt = payload.get("prompt") or _build_fallback_prompt(payload)
+        public_image_urls = collect_public_image_urls(payload.get("draft_image_references") or [])
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for image_url in public_image_urls:
+            content.append({"type": "image_url", "image_url": {"url": image_url}})
+
+        response = self._chat_completion(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are the UM Nexus Sell Agent. Create seller-approved campus resale "
+                        "listing drafts and return only valid JSON."
+                    ),
+                },
+                {"role": "user", "content": content},
+            ],
+            response_format={"type": "json_object"},
+            metadata={
+                "purpose": "sell-agent-draft",
+                "image_count": len(public_image_urls),
+                "category_hint": payload.get("category_hint"),
+                "comparable_count": len(payload.get("historical_comparable_sales") or []),
+                "candidate_count": len(payload.get("candidate_wanted_posts") or []),
+            },
+        )
+        return _extract_json_response(response)
+
     def _create_sdk_client(self) -> ZaiClient:
         base_url = (self.settings.zai_base_url or "").strip() or DEFAULT_ZAI_BASE_URL
         parsed_base_url = urlparse(base_url)
@@ -200,11 +248,25 @@ class ZAIGLMClient:
         except APIResponseValidationError as exc:
             raise GLMProviderError("Z.AI returned a malformed response.") from exc
         except APIStatusError as exc:
+            response_body = ""
+            response = getattr(exc, "response", None)
+            if response is not None:
+                try:
+                    response_body = response.text[:500].replace("\n", " ").strip()
+                except Exception:
+                    response_body = ""
             logger.warning(
                 "Z.AI SDK request failed with provider status",
-                extra={"model": self.settings.zai_model, "status_code": exc.status_code},
+                extra={
+                    "model": self.settings.zai_model,
+                    "status_code": exc.status_code,
+                    "response_body": response_body,
+                },
             )
-            raise GLMProviderError(f"Z.AI request failed for model {self.settings.zai_model} with status {exc.status_code}.") from exc
+            detail = f" with response: {response_body}" if response_body else ""
+            raise GLMProviderError(
+                f"Z.AI request failed for model {self.settings.zai_model} with status {exc.status_code}{detail}."
+            ) from exc
         except ZaiError as exc:
             logger.warning("Z.AI SDK request failed", extra={"model": self.settings.zai_model, "error_type": type(exc).__name__})
             raise GLMProviderError(f"Z.AI request failed for model {self.settings.zai_model}.") from exc

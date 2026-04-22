@@ -1,3 +1,4 @@
+import json
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -6,6 +7,7 @@ from app.integrations.glm_client import DemoGLMClient
 from app.integrations.supabase_storage import SupabaseStoredFile
 from app.models import AppRole, HistoricalSale, ListingEmbedding, ListingReport, MediaAsset, Profile
 from app.services.embedding_service import make_demo_embedding_text
+from app.services import sell_agent_service as sell_agent_module
 from app.services import storage_service as storage_module
 from app.services.trade_intelligence_glm_service import retrieve_similar_examples
 from app.services.trade_intelligence import create_pending_trade_intelligence_run
@@ -179,6 +181,199 @@ def test_real_image_upload_rejects_unsupported_file(client) -> None:
     assert response.json()["detail"] == "Only jpg, jpeg, png, and webp images are allowed."
 
 
+def test_real_image_upload_falls_back_to_local_storage_in_development(client, monkeypatch) -> None:
+    listing = create_listing(client)
+
+    async def fake_upload_listing_image_to_supabase(*, storage_path, content, mime_type, settings):
+        raise storage_module.ExternalProviderError("Supabase Storage upload failed with status 400: Bucket not found")
+
+    monkeypatch.setattr(storage_module, "upload_listing_image_to_supabase", fake_upload_listing_image_to_supabase)
+
+    response = client.post(
+        f"/api/v1/listings/{listing['id']}/images",
+        headers=AUTH_HEADERS,
+        files={"file": ("book.jpg", b"fake-image-bytes", "image/jpeg")},
+        data={"sort_order": "0", "is_primary": "true"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["storage_path"].startswith(f"listings/{listing['id']}/")
+    assert body["public_url"].startswith("http://testserver/uploads/listings/")
+    assert body["is_primary"] is True
+
+
+def test_sell_agent_draft_uploads_images_and_calls_glm(client, monkeypatch) -> None:
+    recorded_payload: dict = {}
+
+    async def fake_upload_listing_image_to_supabase(*, storage_path, content, mime_type, settings):
+        return SupabaseStoredFile(
+            storage_bucket=settings.supabase_storage_bucket,
+            storage_path=storage_path,
+            public_url=f"https://project-ref.supabase.co/storage/v1/object/public/{settings.supabase_storage_bucket}/{storage_path}",
+            mime_type=mime_type,
+            file_size=len(content),
+        )
+
+    class FakeSellAgentClient:
+        model_name = "glm-test"
+
+        def generate_sell_listing_draft(self, payload):
+            recorded_payload.update(payload)
+            return {
+                "assistant_message": "Draft ready for seller review.",
+                "missing_fields": [],
+                "listing_payload": {
+                    "title": "Database Systems Textbook",
+                    "description": "Selling Database Systems textbook in good condition. Usage: 2 years.",
+                    "category": "textbooks",
+                    "item_name": "Database Systems textbook",
+                    "brand": "Pearson",
+                    "model": "7th edition",
+                    "condition_label": "good",
+                    "price": 42,
+                    "currency": "MYR",
+                    "pickup_area": "FSKTM",
+                    "residential_college": "KK12",
+                },
+                "pricing": {
+                    "suggested_listing_price": 42,
+                    "minimum_acceptable_price": 34,
+                    "sell_fast_price": 38,
+                    "fair_price_range": {"low": 36, "high": 48},
+                    "risk_level": "low",
+                },
+                "why": {
+                    "similar_item_pattern": "Similar textbooks sell around RM36-RM48.",
+                    "condition_estimate": "Image and notes indicate good condition.",
+                    "local_demand_context": "FSKTM pickup fits nearby student demand.",
+                    "price_competitiveness": "Fair for a quick sale.",
+                    "evidence": ["Public image URL supplied."],
+                },
+                "expected_outcome": {
+                    "expected_time_to_sell": "3-5 days",
+                    "expected_buyer_interest": "moderate",
+                    "confidence_level": "high",
+                    "confidence_factors": ["Photo and condition notes supplied."],
+                },
+                "action": {
+                    "action_type": "list_now",
+                    "action_reason": "The listing is complete enough to publish.",
+                    "next_steps": ["Review and publish."],
+                },
+            }
+
+    monkeypatch.setattr(storage_module, "upload_listing_image_to_supabase", fake_upload_listing_image_to_supabase)
+    monkeypatch.setattr(sell_agent_module, "get_glm_client", lambda: FakeSellAgentClient())
+
+    response = client.post(
+        "/api/v1/ai/trade/sell-agent/draft",
+        headers=AUTH_HEADERS,
+        data={
+            "seller_context": json.dumps(
+                {
+                    "product_name": "Database Systems textbook",
+                    "category_hint": "textbooks",
+                    "condition_notes": "good condition, light highlighting",
+                    "pickup_area": "FSKTM",
+                    "residential_college": "KK12",
+                    "seller_goal": "fair_price",
+                }
+            )
+        },
+        files=[("images", ("book.jpg", b"fake-image-bytes", "image/jpeg"))],
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["listing_payload"]["title"] == "Database Systems Textbook"
+    description = body["listing_payload"]["description"]
+    assert not description.lower().startswith("selling ")
+    assert "Usage:" not in description
+    assert 2 <= len([sentence for sentence in description.split(".") if sentence.strip()]) <= 4
+    assert "condition" in description.lower()
+    assert body["metadata"]["provider"] == "fakesellagentclient"
+    assert body["metadata"]["analysis_mode"] == "multimodal"
+    assert body["metadata"]["image_analysis_skipped"] is False
+    assert body["uploaded_images"][0]["storage_path"].startswith(f"listing-drafts/{body['draft_id']}/")
+    assert body["uploaded_images"][0]["public_url"].startswith("https://project-ref.supabase.co/storage/v1/object/public/listing-images/")
+    assert [option["type"] for option in body["price_options"]] == ["sell_fast", "fair_price", "maximize_revenue"]
+    assert all(option["price"] > 0 for option in body["price_options"])
+    assert body["confidence_breakdown"]["price_confidence"]["level"] in {"low", "medium", "high"}
+    assert body["field_explanations"]["price"]
+    assert recorded_payload["draft_image_references"][0]["public_url"] == body["uploaded_images"][0]["public_url"]
+
+
+def test_sell_agent_draft_rejects_unsupported_image(client) -> None:
+    response = client.post(
+        "/api/v1/ai/trade/sell-agent/draft",
+        headers=AUTH_HEADERS,
+        data={"seller_context": json.dumps({"product_name": "Desk lamp"})},
+        files=[("images", ("notes.txt", b"not-image", "text/plain"))],
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Only jpg, jpeg, png, and webp images are allowed."
+
+
+def test_sell_agent_publish_creates_listing_images_and_enrichment(client, db_session) -> None:
+    payload = {
+        "draft_id": str(uuid4()),
+        "listing_payload": {
+            "title": "AI drafted kettle listing",
+            "description": "Compact kettle in good condition. Pickup at KK.",
+            "category": "small_appliances",
+            "item_name": "electric kettle",
+            "brand": "Philips",
+            "model": "1L",
+            "condition_label": "good",
+            "price": 35,
+            "currency": "MYR",
+            "pickup_area": "KK",
+            "residential_college": "KK12",
+        },
+        "uploaded_images": [
+            {
+                "storage_bucket": "listing-images",
+                "storage_path": "listing-drafts/draft-1/kettle.jpg",
+                "public_url": "https://project-ref.supabase.co/storage/v1/object/public/listing-images/listing-drafts/draft-1/kettle.jpg",
+                "mime_type": "image/jpeg",
+                "file_size": 123,
+                "content_hash": "abc123",
+                "sort_order": 0,
+                "is_primary": True,
+            }
+        ],
+    }
+
+    response = client.post("/api/v1/ai/trade/sell-agent/publish", headers=AUTH_HEADERS, json=payload)
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["listing"]["title"] == "AI drafted kettle listing"
+    assert body["listing"]["images"][0]["storage_path"] == "listing-drafts/draft-1/kettle.jpg"
+    assert body["uploaded_images"][0]["is_primary"] is True
+    assert body["enrichment"]["status"] == "accepted"
+    assert db_session.query(MediaAsset).filter(MediaAsset.entity_id == body["listing"]["id"]).count() == 1
+
+
+def test_sell_agent_publish_requires_auth(client) -> None:
+    response = client.post(
+        "/api/v1/ai/trade/sell-agent/publish",
+        json={
+            "listing_payload": {
+                "title": "Unauthenticated listing",
+                "category": "electronics",
+                "price": 50,
+                "currency": "MYR",
+            },
+            "uploaded_images": [],
+        },
+    )
+
+    assert response.status_code == 401
+
+
 def test_glm_provider_abstraction_with_mocked_response() -> None:
     fallback = {
         "recommendation": {
@@ -270,6 +465,23 @@ def test_match_scoring_uses_budget_and_location(client, db_session) -> None:
     assert "Location fit:" in matches[0]["explanation"]
 
 
+def test_wanted_post_recommendations_rank_strong_listing(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+    add_image(client, listing["id"])
+    wanted_post = create_wanted_post(client)
+
+    response = client.get(f"/api/v1/wanted-posts/{wanted_post['id']}/recommended-listings")
+
+    assert response.status_code == 200
+    recommendations = response.json()
+    assert recommendations
+    assert recommendations[0]["listing"]["id"] == listing["id"]
+    assert recommendations[0]["match_score"] >= 80
+    assert recommendations[0]["recommended_action"] == "contact_seller"
+    assert "risk" in recommendations[0]["risk_note"].lower()
+
+
 def test_async_enrich_listing_flow_returns_accepted(client, db_session) -> None:
     seed_historical_sales(db_session)
     listing = create_listing(client)
@@ -281,6 +493,16 @@ def test_async_enrich_listing_flow_returns_accepted(client, db_session) -> None:
     assert body["listing_id"] == listing["id"]
     assert body["agent_run_id"]
     assert body["status"] == "accepted"
+
+
+def test_provider_status_returns_configured_state(client) -> None:
+    response = client.get("/api/v1/ai/trade/provider-status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["provider"] == "demo"
+    assert body["status"] == "demo"
+    assert body["fallback_mode"] == "deterministic-campus-pricing-v1"
 
 
 def test_enrich_listing_for_other_user_forbidden(client, db_session, token_verifier) -> None:
@@ -334,6 +556,77 @@ def test_authenticated_trade_flow_apply_contact_and_complete(client, db_session)
     assert db_session.query(HistoricalSale).filter(HistoricalSale.source_type == "transaction").count() == 1
 
 
+def test_completed_transaction_requires_outcome_fields(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+    add_image(client, listing["id"])
+    create_wanted_post(client)
+    enrich_and_fetch_result(client, listing["id"])
+    matches_response = client.get(f"/api/v1/listings/{listing['id']}/matches")
+    match_id = matches_response.json()[0]["id"]
+    contact_response = client.post(
+        f"/api/v1/matches/{match_id}/contact",
+        headers=AUTH_HEADERS,
+        json={"message": "Can we meet at FSKTM today?"},
+    )
+    transaction = contact_response.json()
+
+    response = client.patch(
+        f"/api/v1/trade-transactions/{transaction['id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "completed"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Completed transactions require agreed_price."
+
+
+def test_decision_feedback_records_changed_price(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+    enrich_and_fetch_result(client, listing["id"])
+
+    response = client.post(
+        f"/api/v1/listings/{listing['id']}/decision-feedback",
+        headers=AUTH_HEADERS,
+        json={
+            "feedback_type": "changed_price",
+            "applied_price": 49,
+            "reason": "Seller chose a faster-sale price.",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["feedback_type"] == "changed_price"
+    assert body["applied_price"] == 49
+    updated = client.get(f"/api/v1/listings/{listing['id']}").json()
+    assert updated["price"] == 49
+
+
+def test_price_simulation_returns_tradeoff_output(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+
+    response = client.post(
+        f"/api/v1/ai/trade/price-simulation/{listing['id']}",
+        json={"proposed_price": 95},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["listing_id"] == listing["id"]
+    assert body["proposed_price"] == 95
+    assert body["expected_time_to_sell"]
+    assert body["action_type"] in {
+        "list_now",
+        "revise_price",
+        "upload_better_image",
+        "match_with_buyers",
+        "flag_for_review",
+    }
+
+
 def test_report_submission_and_moderation_review(client, db_session, token_verifier) -> None:
     listing = create_listing(client)
 
@@ -379,6 +672,7 @@ def test_trade_dashboard_returns_owned_state(client, db_session) -> None:
     assert len(body["listings"]) == 1
     assert len(body["wanted_posts"]) == 1
     assert body["matches"]
+    assert "metrics" in body
 
 
 def test_fetch_trade_result_pending_vs_completed(client, db_session) -> None:

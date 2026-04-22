@@ -4,10 +4,10 @@ from decimal import Decimal
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
-from app.models import HistoricalSale, Listing, ListingImage, ListingReport, TradeMatch, TradeTransaction, User, WantedPost
+from app.models import HistoricalSale, Listing, ListingImage, ListingReport, TradeDecisionFeedback, TradeMatch, TradeTransaction, User, WantedPost
 from app.repositories.trade import TradeRepository
 from app.schemas.listing import ListingCreate, ListingImageCreate, ListingReportCreate, ListingReportReview, ListingUpdate
-from app.schemas.trade_product import ContactMatchCreate, TradeTransactionUpdate
+from app.schemas.trade_product import DecisionFeedbackCreate, ContactMatchCreate, TradeTransactionUpdate
 from app.schemas.wanted_post import WantedPostCreate
 from app.services.demo_user import get_or_create_demo_user
 from app.services.storage_service import store_listing_image_upload
@@ -236,6 +236,51 @@ def apply_recommended_price(db: Session, listing_id: str, current_user: User) ->
     return updated
 
 
+def create_decision_feedback(
+    db: Session,
+    listing_id: str,
+    payload: DecisionFeedbackCreate,
+    current_user: User,
+) -> TradeDecisionFeedback:
+    repo = TradeRepository(db)
+    listing = repo.get_listing_or_none(listing_id)
+    if listing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    if listing.seller_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can submit decision feedback.")
+
+    applied_price = Decimal(str(payload.applied_price)) if payload.applied_price is not None else None
+    suggested_price = Decimal(str(listing.suggested_listing_price)) if listing.suggested_listing_price is not None else None
+
+    if payload.feedback_type == "changed_price":
+        if applied_price is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Changed-price feedback requires applied_price.")
+        repo.update_listing(listing, {"price": applied_price})
+        _refresh_matches_for_listing(db, listing.id)
+    elif payload.feedback_type == "accepted_price" and suggested_price is not None:
+        repo.update_listing(
+            listing,
+            {
+                "price": suggested_price,
+                "accepted_recommended_price": suggested_price,
+                "recommendation_applied_at": datetime.now(UTC),
+            },
+        )
+        applied_price = suggested_price
+        _refresh_matches_for_listing(db, listing.id)
+
+    return repo.create_decision_feedback(
+        {
+            "listing_id": listing.id,
+            "user_id": current_user.id,
+            "feedback_type": payload.feedback_type,
+            "suggested_listing_price": suggested_price,
+            "applied_price": applied_price,
+            "reason": payload.reason,
+        }
+    )
+
+
 def contact_match(db: Session, match_id: str, payload: ContactMatchCreate, current_user: User) -> TradeTransaction:
     repo = TradeRepository(db)
     trade_match = repo.get_trade_match_or_none(match_id)
@@ -282,6 +327,15 @@ def update_trade_transaction(
 
     values = payload.model_dump(exclude_unset=True)
     if values.get("status") == "completed":
+        agreed_price = values.get("agreed_price", transaction.agreed_price)
+        followed_ai = values.get("followed_ai_recommendation", transaction.followed_ai_recommendation)
+        if agreed_price is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Completed transactions require agreed_price.")
+        if followed_ai is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Completed transactions require followed_ai_recommendation.",
+            )
         values["completed_at"] = datetime.now(UTC)
     updated = repo.update_trade_transaction(transaction, values)
     if updated.status == "completed":
@@ -291,11 +345,27 @@ def update_trade_transaction(
 
 def trade_dashboard(db: Session, current_user: User) -> dict:
     repo = TradeRepository(db)
+    listings = list(repo.list_listings_by_seller(current_user.id))
+    wanted_posts = list(repo.list_wanted_posts_by_buyer(current_user.id))
+    matches = list(repo.list_matches_for_user(current_user.id))
+    transactions = list(repo.list_transactions_for_user(current_user.id))
+    feedback = list(repo.list_decision_feedback_for_user(current_user.id))
     return {
-        "listings": list(repo.list_listings_by_seller(current_user.id)),
-        "wanted_posts": list(repo.list_wanted_posts_by_buyer(current_user.id)),
-        "matches": list(repo.list_matches_for_user(current_user.id)),
-        "transactions": list(repo.list_transactions_for_user(current_user.id)),
+        "listings": listings,
+        "wanted_posts": wanted_posts,
+        "matches": matches,
+        "transactions": transactions,
+        "metrics": _dashboard_metrics(listings, transactions, feedback),
+    }
+
+
+def moderation_summary(db: Session) -> dict:
+    listings = list(TradeRepository(db).list_listings(status=None, sort="risk"))
+    return {
+        "high_risk_count": sum(1 for listing in listings if listing.risk_level == "high"),
+        "pending_review_count": sum(1 for listing in listings if listing.moderation_status == "review_required"),
+        "rejected_count": sum(1 for listing in listings if listing.moderation_status == "rejected"),
+        "approved_count": sum(1 for listing in listings if listing.moderation_status == "approved"),
     }
 
 
@@ -315,6 +385,31 @@ def _refresh_matches_for_category(db: Session, category: str) -> None:
     repo = TradeRepository(db)
     for listing in repo.list_listings_by_category(category):
         _refresh_matches_for_listing(db, listing.id)
+
+
+def _dashboard_metrics(
+    listings: list[Listing],
+    transactions: list[TradeTransaction],
+    feedback: list[TradeDecisionFeedback],
+) -> dict:
+    accepted_count = sum(1 for item in feedback if item.feedback_type == "accepted_price")
+    adjustments = [
+        abs(float(item.applied_price) - float(item.suggested_listing_price))
+        for item in feedback
+        if item.applied_price is not None and item.suggested_listing_price is not None
+    ]
+    completed_after_ai = sum(
+        1
+        for transaction in transactions
+        if transaction.status == "completed" and transaction.followed_ai_recommendation is True
+    )
+    return {
+        "recommendations_accepted": accepted_count
+        or sum(1 for listing in listings if listing.accepted_recommended_price is not None),
+        "decision_feedback_count": len(feedback),
+        "completed_sales_after_ai_recommendation": completed_after_ai,
+        "average_price_adjustment": round(sum(adjustments) / len(adjustments), 2) if adjustments else None,
+    }
 
 
 def _record_completed_sale(db: Session, transaction: TradeTransaction) -> None:

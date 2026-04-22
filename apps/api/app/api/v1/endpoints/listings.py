@@ -15,6 +15,7 @@ from app.schemas.listing import (
     ListingReportRead,
     ListingUpdate,
 )
+from app.schemas.trade_product import DecisionFeedbackCreate, DecisionFeedbackRead
 from app.schemas.trade_intelligence import TradeMatchRead
 from app.services.trade_intelligence import list_matches_for_listing
 from app.services.trade_service import (
@@ -22,6 +23,7 @@ from app.services.trade_service import (
     add_uploaded_listing_image,
     apply_recommended_price,
     create_listing,
+    create_decision_feedback,
     create_listing_report,
     get_listing,
     list_listings,
@@ -127,6 +129,17 @@ def apply_recommended_price_endpoint(
 ) -> ListingRead:
     listing = apply_recommended_price(db, str(listing_id), current_user)
     return ListingRead.model_validate(listing)
+
+
+@router.post("/{listing_id}/decision-feedback", response_model=DecisionFeedbackRead, status_code=status.HTTP_201_CREATED)
+def create_decision_feedback_endpoint(
+    listing_id: UUID,
+    payload: DecisionFeedbackCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> DecisionFeedbackRead:
+    feedback = create_decision_feedback(db, str(listing_id), payload, current_user)
+    return DecisionFeedbackRead.model_validate(feedback)
 
 
 @router.post("/{listing_id}/reports", response_model=ListingReportRead, status_code=status.HTTP_201_CREATED)

@@ -7,23 +7,27 @@ import {
   formatCategory,
   formatMoney,
   getTradeEvaluationSummary,
+  getTradeProviderStatus,
   runTradeEvaluation,
   type BenchmarkCaseDetail,
   type BenchmarkSummary,
+  type TradeProviderStatus,
 } from "@/lib/trade/api";
 
 export default function TradeEvaluationPage() {
   const [summary, setSummary] = useState<BenchmarkSummary | null>(null);
+  const [providerStatus, setProviderStatus] = useState<TradeProviderStatus | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
-    void getTradeEvaluationSummary()
-      .then((nextSummary) => {
+    void Promise.all([getTradeEvaluationSummary(), getTradeProviderStatus()])
+      .then(([nextSummary, status]) => {
         if (isMounted) {
           setSummary(nextSummary);
+          setProviderStatus(status);
         }
       })
       .catch((nextError) => {
@@ -82,6 +86,27 @@ export default function TradeEvaluationPage() {
 
       {summary ? (
         <>
+          <section className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">GLM status</p>
+              <p className="mt-2 text-lg font-semibold text-slate-950">
+                {providerStatus?.provider ?? "loading"} · {providerStatus?.status ?? ""}
+              </p>
+              <p className="mt-1 text-sm text-slate-600">
+                Model {providerStatus?.model ?? "unknown"} with {providerStatus?.fallback_mode ?? "deterministic"} fallback.
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Methodology</p>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Baseline uses category averages, budget overlap, and simple risk keywords. AI uses GLM output
+                plus item text, public image URLs when available, historical comparables, candidate demand,
+                location context, and risk signals. Metrics are scenario-based until completed transactions
+                provide enough live marketplace evidence.
+              </p>
+            </div>
+          </section>
+
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Metric label="AI score" value={`${summary.ai_overall_score}/100`} detail={`Baseline ${summary.baseline_overall_score}/100`} />
             <Metric label="Pricing lift" value={formatDelta(summary.price_accuracy_delta)} detail={`${percent(summary.ai_pricing_accuracy_rate)} AI accuracy`} />

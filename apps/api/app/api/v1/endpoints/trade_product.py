@@ -13,6 +13,7 @@ from app.schemas.listing import ListingRead, ListingReportRead, ListingReportRev
 from app.schemas.trade_product import (
     ContactMatchCreate,
     ModerationListingRead,
+    ModerationSummary,
     TradeDashboardResponse,
     TradeTransactionRead,
     TradeTransactionUpdate,
@@ -20,6 +21,7 @@ from app.schemas.trade_product import (
 from app.services.trade_service import (
     contact_match,
     list_moderation_listings,
+    moderation_summary,
     review_listing_reports,
     trade_dashboard,
     update_trade_transaction,
@@ -65,6 +67,14 @@ def list_moderation_listings_endpoint(
     ]
 
 
+@router.get("/moderation/summary", response_model=ModerationSummary)
+def moderation_summary_endpoint(
+    db: Session = Depends(get_db),
+    _moderator=Depends(require_app_role(AppRole.MODERATOR)),
+) -> ModerationSummary:
+    return ModerationSummary(**moderation_summary(db))
+
+
 @router.patch("/moderation/listings/{listing_id}/review", response_model=ListingRead)
 def review_moderation_listing_endpoint(
     listing_id: UUID,
@@ -87,4 +97,5 @@ def trade_dashboard_endpoint(
         wanted_posts=dashboard["wanted_posts"],
         matches=[TradeMatchRead.model_validate(match) for match in dashboard["matches"]],
         transactions=[TradeTransactionRead.model_validate(transaction) for transaction in dashboard["transactions"]],
+        metrics=dashboard["metrics"],
     )

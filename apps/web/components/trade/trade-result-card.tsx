@@ -94,6 +94,9 @@ export function TradeResultCard({
             {result.metadata.used_fallback ? (
               <StatusPill tone="warn">fallback used</StatusPill>
             ) : null}
+            <StatusPill tone={result.metadata.image_analysis_skipped ? "warn" : "good"}>
+              {result.metadata.analysis_mode.replaceAll("_", " ")}
+            </StatusPill>
           </div>
         </div>
       </div>
@@ -144,6 +147,13 @@ export function TradeResultCard({
               </ul>
             </div>
           ) : null}
+          <div className="mt-5 rounded-lg border border-cyan-100 bg-cyan-50 p-4">
+            <h4 className="text-sm font-semibold text-cyan-950">Provider trace</h4>
+            <p className="mt-2 text-sm leading-5 text-cyan-900">
+              {result.metadata.provider} {result.metadata.model ? `· ${result.metadata.model}` : ""} ·{" "}
+              {result.metadata.data_source.replaceAll("_", " ")}
+            </p>
+          </div>
         </div>
 
         <div className="p-5">

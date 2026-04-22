@@ -93,6 +93,9 @@ class TradeIntelligenceGLMService:
                 "model": getattr(self.client, "model_name", None),
                 "used_fallback": False,
                 "generated_at": datetime.now(UTC).isoformat(),
+                "analysis_mode": _analysis_mode_from_payload(payload),
+                "image_analysis_skipped": _image_analysis_skipped(payload),
+                "data_source": "glm_multimodal_analysis",
             }
             return TradeIntelligenceResult.model_validate(normalized)
         except ValidationError as exc:
@@ -295,6 +298,9 @@ def normalize_trade_decision(raw_result: dict[str, Any], fallback_result: dict[s
     metadata.setdefault("model", None)
     metadata.setdefault("used_fallback", False)
     metadata.setdefault("generated_at", datetime.now(UTC).isoformat())
+    metadata.setdefault("analysis_mode", "glm_text_or_multimodal")
+    metadata.setdefault("image_analysis_skipped", False)
+    metadata.setdefault("data_source", "glm_multimodal_analysis")
 
     return normalized
 
@@ -375,6 +381,9 @@ def _default_trade_decision() -> dict[str, Any]:
             "model": None,
             "used_fallback": False,
             "generated_at": datetime.now(UTC).isoformat(),
+            "analysis_mode": "deterministic_fallback",
+            "image_analysis_skipped": False,
+            "data_source": "heuristic_resale_context",
         },
     }
 
@@ -416,6 +425,16 @@ def _provider_name(client: GLMDecisionClient) -> str:
     if "demo" in name:
         return "demo"
     return name or "glm"
+
+
+def _analysis_mode_from_payload(payload: dict[str, Any]) -> str:
+    image_analysis = (payload.get("structured_context") or {}).get("image_analysis") or {}
+    return str(image_analysis.get("mode") or "glm_text_only")
+
+
+def _image_analysis_skipped(payload: dict[str, Any]) -> bool:
+    image_analysis = (payload.get("structured_context") or {}).get("image_analysis") or {}
+    return str(image_analysis.get("mode") or "") == "text_only"
 
 
 def _default_risk_score_for_level(risk_level: str) -> float:

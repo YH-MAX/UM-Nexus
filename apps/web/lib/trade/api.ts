@@ -132,6 +132,9 @@ export type TradeResult = {
     model: string | null;
     used_fallback: boolean;
     generated_at: string | null;
+    analysis_mode: string;
+    image_analysis_skipped: boolean;
+    data_source: string;
   };
 };
 
@@ -262,6 +265,17 @@ export type BenchmarkSummary = {
   cases: BenchmarkCaseDetail[];
 };
 
+export type TradeProviderStatus = {
+  provider: string;
+  model: string;
+  status: string;
+  should_use_zai_provider: boolean;
+  fallback_mode: string;
+  live_checked: boolean;
+  last_successful_call_at: string | null;
+  message: string | null;
+};
+
 export type ListingPayload = {
   title: string;
   description?: string;
@@ -274,6 +288,72 @@ export type ListingPayload = {
   currency: string;
   pickup_area?: string;
   residential_college?: string;
+};
+
+export type SellAgentSellerContext = {
+  product_name?: string;
+  free_text?: string;
+  category_hint?: string;
+  condition_notes?: string;
+  brand_model?: string;
+  age_usage?: string;
+  defects?: string;
+  accessories?: string;
+  pickup_area?: string;
+  residential_college?: string;
+  seller_goal: "sell_fast" | "fair_price" | "maximize_revenue";
+};
+
+export type SellAgentUploadedImage = {
+  storage_bucket: string;
+  storage_path: string;
+  public_url: string | null;
+  mime_type: string | null;
+  file_size: number | null;
+  content_hash: string | null;
+  sort_order: number;
+  is_primary: boolean;
+};
+
+export type SellAgentDraft = {
+  draft_id: string;
+  assistant_message: string;
+  missing_fields: string[];
+  uploaded_images: SellAgentUploadedImage[];
+  listing_payload: ListingPayload;
+  pricing: {
+    suggested_listing_price: number;
+    minimum_acceptable_price: number;
+    sell_fast_price: number | null;
+    fair_price_range: { low: number; high: number };
+    risk_level: "low" | "medium" | "high";
+  };
+  price_options: Array<{
+    type: "sell_fast" | "fair_price" | "maximize_revenue";
+    price: number;
+    expected_time_to_sell: string;
+    buyer_interest: string;
+    tradeoff_summary: string;
+  }>;
+  confidence_breakdown: Record<
+    "price_confidence" | "condition_confidence" | "demand_confidence" | "risk_confidence",
+    {
+      level: "low" | "medium" | "high";
+      reason: string;
+    }
+  >;
+  field_explanations: Record<"title" | "category" | "condition" | "price" | "risk", string>;
+  why: TradeResult["why"];
+  expected_outcome: TradeResult["expected_outcome"];
+  action: TradeResult["action"];
+  metadata: TradeResult["metadata"];
+};
+
+export type SellAgentPublishResponse = {
+  listing: Listing;
+  uploaded_images: ListingImage[];
+  enrichment: EnrichListingAccepted;
+  result_status: string;
 };
 
 export type WantedPostPayload = {
@@ -322,11 +402,72 @@ export type TradeDashboard = {
   wanted_posts: WantedPost[];
   matches: TradeMatch[];
   transactions: TradeTransaction[];
+  metrics: {
+    recommendations_accepted: number;
+    decision_feedback_count: number;
+    completed_sales_after_ai_recommendation: number;
+    average_price_adjustment: number | null;
+  };
 };
 
 export type ModerationListing = {
   listing: Listing;
   reports: ListingReport[];
+};
+
+export type ModerationSummary = {
+  high_risk_count: number;
+  pending_review_count: number;
+  rejected_count: number;
+  approved_count: number;
+};
+
+export type DecisionFeedback = {
+  id: string;
+  listing_id: string;
+  user_id: string;
+  feedback_type: string;
+  suggested_listing_price: number | null;
+  applied_price: number | null;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PriceSimulation = {
+  listing_id: string;
+  proposed_price: number;
+  current_price: number;
+  suggested_listing_price: number;
+  minimum_acceptable_price: number;
+  fair_price_range: { low: number; high: number } | null;
+  price_competitiveness: string;
+  expected_time_to_sell: string;
+  expected_buyer_interest: string;
+  risk_level: "low" | "medium" | "high";
+  action_type:
+    | "list_now"
+    | "revise_price"
+    | "upload_better_image"
+    | "match_with_buyers"
+    | "flag_for_review";
+  action_reason: string;
+  confidence_level: string;
+};
+
+export type WantedListingRecommendation = {
+  listing: Listing;
+  match_score: number;
+  price_fit_score: number | null;
+  location_fit_score: number | null;
+  semantic_fit_score: number | null;
+  final_match_confidence: string;
+  explanation: string;
+  price_fit_summary: string;
+  location_fit_summary: string;
+  item_fit_summary: string;
+  risk_note: string;
+  recommended_action: string;
 };
 
 export const tradeCategories = [
@@ -460,6 +601,46 @@ export async function uploadListingImage(
   return response.json() as Promise<ListingImage>;
 }
 
+export async function generateSellAgentDraft(
+  sellerContext: SellAgentSellerContext,
+  images: File[],
+): Promise<SellAgentDraft> {
+  const formData = new FormData();
+  formData.append("seller_context", JSON.stringify(sellerContext));
+  images.slice(0, 4).forEach((image) => {
+    formData.append("images", image);
+  });
+
+  const authHeaders = await getAuthHeaders();
+  const response = await fetch(`${API_BASE_URL}/ai/trade/sell-agent/draft`, {
+    method: "POST",
+    body: formData,
+    headers: authHeaders,
+  });
+
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    const detail =
+      typeof body?.detail === "string"
+        ? body.detail
+        : `Draft generation failed with status ${response.status}`;
+    throw new Error(detail);
+  }
+
+  return response.json() as Promise<SellAgentDraft>;
+}
+
+export async function publishSellAgentDraft(payload: {
+  draft_id?: string;
+  listing_payload: ListingPayload;
+  uploaded_images: SellAgentUploadedImage[];
+}): Promise<SellAgentPublishResponse> {
+  return fetchJson<SellAgentPublishResponse>("/ai/trade/sell-agent/publish", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createWantedPost(
   payload: WantedPostPayload,
 ): Promise<WantedPost> {
@@ -471,6 +652,12 @@ export async function createWantedPost(
 
 export async function getWantedPost(id: string): Promise<WantedPost> {
   return fetchJson<WantedPost>(`/wanted-posts/${id}`);
+}
+
+export async function getWantedPostRecommendations(
+  id: string,
+): Promise<WantedListingRecommendation[]> {
+  return fetchJson<WantedListingRecommendation[]>(`/wanted-posts/${id}/recommended-listings`);
 }
 
 export async function getListingMatches(id: string): Promise<TradeMatch[]> {
@@ -488,6 +675,20 @@ export async function reportListing(
   payload: { report_type: string; reason?: string },
 ): Promise<ListingReport> {
   return fetchJson<ListingReport>(`/listings/${id}/reports`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function submitDecisionFeedback(
+  id: string,
+  payload: {
+    feedback_type: "accepted_price" | "rejected_price" | "changed_price" | "ignored_recommendation";
+    applied_price?: number;
+    reason?: string;
+  },
+): Promise<DecisionFeedback> {
+  return fetchJson<DecisionFeedback>(`/listings/${id}/decision-feedback`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -527,6 +728,10 @@ export async function getModerationListings(): Promise<ModerationListing[]> {
   return fetchJson<ModerationListing[]>("/moderation/listings");
 }
 
+export async function getModerationSummary(): Promise<ModerationSummary> {
+  return fetchJson<ModerationSummary>("/moderation/summary");
+}
+
 export async function reviewModerationListing(
   id: string,
   payload: { status: string; moderation_status?: string; resolution?: string },
@@ -545,6 +750,17 @@ export async function enrichListing(id: string): Promise<EnrichListingAccepted> 
 
 export async function getTradeResultStatus(id: string): Promise<TradeResultStatus> {
   return fetchJson<TradeResultStatus>(`/ai/trade/result/${id}`);
+}
+
+export async function getTradeProviderStatus(): Promise<TradeProviderStatus> {
+  return fetchJson<TradeProviderStatus>("/ai/trade/provider-status");
+}
+
+export async function simulateListingPrice(id: string, proposedPrice: number): Promise<PriceSimulation> {
+  return fetchJson<PriceSimulation>(`/ai/trade/price-simulation/${id}`, {
+    method: "POST",
+    body: JSON.stringify({ proposed_price: proposedPrice }),
+  });
 }
 
 export async function runLegacyTradeEvaluation(): Promise<LegacyEvaluationSummary> {

@@ -19,6 +19,10 @@ The Trade Intelligence slice runs in demo mode without login/register. It uses a
 - `POST /api/v1/ai/trade/enrich-listing/{listing_id}` returns an accepted job response
 - `GET /api/v1/ai/trade/result/{listing_id}` returns `not_started`, `pending`, `running`, `completed`, or `failed`
 - `GET /api/v1/listings/{id}/matches`
+- `GET /api/v1/wanted-posts/{id}/recommended-listings`
+- `POST /api/v1/listings/{id}/decision-feedback`
+- `GET /api/v1/ai/trade/provider-status`
+- `POST /api/v1/ai/trade/price-simulation/{listing_id}`
 - `POST /api/v1/ai/trade/evaluation/run`
 - `GET /api/v1/ai/trade/evaluation/summary`
 - `GET /api/v1/ai/trade/evaluation/cases`
@@ -44,6 +48,15 @@ Seed the labelled benchmark scenarios separately if you want them before opening
 make api-seed-benchmarks
 ```
 
+Import additional historical sale evidence from CSV when you want the pricing engine to learn from a larger pilot dataset:
+
+```bash
+cd apps/api
+python scripts/import_historical_sales.py path/to/historical_sales.csv
+```
+
+Minimum CSV columns are `item_name`, `category`, and `sold_price`. Optional columns include `condition_label`, `currency`, `pickup_area`, `location`, `residential_college`, `sold_at`, `notes`, and `source_type`.
+
 Frontend demo pages:
 
 - `/trade`
@@ -53,6 +66,8 @@ Frontend demo pages:
 - `/trade/[id]`
 - `/wanted-posts/[id]`
 - `/trade/evaluation`
+- `/trade/dashboard`
+- `/trade/moderation`
 
 For local demos, `CELERY_TASK_ALWAYS_EAGER=true` runs Celery tasks immediately inside the API process. Set it to `false` and run a worker when you want real background processing.
 
@@ -81,6 +96,14 @@ Connectivity check:
 ```bash
 curl http://localhost:8001/api/v1/ai/trade/test-glm
 ```
+
+Judge-safe provider status:
+
+```bash
+curl http://localhost:8001/api/v1/ai/trade/provider-status
+```
+
+Use `?live_check=true` when you explicitly want the endpoint to make a live provider call. The default response avoids spending quota and reports configured provider, model, deterministic fallback mode, and latest successful enrichment time if available.
 
 Run GLM-backed enrichment:
 
@@ -148,6 +171,30 @@ Or open:
 - `http://localhost:3000/trade/evaluation`
 
 This supports the core competition claim: if the GLM decision layer is removed, the system falls back to category averages and simple thresholds, losing multimodal condition reasoning, context-aware buyer matching, explainable action recommendations, and measurable decision-quality lift.
+
+## Product Outcome Loop
+
+The product now captures decision outcomes instead of stopping at recommendations:
+
+- sellers can apply the suggested price or submit decision feedback
+- sellers can test price trade-offs with the price simulation endpoint
+- buyers can open wanted-post recommendations ranked by price, item, location, and risk fit
+- contacting a strong match creates a transaction record
+- completed transactions require an agreed price and whether the user followed the AI recommendation
+- completed transaction prices are written back into `historical_sales` with `source_type=transaction`
+- the dashboard reports accepted recommendations, decision feedback count, AI-followed completed sales, and average price adjustment
+
+This creates the demo-stage data flywheel judges expect: recommendations lead to actions, actions create outcomes, and outcomes improve future pricing evidence.
+
+### Demo Moderator Access
+
+Moderation endpoints remain role-protected. For a judge demo, sign in with a test UM-domain account and update that user profile to `app_role = moderator` or `admin` in the local database. Then open:
+
+```text
+http://localhost:3000/trade/moderation
+```
+
+The moderation page shows summary counts and human-readable risk cards instead of raw JSON.
 
 ### Supabase Storage Listing Images
 

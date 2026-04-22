@@ -85,6 +85,9 @@ class TradeDecisionMetadata(BaseModel):
     model: str | None = None
     used_fallback: bool = False
     generated_at: datetime | None = None
+    analysis_mode: str = "deterministic_fallback"
+    image_analysis_skipped: bool = False
+    data_source: str = "heuristic_resale_context"
 
 
 class TradeDecisionResult(BaseModel):
@@ -101,6 +104,37 @@ class GLMTestResponse(BaseModel):
     message_preview: str | None = None
     response_text: str | None = None
     error_message: str | None = None
+
+
+class TradeProviderStatus(BaseModel):
+    provider: str
+    model: str
+    status: str
+    should_use_zai_provider: bool
+    fallback_mode: str
+    live_checked: bool = False
+    last_successful_call_at: datetime | None = None
+    message: str | None = None
+
+
+class PriceSimulationRequest(BaseModel):
+    proposed_price: float = Field(..., gt=0)
+
+
+class PriceSimulationResponse(BaseModel):
+    listing_id: str
+    proposed_price: float
+    current_price: float
+    suggested_listing_price: float
+    minimum_acceptable_price: float
+    fair_price_range: PriceRangeBlock | None = None
+    price_competitiveness: str
+    expected_time_to_sell: str
+    expected_buyer_interest: str
+    risk_level: RiskLevel
+    action_type: TradeActionType
+    action_reason: str
+    confidence_level: str
 
 
 class RecommendationBlock(TradeRecommendation):

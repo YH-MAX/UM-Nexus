@@ -40,6 +40,7 @@ class SupabaseJWTVerifier:
                 signing_key.key,
                 algorithms=[algorithm],
                 issuer=self._expected_issuer,
+                leeway=60,
                 options={"verify_aud": False},
             )
             return TokenClaims.model_validate(payload)
