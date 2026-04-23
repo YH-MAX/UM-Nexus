@@ -1,3 +1,4 @@
+import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -68,11 +69,29 @@ class Settings(BaseSettings):
     @field_validator("allowed_email_domains", mode="before")
     @classmethod
     def parse_allowed_email_domains(cls, value: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
+        def normalize_domains(raw_domains: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+            domains: list[str] = []
+            for raw_domain in raw_domains:
+                domains.extend(
+                    domain.strip().strip('"').strip("'").lower()
+                    for domain in str(raw_domain).split(",")
+                    if domain.strip().strip('"').strip("'")
+                )
+            return tuple(domains)
+
         if isinstance(value, str):
-            return tuple(domain.strip().lower() for domain in value.split(",") if domain.strip())
+            stripped = value.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    parsed = [stripped.strip("[]")]
+                if isinstance(parsed, list):
+                    return normalize_domains(parsed)
+            return normalize_domains([stripped])
         if isinstance(value, list):
-            return tuple(domain.strip().lower() for domain in value if domain.strip())
-        return tuple(domain.strip().lower() for domain in value if domain.strip())
+            return normalize_domains(value)
+        return normalize_domains(value)
 
     @model_validator(mode="after")
     def validate_zai_provider_selection(self) -> "Settings":
