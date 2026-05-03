@@ -9,11 +9,10 @@ type MatchSuggestionsProps = Readonly<{
 export function MatchSuggestions({ matches }: MatchSuggestionsProps) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-lg font-semibold text-slate-950">Match suggestions</h2>
+      <h2 className="text-lg font-semibold text-slate-950">Potential buyers</h2>
       {matches.length === 0 ? (
         <p className="mt-2 text-sm text-slate-600">
-          No match suggestions yet. Enrich this listing after creating at least
-          one wanted post in the same category.
+          No potential buyers yet. Enrich this listing after buyers create wanted posts in the same category.
         </p>
       ) : (
         <div className="mt-4 divide-y divide-slate-100">
@@ -44,10 +43,11 @@ export function MatchSuggestions({ matches }: MatchSuggestionsProps) {
               <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-600">
                 <span>Budget {formatMoney(match.wanted_post.max_budget)}</span>
                 <span>Pickup {match.wanted_post.preferred_pickup_area ?? "any"}</span>
-                <span>Price fit {Math.round(match.price_fit_score ?? 0)}%</span>
-                <span>Location fit {Math.round(match.location_fit_score ?? 0)}%</span>
-                <span>Item fit {Math.round(match.semantic_fit_score ?? 0)}%</span>
+                <span>Budget fit {Math.round(match.price_fit_score ?? 0)}%</span>
+                <span>Pickup fit {Math.round(match.location_fit_score ?? 0)}%</span>
+                <span>Need fit {Math.round(match.semantic_fit_score ?? 0)}%</span>
                 {match.contacted_at ? <span>Contacted {new Date(match.contacted_at).toLocaleDateString()}</span> : null}
+                {!match.contacted_at ? <span>Open buyer request</span> : null}
               </div>
             </Link>
           ))}

@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import require_authenticated_user
@@ -41,6 +41,8 @@ def get_wanted_post_endpoint(
 @router.get("/{wanted_post_id}/recommended-listings", response_model=list[WantedListingRecommendation])
 def get_wanted_post_recommendations_endpoint(
     wanted_post_id: UUID,
+    limit: int = Query(default=12, ge=1, le=50),
+    min_score: float = Query(default=58.0, ge=0, le=100),
     db: Session = Depends(get_db),
 ) -> list[WantedListingRecommendation]:
     return [
@@ -58,5 +60,5 @@ def get_wanted_post_recommendations_endpoint(
             risk_note=item["risk_note"],
             recommended_action=item["recommended_action"],
         )
-        for item in recommend_listings_for_wanted_post(db, str(wanted_post_id))
+        for item in recommend_listings_for_wanted_post(db, str(wanted_post_id), limit=limit, min_score=min_score)
     ]

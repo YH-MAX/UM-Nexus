@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.integrations.glm_client import DemoGLMClient
 from app.integrations.supabase_storage import SupabaseStoredFile
-from app.models import AppRole, HistoricalSale, ListingEmbedding, ListingReport, MediaAsset, Profile
+from app.models import AppRole, HistoricalSale, Listing, ListingEmbedding, ListingReport, MediaAsset, Profile, WantedPost
 from app.services.embedding_service import make_demo_embedding_text
 from app.services import sell_agent_service as sell_agent_module
 from app.services import storage_service as storage_module
@@ -480,6 +480,74 @@ def test_wanted_post_recommendations_rank_strong_listing(client, db_session) -> 
     assert recommendations[0]["match_score"] >= 80
     assert recommendations[0]["recommended_action"] == "contact_seller"
     assert "risk" in recommendations[0]["risk_note"].lower()
+
+
+def test_listing_matches_endpoint_supports_limit_and_min_score(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+    add_image(client, listing["id"])
+    create_wanted_post(client)
+    create_wanted_post(
+        client,
+        {
+            **wanted_post_payload(),
+            "title": "Need scientific calculator near KK12",
+            "preferred_pickup_area": "KK",
+            "residential_college": "Kolej Kediaman 12",
+        },
+    )
+
+    response = client.get(f"/api/v1/listings/{listing['id']}/matches?limit=1&min_score=58")
+
+    assert response.status_code == 200
+    matches = response.json()
+    assert len(matches) == 1
+    assert matches[0]["match_score"] >= 58
+
+
+def test_listing_matches_exclude_inactive_wanted_posts(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+    wanted_post = create_wanted_post(client)
+    db_wanted_post = db_session.get(WantedPost, wanted_post["id"])
+    assert db_wanted_post is not None
+    db_wanted_post.status = "closed"
+    db_session.add(db_wanted_post)
+    db_session.commit()
+
+    response = client.get(f"/api/v1/listings/{listing['id']}/matches")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_wanted_post_recommendations_support_limit_min_score_and_active_listings(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    inactive_listing = create_listing(client)
+    active_listing = create_listing(
+        client,
+        {
+            **listing_payload(),
+            "title": "Casio FX-570EX calculator like new",
+            "price": 52.0,
+            "pickup_area": "KK",
+            "residential_college": "Kolej Kediaman 12",
+        },
+    )
+    db_listing = db_session.get(Listing, inactive_listing["id"])
+    assert db_listing is not None
+    db_listing.status = "sold"
+    db_session.add(db_listing)
+    db_session.commit()
+    wanted_post = create_wanted_post(client)
+
+    response = client.get(f"/api/v1/wanted-posts/{wanted_post['id']}/recommended-listings?limit=1&min_score=58")
+
+    assert response.status_code == 200
+    recommendations = response.json()
+    assert len(recommendations) == 1
+    assert recommendations[0]["listing"]["id"] == active_listing["id"]
+    assert recommendations[0]["match_score"] >= 58
 
 
 def test_async_enrich_listing_flow_returns_accepted(client, db_session) -> None:

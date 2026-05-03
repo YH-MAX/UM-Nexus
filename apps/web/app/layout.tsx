@@ -1,12 +1,29 @@
 import type { Metadata } from "next";
+import type { Viewport } from "next";
 
 import { Providers } from "@/app/providers";
 
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "UM Nexus",
-  description: "UM Nexus monorepo scaffold",
+  applicationName: "UM Nexus",
+  title: {
+    default: "UM Nexus Trade Intelligence",
+    template: "%s | UM Nexus",
+  },
+  description:
+    "AI-powered campus resale decisions for University of Malaya students.",
+  keywords: [
+    "UM Nexus",
+    "campus marketplace",
+    "University of Malaya",
+    "trade intelligence",
+    "student resale",
+  ],
+};
+
+export const viewport: Viewport = {
+  themeColor: "#020617",
 };
 
 type RootLayoutProps = Readonly<{
@@ -16,7 +33,7 @@ type RootLayoutProps = Readonly<{
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="en">
-      <body>
+      <body className="min-h-screen antialiased">
         <Providers>{children}</Providers>
       </body>
     </html>

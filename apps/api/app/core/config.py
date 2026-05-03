@@ -10,6 +10,12 @@ from app.core.exceptions import ConfigurationError
 
 
 ZAI_PROVIDER_NAMES = {"zai", "z.ai", "zai-glm", "zai_glm"}
+DEFAULT_CORS_ALLOWED_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+)
 
 
 def find_env_file() -> str | None:
@@ -36,6 +42,7 @@ class Settings(BaseSettings):
     supabase_jwks_url: str | None = None
     supabase_storage_bucket: str = "listing-images"
     allowed_email_domains: Annotated[tuple[str, ...], NoDecode] = ("siswa.um.edu.my", "um.edu.my")
+    cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = DEFAULT_CORS_ALLOWED_ORIGINS
     upload_storage_dir: str = "storage/uploads"
     upload_public_base_url: str = "http://localhost:8001/uploads"
     max_upload_file_size_bytes: int = 5 * 1024 * 1024
@@ -69,16 +76,6 @@ class Settings(BaseSettings):
     @field_validator("allowed_email_domains", mode="before")
     @classmethod
     def parse_allowed_email_domains(cls, value: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
-        def normalize_domains(raw_domains: list[str] | tuple[str, ...]) -> tuple[str, ...]:
-            domains: list[str] = []
-            for raw_domain in raw_domains:
-                domains.extend(
-                    domain.strip().strip('"').strip("'").lower()
-                    for domain in str(raw_domain).split(",")
-                    if domain.strip().strip('"').strip("'")
-                )
-            return tuple(domains)
-
         if isinstance(value, str):
             stripped = value.strip()
             if stripped.startswith("[") and stripped.endswith("]"):
@@ -87,11 +84,28 @@ class Settings(BaseSettings):
                 except json.JSONDecodeError:
                     parsed = [stripped.strip("[]")]
                 if isinstance(parsed, list):
-                    return normalize_domains(parsed)
-            return normalize_domains([stripped])
+                    return normalize_csv_values(parsed, lowercase=True)
+            return normalize_csv_values([stripped], lowercase=True)
         if isinstance(value, list):
-            return normalize_domains(value)
-        return normalize_domains(value)
+            return normalize_csv_values(value, lowercase=True)
+        return normalize_csv_values(value, lowercase=True)
+
+    @field_validator("cors_allowed_origins", mode="before")
+    @classmethod
+    def parse_cors_allowed_origins(cls, value: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    parsed = [stripped.strip("[]")]
+                if isinstance(parsed, list):
+                    return normalize_csv_values(parsed)
+            return normalize_csv_values([stripped])
+        if isinstance(value, list):
+            return normalize_csv_values(value)
+        return normalize_csv_values(value)
 
     @model_validator(mode="after")
     def validate_zai_provider_selection(self) -> "Settings":
@@ -156,3 +170,14 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def normalize_csv_values(raw_values: list[str] | tuple[str, ...], *, lowercase: bool = False) -> tuple[str, ...]:
+    values: list[str] = []
+    for raw_value in raw_values:
+        values.extend(
+            normalized.lower() if lowercase else normalized
+            for value in str(raw_value).split(",")
+            if (normalized := value.strip().strip('"').strip("'"))
+        )
+    return tuple(values)

@@ -186,6 +186,17 @@ The product now captures decision outcomes instead of stopping at recommendation
 
 This creates the demo-stage data flywheel judges expect: recommendations lead to actions, actions create outcomes, and outcomes improve future pricing evidence.
 
+## Recommendation Engine
+
+UM Nexus Trade uses a hybrid v1 recommendation engine for both seller and buyer workflows. The deterministic score is the ranking source of truth, while GLM enrichment can improve the surrounding decision wording when configured.
+
+- Sellers see ranked potential buyers from `GET /api/v1/listings/{listing_id}/matches?limit=10&min_score=58`.
+- Buyers see ranked product suggestions from `GET /api/v1/wanted-posts/{wanted_post_id}/recommended-listings?limit=12&min_score=58`.
+- Scoring weights are buyer need fit `35%`, budget fit `25%`, location fit `25%`, urgency `10%`, and listing quality/freshness `5%`.
+- Same normalized residential college is strongest. Values such as `KK12`, `kk 12`, and `Kolej Kediaman 12` all compare as `KK12`.
+- Location scoring favors exact same KK, then exact pickup area, then generic KK-related proximity, then workable campus pickup points.
+- Matches at `58+` are suggested; matches at `74+` are treated as strong recommendations. Buyer product suggestions below `58` are suppressed.
+
 ### Demo Moderator Access
 
 Moderation endpoints remain role-protected. For a judge demo, sign in with a test UM-domain account and update that user profile to `app_role = moderator` or `admin` in the local database. Then open:
@@ -333,9 +344,12 @@ The root `.env.example` defines the shared local contract:
 - `SUPABASE_JWKS_URL`
 - `SUPABASE_STORAGE_BUCKET`
 - `ALLOWED_EMAIL_DOMAINS`
+- `CORS_ALLOWED_ORIGINS`
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAINS`
+- `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_API_TIMEOUT_MS`
 - `GLM_PROVIDER`
 - `ZAI_API_KEY`
 - `ZAI_BASE_URL`
@@ -408,16 +422,46 @@ Why `app_role` lives in our database:
 - `GET /health` returns:
 
   ```json
-  { "status": "ok" }
+  { "service": "um-nexus-api", "status": "ok", "environment": "development" }
   ```
 
-- The web homepage renders:
+- `GET /health/ready` checks database connectivity and upload storage availability:
+
+  ```json
+  {
+    "service": "um-nexus-api",
+    "status": "ready",
+    "checks": {
+      "database": "ok",
+      "storage": "ok",
+      "glm_provider": "demo"
+    }
+  }
+  ```
+
+- The web homepage renders the Trade Intelligence product entry point:
 
   ```text
-  UM Nexus is running
+  UM Nexus Trade Intelligence
   ```
 
 - `GET /api/v1/auth/me` returns the synced local user/profile when called with a valid Supabase bearer token
+
+## Product Readiness Checks
+
+Run these before demos or deployment:
+
+```bash
+cd apps/web
+npm run lint
+npm run build
+npm audit --audit-level=moderate
+
+cd ../api
+.venv\Scripts\python.exe -m pytest
+```
+
+The web container now builds a production Next.js app with `npm ci`, build-time public environment args, and `next start`. Keep public frontend values in `.env` or your deployment environment; do not bake local `.env.local` into the image.
 
 ## Useful Commands
 

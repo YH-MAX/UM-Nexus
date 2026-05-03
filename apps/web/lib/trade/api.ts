@@ -470,6 +470,11 @@ export type WantedListingRecommendation = {
   recommended_action: string;
 };
 
+export type RecommendationOptions = {
+  limit?: number;
+  minScore?: number;
+};
+
 export const tradeCategories = [
   { value: "textbooks", label: "Textbooks" },
   { value: "electronics", label: "Electronics" },
@@ -487,6 +492,10 @@ export const pickupAreas = [
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001/api/v1";
+const API_REQUEST_TIMEOUT_MS = readPositiveNumber(
+  process.env.NEXT_PUBLIC_API_TIMEOUT_MS,
+  20_000,
+);
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const supabase = createBrowserSupabaseClient();
@@ -497,7 +506,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
   const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -509,14 +518,70 @@ async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    const detail =
-      typeof body?.detail === "string"
-        ? body.detail
-        : `Request failed with status ${response.status}`;
-    throw new Error(detail);
+    throw new Error(getApiErrorMessage(body, response.status));
   }
 
   return response.json() as Promise<T>;
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
+  const abortFromCaller = () => controller.abort();
+
+  init.signal?.addEventListener("abort", abortFromCaller, { once: true });
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("The API request timed out. Check that the backend service is running.");
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+    init.signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
+function getApiErrorMessage(body: unknown, statusCode: number): string {
+  if (isRecord(body)) {
+    const detail = body.detail;
+    if (typeof detail === "string") {
+      return detail;
+    }
+    if (Array.isArray(detail)) {
+      const validationMessages = detail
+        .map((item) => {
+          if (!isRecord(item)) {
+            return null;
+          }
+          const field = Array.isArray(item.loc) ? item.loc.slice(1).join(".") : "field";
+          return typeof item.msg === "string" ? `${field}: ${item.msg}` : null;
+        })
+        .filter(Boolean);
+      if (validationMessages.length > 0) {
+        return validationMessages.join("; ");
+      }
+    }
+    if (typeof body.message === "string") {
+      return body.message;
+    }
+  }
+
+  return `Request failed with status ${statusCode}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function readPositiveNumber(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 export function formatCategory(category: string): string {
@@ -583,7 +648,7 @@ export async function uploadListingImage(
   formData.append("is_primary", String(options.isPrimary ?? false));
 
   const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/listings/${listingId}/images`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/listings/${listingId}/images`, {
     method: "POST",
     body: formData,
     headers: authHeaders,
@@ -591,11 +656,7 @@ export async function uploadListingImage(
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    const detail =
-      typeof body?.detail === "string"
-        ? body.detail
-        : `Upload failed with status ${response.status}`;
-    throw new Error(detail);
+    throw new Error(getApiErrorMessage(body, response.status));
   }
 
   return response.json() as Promise<ListingImage>;
@@ -612,7 +673,7 @@ export async function generateSellAgentDraft(
   });
 
   const authHeaders = await getAuthHeaders();
-  const response = await fetch(`${API_BASE_URL}/ai/trade/sell-agent/draft`, {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/ai/trade/sell-agent/draft`, {
     method: "POST",
     body: formData,
     headers: authHeaders,
@@ -620,11 +681,7 @@ export async function generateSellAgentDraft(
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    const detail =
-      typeof body?.detail === "string"
-        ? body.detail
-        : `Draft generation failed with status ${response.status}`;
-    throw new Error(detail);
+    throw new Error(getApiErrorMessage(body, response.status));
   }
 
   return response.json() as Promise<SellAgentDraft>;
@@ -656,12 +713,15 @@ export async function getWantedPost(id: string): Promise<WantedPost> {
 
 export async function getWantedPostRecommendations(
   id: string,
+  options: RecommendationOptions = {},
 ): Promise<WantedListingRecommendation[]> {
-  return fetchJson<WantedListingRecommendation[]>(`/wanted-posts/${id}/recommended-listings`);
+  const query = recommendationQuery(options);
+  return fetchJson<WantedListingRecommendation[]>(`/wanted-posts/${id}/recommended-listings${query}`);
 }
 
-export async function getListingMatches(id: string): Promise<TradeMatch[]> {
-  return fetchJson<TradeMatch[]>(`/listings/${id}/matches`);
+export async function getListingMatches(id: string, options: RecommendationOptions = {}): Promise<TradeMatch[]> {
+  const query = recommendationQuery(options);
+  return fetchJson<TradeMatch[]>(`/listings/${id}/matches${query}`);
 }
 
 export async function applyRecommendedPrice(id: string): Promise<Listing> {
@@ -781,4 +841,16 @@ export async function getTradeEvaluationSummary(): Promise<BenchmarkSummary> {
 
 export async function getTradeEvaluationCases(): Promise<BenchmarkCaseDetail[]> {
   return fetchJson<BenchmarkCaseDetail[]>("/ai/trade/evaluation/cases");
+}
+
+function recommendationQuery(options: RecommendationOptions): string {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.minScore !== undefined) {
+    params.set("min_score", String(options.minScore));
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }

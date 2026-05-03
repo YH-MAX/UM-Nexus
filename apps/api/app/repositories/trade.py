@@ -185,13 +185,24 @@ class TradeRepository:
         self.db.commit()
         return self.get_trade_match_or_none(trade_match.id) or trade_match
 
-    def list_matches_for_listing(self, listing_id: str) -> Sequence[TradeMatch]:
+    def list_matches_for_listing(
+        self,
+        listing_id: str,
+        *,
+        min_score: float | None = None,
+        limit: int | None = None,
+    ) -> Sequence[TradeMatch]:
         stmt = (
             select(TradeMatch)
+            .join(WantedPost, TradeMatch.wanted_post_id == WantedPost.id)
             .options(selectinload(TradeMatch.wanted_post))
-            .where(TradeMatch.listing_id == listing_id)
+            .where(TradeMatch.listing_id == listing_id, WantedPost.status == "active")
             .order_by(desc(TradeMatch.match_score), desc(TradeMatch.created_at))
         )
+        if min_score is not None:
+            stmt = stmt.where(TradeMatch.match_score >= min_score)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         return self.db.scalars(stmt).all()
 
     def list_matches_for_wanted_post(self, wanted_post_id: str) -> Sequence[TradeMatch]:

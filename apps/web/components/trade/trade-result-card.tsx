@@ -54,7 +54,7 @@ export function TradeResultCard({
               ? errorMessage ?? "The enrichment job failed. Try running it again."
               : isPending
                 ? "The enrichment job is comparing historical sales, trust signals, local demand, and buyer fit."
-                : "Run enrichment to generate a pricing decision, trust score, buyer matches, and sell-faster action."}
+              : "Run enrichment to generate a pricing decision, trust score, potential buyers, and sell-faster action."}
           </p>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -158,14 +158,14 @@ export function TradeResultCard({
 
         <div className="p-5">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-lg font-semibold text-slate-950">Top matches</h3>
+            <h3 className="text-lg font-semibold text-slate-950">Potential buyers</h3>
             <span className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
               Best 3
             </span>
           </div>
           {result.recommendation.best_match_candidates.length === 0 ? (
             <p className="mt-3 text-sm leading-6 text-slate-600">
-              No strong buyer match yet. The engine recommends improving price or listing quality first.
+              No strong potential buyer yet. The engine recommends improving price or listing quality first.
             </p>
           ) : (
             <div className="mt-4 space-y-3">
@@ -177,7 +177,7 @@ export function TradeResultCard({
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                        Match {index + 1}
+                        Buyer {index + 1}
                       </p>
                       <p className="mt-1 font-semibold text-slate-950">{candidate.title}</p>
                     </div>
@@ -189,9 +189,9 @@ export function TradeResultCard({
                     </div>
                   </div>
                   <div className="mt-3 space-y-2 text-sm leading-5 text-slate-600">
-                    <p>{candidate.item_fit_summary}</p>
-                    <p>{candidate.price_fit_summary}</p>
-                    <p>{candidate.location_fit_summary}</p>
+                    <p>Need fit: {candidate.item_fit_summary}</p>
+                    <p>Budget fit: {candidate.price_fit_summary}</p>
+                    <p>Pickup fit: {candidate.location_fit_summary}</p>
                   </div>
                 </div>
               ))}

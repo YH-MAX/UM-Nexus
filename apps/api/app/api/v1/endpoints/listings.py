@@ -156,6 +156,11 @@ def create_listing_report_endpoint(
 @router.get("/{listing_id}/matches", response_model=list[TradeMatchRead])
 def get_listing_matches_endpoint(
     listing_id: UUID,
+    limit: int = Query(default=10, ge=1, le=50),
+    min_score: float = Query(default=58.0, ge=0, le=100),
     db: Session = Depends(get_db),
 ) -> list[TradeMatchRead]:
-    return [TradeMatchRead.model_validate(match) for match in list_matches_for_listing(db, str(listing_id))]
+    return [
+        TradeMatchRead.model_validate(match)
+        for match in list_matches_for_listing(db, str(listing_id), limit=limit, min_score=min_score)
+    ]

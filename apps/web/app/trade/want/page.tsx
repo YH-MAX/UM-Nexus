@@ -60,7 +60,7 @@ export default function WantPage() {
   return (
     <TradeShell
       title="Create a wanted post"
-      description="Tell the engine what you want so sellers can see stronger demand, budget, and pickup signals."
+      description="Describe what you need, your budget, and your pickup preference so the engine can recommend products and help nearby sellers find you."
     >
       {!user ? (
         <RequireAuthCard description="Sign in with your UM account before creating buyer wanted posts." />
@@ -72,15 +72,15 @@ export default function WantPage() {
       >
         <div className="grid gap-4 md:grid-cols-2">
           <TextField label="Title" required value={form.title} onChange={(value) => updateField("title", value)} />
-          <TextField label="Desired item" value={form.desired_item_name} onChange={(value) => updateField("desired_item_name", value)} />
+          <TextField label="Desired item or model" value={form.desired_item_name} onChange={(value) => updateField("desired_item_name", value)} />
           <SelectField label="Category" value={form.category} options={tradeCategories} onChange={(value) => updateField("category", value)} />
-          <TextField label="Maximum budget" type="number" value={form.max_budget} onChange={(value) => updateField("max_budget", value)} />
-          <SelectField label="Preferred pickup" value={form.preferred_pickup_area} options={pickupAreas} onChange={(value) => updateField("preferred_pickup_area", value)} />
-          <TextField label="Residential college" value={form.residential_college} onChange={(value) => updateField("residential_college", value)} />
+          <TextField label="Maximum budget (MYR)" type="number" value={form.max_budget} onChange={(value) => updateField("max_budget", value)} />
+          <SelectField label="Preferred pickup area" value={form.preferred_pickup_area} options={pickupAreas} onChange={(value) => updateField("preferred_pickup_area", value)} />
+          <TextField label="Residential college / KK" value={form.residential_college} onChange={(value) => updateField("residential_college", value)} />
         </div>
 
         <label className="grid gap-2">
-          <span className="text-sm font-semibold text-slate-800">Description</span>
+          <span className="text-sm font-semibold text-slate-800">Need details, urgency, and acceptable alternatives</span>
           <textarea
             className="min-h-28 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-600"
             value={form.description}

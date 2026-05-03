@@ -25,6 +25,12 @@ from app.schemas.trade_intelligence import (
     TradeProviderStatus,
 )
 from app.services.embedding_service import make_demo_embedding_text
+from app.services.recommendation_service import (
+    MIN_SUGGESTED_MATCH_SCORE as RECOMMENDATION_MIN_SUGGESTED_MATCH_SCORE,
+    recommend_buyers_for_listing,
+    recommend_listings_for_wanted_post as build_listing_recommendations_for_wanted_post,
+    recommended_match_candidates,
+)
 from app.services.trade_intelligence_glm_service import build_multimodal_glm_payload, generate_glm_trade_result
 
 
@@ -44,33 +50,22 @@ SUSPICIOUS_KEYWORDS = {
 }
 GOOD_CONDITION_KEYWORDS = {"like new", "excellent", "barely used", "minor scratches", "minor scratch", "works well"}
 POOR_CONDITION_KEYWORDS = {"broken", "faulty", "damaged", "not working", "missing", "cracked", "heavy scratches"}
-URGENCY_KEYWORDS = {"urgent", "asap", "today", "tomorrow", "exam", "move-in", "move out", "this week", "needed soon"}
-STOPWORDS = {
-    "the",
-    "and",
-    "for",
-    "with",
-    "want",
-    "need",
-    "used",
-    "item",
-    "good",
-    "condition",
-    "looking",
-    "searching",
-    "near",
-    "prefer",
-}
-
 CATEGORY_FALLBACK_PRICES = {
     "textbooks": (28.0, 42.0, 58.0),
     "electronics": (60.0, 120.0, 220.0),
     "small_appliances": (45.0, 95.0, 180.0),
     "dorm_essentials": (18.0, 35.0, 70.0),
 }
-MIN_SUGGESTED_MATCH_SCORE = 58.0
-MIN_RECOMMENDED_MATCH_SCORE = 74.0
-MIN_RECOMMENDED_ITEM_FIT_SCORE = 58.0
+PRICING_STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "used",
+    "item",
+    "good",
+    "condition",
+}
 CONDITION_MULTIPLIERS = {
     "new": 1.18,
     "like new": 1.12,
@@ -272,52 +267,43 @@ def get_trade_provider_status(db: Session, *, live_check: bool = False) -> Trade
     )
 
 
-def list_matches_for_listing(db: Session, listing_id: str) -> list[TradeMatch]:
+def list_matches_for_listing(
+    db: Session,
+    listing_id: str,
+    *,
+    limit: int = 10,
+    min_score: float = RECOMMENDATION_MIN_SUGGESTED_MATCH_SCORE,
+) -> list[TradeMatch]:
     repo = TradeRepository(db)
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
-    return list(repo.list_matches_for_listing(listing_id))
+    return list(repo.list_matches_for_listing(listing_id, min_score=min_score, limit=limit))
 
 
-def recommend_listings_for_wanted_post(db: Session, wanted_post_id: str) -> list[dict]:
+def recommend_listings_for_wanted_post(
+    db: Session,
+    wanted_post_id: str,
+    *,
+    limit: int = 12,
+    min_score: float = RECOMMENDATION_MIN_SUGGESTED_MATCH_SCORE,
+) -> list[dict]:
     repo = TradeRepository(db)
     wanted_post = repo.get_wanted_post_or_none(wanted_post_id)
     if wanted_post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted post not found")
 
-    recommendations: list[dict] = []
     historical_sales = list(repo.list_historical_sales_for_category(wanted_post.category))
-    for listing in repo.list_listings_by_category(wanted_post.category):
-        if listing.status != "active":
-            continue
-        pricing = _pricing_decision(listing, historical_sales)
-        candidates, _match_values = _score_matches(listing, [wanted_post], pricing)
-        if not candidates:
-            continue
-        candidate = candidates[0]
-        if candidate.match_score < MIN_SUGGESTED_MATCH_SCORE:
-            continue
-        risk_note = _buyer_risk_note(listing)
-        recommendations.append(
-            {
-                "listing": listing,
-                "match_score": candidate.match_score,
-                "price_fit_score": candidate.price_fit_score,
-                "location_fit_score": candidate.location_fit_score,
-                "semantic_fit_score": candidate.semantic_fit_score,
-                "final_match_confidence": candidate.final_match_confidence,
-                "explanation": candidate.explanation,
-                "price_fit_summary": candidate.price_fit_summary,
-                "location_fit_summary": candidate.location_fit_summary,
-                "item_fit_summary": candidate.item_fit_summary,
-                "risk_note": risk_note,
-                "recommended_action": _buyer_recommended_action(listing, pricing, candidate),
-            }
-        )
-
-    recommendations.sort(key=lambda item: (item["match_score"], item["price_fit_score"] or 0), reverse=True)
-    return recommendations
+    listing_pricing_pairs = [
+        (listing, _pricing_decision(listing, historical_sales))
+        for listing in repo.list_listings_by_category(wanted_post.category)
+    ]
+    return build_listing_recommendations_for_wanted_post(
+        wanted_post,
+        listing_pricing_pairs,
+        min_score=min_score,
+        limit=limit,
+    )
 
 
 def simulate_listing_price(
@@ -432,7 +418,11 @@ def recompute_matches_for_listing(db: Session, listing_id: str) -> list[TradeMat
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
 
     pricing = _pricing_decision(listing, list(repo.list_historical_sales_for_category(listing.category)))
-    candidates, matches = _score_matches(listing, list(repo.list_wanted_posts_by_category(listing.category)), pricing)
+    candidates, matches = recommend_buyers_for_listing(
+        listing,
+        list(repo.list_wanted_posts_by_category(listing.category)),
+        pricing,
+    )
     for match_values in matches:
         repo.upsert_trade_match(listing.id, match_values.pop("wanted_post_id"), match_values)
     return list(repo.list_matches_for_listing(listing_id))
@@ -447,8 +437,8 @@ def build_trade_intelligence_result(
 ) -> tuple[TradeIntelligenceResult, list[dict], float]:
     pricing = _pricing_decision(listing, historical_sales)
     risk = _risk_decision(listing, pricing, reports_count, duplicate_image_count)
-    candidates, match_values = _score_matches(listing, wanted_posts, pricing)
-    recommended_candidates = _recommended_candidates(candidates)
+    candidates, match_values = recommend_buyers_for_listing(listing, wanted_posts, pricing)
+    recommended_candidates = recommended_match_candidates(candidates)
 
     top_score = recommended_candidates[0].match_score if recommended_candidates else 0
     interest = _buyer_interest(top_score, len(candidates), pricing, listing)
@@ -646,176 +636,6 @@ def _risk_decision(
     if risk_score >= 35:
         return RiskDecision(risk_score, "medium", "Medium risk because " + ", ".join(reasons) + ".")
     return RiskDecision(risk_score, "low", "Low risk: price, description, and trust signals are broadly consistent.")
-
-
-def _score_matches(
-    listing: Listing,
-    wanted_posts: list[WantedPost],
-    pricing: PricingDecision,
-) -> tuple[list[MatchCandidate], list[dict]]:
-    candidates: list[MatchCandidate] = []
-    match_values: list[dict] = []
-    for wanted_post in wanted_posts:
-        category_fit = 100.0 if wanted_post.category == listing.category else 0.0
-        item_fit = _semantic_fit_score(listing, wanted_post)
-        price_fit = _price_fit_score(float(listing.price), float(wanted_post.max_budget) if wanted_post.max_budget else None)
-        location_fit = _location_fit_score(listing, wanted_post)
-        urgency_fit = _urgency_score(wanted_post)
-        match_score = round(
-            category_fit * 0.10 + item_fit * 0.34 + price_fit * 0.25 + location_fit * 0.23 + urgency_fit * 0.08,
-            2,
-        )
-        confidence = _match_confidence(match_score)
-        price_summary = _price_fit_summary(listing, wanted_post, price_fit, pricing)
-        location_summary = _location_fit_summary(listing, wanted_post, location_fit)
-        item_summary = _item_fit_summary(listing, wanted_post, item_fit)
-        explanation = (
-            f"Item fit: {item_summary} Price fit: {price_summary} "
-            f"Location fit: {location_summary} Final confidence: {confidence} ({match_score:.0f}%)."
-        )
-        candidate = MatchCandidate(
-            wanted_post_id=wanted_post.id,
-            title=wanted_post.title,
-            match_score=match_score,
-            price_fit_score=price_fit,
-            location_fit_score=location_fit,
-            semantic_fit_score=item_fit,
-            explanation=explanation,
-            price_fit_summary=price_summary,
-            location_fit_summary=location_summary,
-            item_fit_summary=item_summary,
-            final_match_confidence=confidence,
-            max_budget=float(wanted_post.max_budget) if wanted_post.max_budget else None,
-            preferred_pickup_area=wanted_post.preferred_pickup_area,
-        )
-        candidates.append(candidate)
-        if match_score >= MIN_SUGGESTED_MATCH_SCORE:
-            match_values.append(
-                {
-                    "wanted_post_id": wanted_post.id,
-                    "match_score": Decimal(str(match_score)),
-                    "price_fit_score": Decimal(str(price_fit)),
-                    "location_fit_score": Decimal(str(location_fit)),
-                    "semantic_fit_score": Decimal(str(item_fit)),
-                    "status": "suggested",
-                    "explanation": explanation,
-                }
-            )
-
-    candidates.sort(key=lambda candidate: candidate.match_score, reverse=True)
-    match_values.sort(key=lambda values: values["match_score"], reverse=True)
-    return candidates, match_values
-
-
-def _recommended_candidates(candidates: list[MatchCandidate]) -> list[MatchCandidate]:
-    return [
-        candidate
-        for candidate in candidates
-        if candidate.match_score >= MIN_RECOMMENDED_MATCH_SCORE
-        and (candidate.semantic_fit_score or 0) >= MIN_RECOMMENDED_ITEM_FIT_SCORE
-    ]
-
-
-def _buyer_risk_note(listing: Listing) -> str:
-    risk_level = listing.risk_level or "unscored"
-    if risk_level == "high":
-        return "High trust risk: review seller details or wait for moderation before contacting."
-    if risk_level == "medium":
-        return "Medium trust risk: ask for clearer photos or proof before committing."
-    if listing.risk_score and float(listing.risk_score) >= 35:
-        return "Some trust signals need checking before pickup."
-    return "Low visible risk based on current listing signals."
-
-
-def _buyer_recommended_action(listing: Listing, pricing: PricingDecision, candidate: MatchCandidate) -> str:
-    if listing.risk_level == "high":
-        return "wait_for_review"
-    if float(listing.price) > pricing.fair_high * 1.12:
-        return "negotiate_price"
-    if candidate.match_score >= MIN_RECOMMENDED_MATCH_SCORE:
-        return "contact_seller"
-    return "watch_listing"
-
-
-def _price_fit_score(price: float, max_budget: float | None) -> float:
-    if max_budget is None:
-        return 68.0
-    if price <= max_budget:
-        return 100.0
-    ratio = price / max_budget
-    if ratio <= 1.10:
-        return 82.0
-    if ratio <= 1.25:
-        return 55.0
-    if ratio <= 1.50:
-        return 30.0
-    return 10.0
-
-
-def _location_fit_score(listing: Listing, wanted_post: WantedPost) -> float:
-    if listing.pickup_area and wanted_post.preferred_pickup_area and listing.pickup_area == wanted_post.preferred_pickup_area:
-        return 100.0
-    if (
-        listing.residential_college
-        and wanted_post.residential_college
-        and listing.residential_college.lower() == wanted_post.residential_college.lower()
-    ):
-        return 92.0
-    if _is_kk_related(listing.pickup_area, listing.residential_college) and _is_kk_related(
-        wanted_post.preferred_pickup_area,
-        wanted_post.residential_college,
-    ):
-        return 88.0
-    if not listing.pickup_area or not wanted_post.preferred_pickup_area:
-        return 62.0
-    if "other" in {listing.pickup_area, wanted_post.preferred_pickup_area}:
-        return 45.0
-    return 66.0
-
-
-def _semantic_fit_score(listing: Listing, wanted_post: WantedPost) -> float:
-    listing_tokens = _tokens(" ".join(filter(None, [listing.title, listing.item_name, listing.brand, listing.model, listing.description])))
-    wanted_tokens = _tokens(" ".join(filter(None, [wanted_post.title, wanted_post.desired_item_name, wanted_post.description])))
-    if not listing_tokens or not wanted_tokens:
-        return 55.0
-    overlap = len(listing_tokens & wanted_tokens) / max(len(wanted_tokens), 1)
-    score = 42 + overlap * 58
-    if listing.item_name and wanted_post.desired_item_name and _tokens(listing.item_name) & _tokens(wanted_post.desired_item_name):
-        score += 18
-    return round(min(score, 100.0), 2)
-
-
-def _urgency_score(wanted_post: WantedPost) -> float:
-    text = f"{wanted_post.title} {wanted_post.description or ''}".lower()
-    return 100.0 if any(keyword in text for keyword in URGENCY_KEYWORDS) else 55.0
-
-
-def _price_fit_summary(listing: Listing, wanted_post: WantedPost, score: float, pricing: PricingDecision) -> str:
-    if wanted_post.max_budget is None:
-        return "Buyer did not set a budget, so price fit is moderate."
-    if float(listing.price) <= float(wanted_post.max_budget):
-        return f"Listing price is within the buyer's RM{float(wanted_post.max_budget):.0f} budget."
-    if score >= 55:
-        return "Listing is slightly above budget but still close enough for negotiation."
-    return "Listing is meaningfully above the buyer budget and may need a price revision."
-
-
-def _location_fit_summary(listing: Listing, wanted_post: WantedPost, score: float) -> str:
-    if score >= 95:
-        return f"Both sides prefer {listing.pickup_area}, making pickup highly convenient."
-    if score >= 85:
-        return "Both sides are in a KK-related location, so handoff friction is low."
-    if score >= 60:
-        return "Pickup locations are workable but not an exact match."
-    return "Pickup preferences are weakly aligned."
-
-
-def _item_fit_summary(listing: Listing, wanted_post: WantedPost, score: float) -> str:
-    if score >= 85:
-        return "Wanted wording closely matches the listing title and item details."
-    if score >= 65:
-        return "Wanted wording partially matches the listing item and category."
-    return "Category matches, but item wording is broad or uncertain."
 
 
 def _condition_summary(listing: Listing) -> str:
@@ -1024,23 +844,13 @@ def _next_steps(action_type: str, pricing: PricingDecision, candidates: list[Mat
     return ["Publish or keep the listing active.", "Monitor buyer interest and rerun analysis if demand changes."]
 
 
-def _match_confidence(score: float) -> str:
-    if score >= 84:
-        return "very high"
-    if score >= 74:
-        return "high"
-    if score >= 58:
-        return "medium"
-    return "low"
-
-
-def _tokens(value: str) -> set[str]:
-    return {token for token in findall(r"[a-z0-9]+", value.lower()) if len(token) > 2 and token not in STOPWORDS}
-
-
 def _has_move_out_context(listing: Listing) -> bool:
     text = f"{listing.title} {listing.description or ''}".lower()
     return any(term in text for term in ("move-out", "move out", "moving out", "move-in", "move in", "semester end"))
+
+
+def _tokens(value: str) -> set[str]:
+    return {token for token in findall(r"[a-z0-9]+", value.lower()) if len(token) > 2 and token not in PRICING_STOPWORDS}
 
 
 def _condition_multiplier(condition_label: str | None) -> float:
