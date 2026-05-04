@@ -10,7 +10,9 @@ import { TradeShell } from "@/components/trade/trade-shell";
 import {
   formatMoney,
   getTradeDashboard,
+  updateContactRequest,
   updateTradeTransaction,
+  type ContactRequest,
   type TradeDashboard,
   type TradeTransaction,
 } from "@/lib/trade/api";
@@ -84,6 +86,22 @@ export default function TradeDashboardPage() {
     }
   }
 
+  async function answerContactRequest(request: ContactRequest, status: "accepted" | "rejected") {
+    setIsUpdating(request.id);
+    setError(null);
+    try {
+      await updateContactRequest(request.id, {
+        status,
+        seller_response: status === "accepted" ? "Accepted. Contact details are now visible." : "Rejected by seller.",
+      });
+      await loadDashboard();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update contact request.");
+    } finally {
+      setIsUpdating(null);
+    }
+  }
+
   return (
     <TradeShell
       title="My trade dashboard"
@@ -109,7 +127,7 @@ export default function TradeDashboardPage() {
             <Metric label="My listings" value={dashboard.listings.length} />
             <Metric label="Wanted posts" value={dashboard.wanted_posts.length} />
             <Metric label="Suggested matches" value={dashboard.matches.length} />
-            <Metric label="AI sales closed" value={dashboard.metrics.completed_sales_after_ai_recommendation} />
+            <Metric label="Contact requests" value={dashboard.contact_requests_received.length} />
           </section>
           <section className="grid gap-4 sm:grid-cols-3">
             <SmallMetric label="Recommendations accepted" value={dashboard.metrics.recommendations_accepted} />
@@ -157,6 +175,40 @@ export default function TradeDashboardPage() {
                       Budget {formatMoney(post.max_budget, post.currency)} · {post.preferred_pickup_area ?? "Any pickup"}
                     </p>
                   </Link>
+                ))
+              )}
+            </Panel>
+          </section>
+
+          <section className="grid gap-5 lg:grid-cols-2">
+            <Panel title="Contact requests received">
+              {dashboard.contact_requests_received.length === 0 ? (
+                <p className="text-sm text-slate-600">No buyer requests yet.</p>
+              ) : (
+                dashboard.contact_requests_received.map((request) => (
+                  <ContactRequestCard
+                    isUpdating={isUpdating === request.id}
+                    key={request.id}
+                    request={request}
+                    role="seller"
+                    onAnswer={answerContactRequest}
+                  />
+                ))
+              )}
+            </Panel>
+
+            <Panel title="Contact requests sent">
+              {dashboard.contact_requests_sent.length === 0 ? (
+                <p className="text-sm text-slate-600">No sent requests yet.</p>
+              ) : (
+                dashboard.contact_requests_sent.map((request) => (
+                  <ContactRequestCard
+                    isUpdating={false}
+                    key={request.id}
+                    request={request}
+                    role="buyer"
+                    onAnswer={answerContactRequest}
+                  />
                 ))
               )}
             </Panel>
@@ -291,6 +343,60 @@ function RevenueDelta({
       {delta >= 0 ? "+" : ""}
       {formatMoney(delta, listing.currency)} versus AI suggested price
     </p>
+  );
+}
+
+function ContactRequestCard({
+  isUpdating,
+  request,
+  role,
+  onAnswer,
+}: Readonly<{
+  isUpdating: boolean;
+  request: ContactRequest;
+  role: "seller" | "buyer";
+  onAnswer: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
+}>) {
+  const listingTitle = request.listing?.title ?? "Listing";
+  const canAnswer = role === "seller" && request.status === "pending";
+  return (
+    <div className="rounded-lg border border-slate-200 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold text-slate-950">{listingTitle}</p>
+          <p className="mt-1 text-sm text-slate-600">{request.message ?? "No message provided."}</p>
+        </div>
+        <StatusPill tone={request.status === "accepted" ? "good" : request.status === "rejected" ? "danger" : "warn"}>
+          {request.status}
+        </StatusPill>
+      </div>
+      {request.status === "accepted" ? (
+        <div className="mt-3 grid gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+          <p>Buyer: {request.buyer_contact_method} {request.buyer_contact_value ?? "Hidden"}</p>
+          <p>Seller: {request.seller_contact_method ?? "contact"} {request.seller_contact_value ?? "Hidden"}</p>
+        </div>
+      ) : null}
+      {canAnswer ? (
+        <div className="mt-3 flex gap-2">
+          <button
+            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+            disabled={isUpdating}
+            onClick={() => void onAnswer(request, "accepted")}
+            type="button"
+          >
+            Accept
+          </button>
+          <button
+            className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+            disabled={isUpdating}
+            onClick={() => void onAnswer(request, "rejected")}
+            type="button"
+          >
+            Reject
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

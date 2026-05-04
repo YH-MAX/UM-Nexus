@@ -8,16 +8,16 @@ import "./globals.css";
 export const metadata: Metadata = {
   applicationName: "UM Nexus",
   title: {
-    default: "UM Nexus Trade Intelligence",
+    default: "UM Nexus Trade",
     template: "%s | UM Nexus",
   },
   description:
-    "AI-powered campus resale decisions for University of Malaya students.",
+    "A trusted campus marketplace for University of Malaya students.",
   keywords: [
     "UM Nexus",
     "campus marketplace",
     "University of Malaya",
-    "trade intelligence",
+    "UM Nexus Trade",
     "student resale",
   ],
 };

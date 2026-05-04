@@ -15,13 +15,15 @@ from app.schemas.listing import (
     ListingReportRead,
     ListingUpdate,
 )
-from app.schemas.trade_product import DecisionFeedbackCreate, DecisionFeedbackRead
+from app.schemas.trade_product import ContactRequestCreate, ContactRequestRead, DecisionFeedbackCreate, DecisionFeedbackRead
 from app.schemas.trade_intelligence import TradeMatchRead
 from app.services.trade_intelligence import list_matches_for_listing
 from app.services.trade_service import (
     add_listing_image,
     add_uploaded_listing_image,
     apply_recommended_price,
+    contact_request_read,
+    create_contact_request,
     create_listing,
     create_decision_feedback,
     create_listing_report,
@@ -52,8 +54,9 @@ def list_listings_endpoint(
     min_price: float | None = Query(default=None, ge=0),
     max_price: float | None = Query(default=None, ge=0),
     pickup_area: str | None = Query(default=None),
+    condition: str | None = Query(default=None),
     risk_level: str | None = Query(default=None),
-    status_filter: str | None = Query(default="active", alias="status"),
+    status_filter: str | None = Query(default="available", alias="status"),
     sort: str = Query(default="newest"),
 ) -> list[ListingRead]:
     return [
@@ -65,6 +68,7 @@ def list_listings_endpoint(
             min_price=min_price,
             max_price=max_price,
             pickup_area=pickup_area,
+            condition=condition,
             risk_level=risk_level,
             status=status_filter,
             sort=sort,
@@ -151,6 +155,17 @@ def create_listing_report_endpoint(
 ) -> ListingReportRead:
     report = create_listing_report(db, str(listing_id), payload, current_user)
     return ListingReportRead.model_validate(report)
+
+
+@router.post("/{listing_id}/contact-requests", response_model=ContactRequestRead, status_code=status.HTTP_201_CREATED)
+def create_contact_request_endpoint(
+    listing_id: UUID,
+    payload: ContactRequestCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ContactRequestRead:
+    contact_request = create_contact_request(db, str(listing_id), payload, current_user)
+    return contact_request_read(contact_request, current_user)
 
 
 @router.get("/{listing_id}/matches", response_model=list[TradeMatchRead])

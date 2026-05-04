@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.integrations.glm_client import DemoGLMClient
 from app.integrations.supabase_storage import SupabaseStoredFile
-from app.models import AppRole, HistoricalSale, Listing, ListingEmbedding, ListingReport, MediaAsset, Profile, WantedPost
+from app.models import AppRole, HistoricalSale, Listing, ListingEmbedding, ListingReport, MediaAsset, Profile, User, WantedPost
 from app.services.embedding_service import make_demo_embedding_text
 from app.services import sell_agent_service as sell_agent_module
 from app.services import storage_service as storage_module
@@ -55,6 +55,13 @@ def create_wanted_post(client, payload: dict | None = None) -> dict:
     response = client.post("/api/v1/wanted-posts", json=payload or wanted_post_payload(), headers=AUTH_HEADERS)
     assert response.status_code == 201
     return response.json()
+
+
+def make_admin(db_session, token_verifier) -> None:
+    admin = User(id=str(token_verifier.claims.sub), email="admin@siswa.um.edu.my")
+    admin.profile = Profile(app_role=AppRole.ADMIN)
+    db_session.add(admin)
+    db_session.commit()
 
 
 def add_image(client, listing_id: str) -> None:
@@ -810,7 +817,9 @@ def test_pgvector_retrieval_helper_with_mocked_embedding(client, db_session) -> 
     assert examples[0]["entity_type"] in {"wanted_post", "historical_sale"}
 
 
-def test_evaluation_runner_output(client, db_session) -> None:
+def test_evaluation_runner_output(client, db_session, token_verifier) -> None:
+    make_admin(db_session, token_verifier)
+
     for item_name, category, condition, price in [
         ("scientific calculator", "electronics", "good", 52),
         ("phone", "electronics", "good", 520),
@@ -826,7 +835,7 @@ def test_evaluation_runner_output(client, db_session) -> None:
         )
     db_session.commit()
 
-    response = client.post("/api/v1/ai/trade/evaluate")
+    response = client.post("/api/v1/ai/trade/evaluate", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     body = response.json()
@@ -835,7 +844,7 @@ def test_evaluation_runner_output(client, db_session) -> None:
     assert "risk_agreement_rate" in body
 
 
-def test_seed_demo_scenarios_are_competition_ready() -> None:
+def test_seed_demo_scenarios_cover_launch_quality_cases() -> None:
     suspicious = [item for item in LISTINGS if item.get("reports")]
     no_image = [item for item in LISTINGS if item.get("image") is None and not item.get("reports")]
     overpriced = [item for item in LISTINGS if item["title"].lower().startswith("overpriced")]

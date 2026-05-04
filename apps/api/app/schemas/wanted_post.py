@@ -1,7 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.services.trade_policy import normalize_category
 from app.trade.constants import PickupArea, TradeCategory
 
 
@@ -14,6 +15,11 @@ class WantedPostCreate(BaseModel):
     currency: str = Field(default="MYR", min_length=3, max_length=3)
     preferred_pickup_area: PickupArea | None = None
     residential_college: str | None = Field(default=None, max_length=255)
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def normalize_category_value(cls, value: object) -> object:
+        return normalize_category(value) or value
 
 
 class WantedPostRead(BaseModel):

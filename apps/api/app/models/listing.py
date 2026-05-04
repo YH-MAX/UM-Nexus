@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from app.models.listing_embedding import ListingEmbedding
     from app.models.listing_image import ListingImage
     from app.models.listing_report import ListingReport
+    from app.models.trade_contact_request import TradeContactRequest
     from app.models.trade_match import TradeMatch
     from app.models.user import User
 
@@ -45,7 +46,9 @@ class Listing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="MYR", server_default="MYR")
     pickup_area: Mapped[str | None] = mapped_column(String(64), nullable=True)
     residential_college: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", server_default="active")
+    contact_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contact_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="available", server_default="available")
     risk_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, default=0, server_default="0")
     risk_level: Mapped[str | None] = mapped_column(String(32), nullable=True)
     risk_evidence: Mapped[dict[str, Any] | None] = mapped_column(JsonPayload, nullable=True)
@@ -73,6 +76,10 @@ class Listing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
     )
     reports: Mapped[list["ListingReport"]] = relationship(
+        back_populates="listing",
+        cascade="all, delete-orphan",
+    )
+    contact_requests: Mapped[list["TradeContactRequest"]] = relationship(
         back_populates="listing",
         cascade="all, delete-orphan",
     )

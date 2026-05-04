@@ -7,7 +7,9 @@ from app.auth.dependencies import require_app_role, require_authenticated_user
 from app.db.session import get_db
 from app.models import AppRole, Profile
 from app.schemas.profile import ProfileRead, ProfileUpdate, RoleUpdate
+from app.schemas.trade_product import UserReportCreate, UserReportRead
 from app.services.profile_service import update_profile, update_profile_role
+from app.services.trade_service import create_user_report
 
 
 router = APIRouter()
@@ -36,3 +38,14 @@ def update_user_role(
 
     updated_profile = update_profile_role(db, profile, payload.app_role)
     return ProfileRead.model_validate(updated_profile)
+
+
+@router.post("/{user_id}/reports", response_model=UserReportRead, status_code=status.HTTP_201_CREATED)
+def create_user_report_endpoint(
+    user_id: UUID,
+    payload: UserReportCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> UserReportRead:
+    report = create_user_report(db, str(user_id), payload, current_user)
+    return UserReportRead.model_validate(report)

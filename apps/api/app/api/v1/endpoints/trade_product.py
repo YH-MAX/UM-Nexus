@@ -11,15 +11,30 @@ from app.models import AppRole
 from app.schemas.ai_trade import TradeMatchRead
 from app.schemas.listing import ListingRead, ListingReportRead, ListingReportReview
 from app.schemas.trade_product import (
+    AdminDashboardResponse,
+    AdminListingUpdate,
+    AdminStatistics,
+    AdminUserStatusUpdate,
+    AdminUserSummary,
     ContactMatchCreate,
+    ContactRequestDecision,
+    ContactRequestRead,
+    ContactRequestsResponse,
     ModerationListingRead,
     ModerationSummary,
     TradeDashboardResponse,
     TradeTransactionRead,
     TradeTransactionUpdate,
+    UserReportRead,
 )
 from app.services.trade_service import (
+    admin_dashboard,
+    admin_update_listing,
+    admin_update_user_status,
     contact_match,
+    contact_request_read,
+    decide_contact_request,
+    list_contact_requests_for_user,
     list_moderation_listings,
     moderation_summary,
     review_listing_reports,
@@ -51,6 +66,29 @@ def update_trade_transaction_endpoint(
 ) -> TradeTransactionRead:
     transaction = update_trade_transaction(db, str(transaction_id), payload, current_user)
     return TradeTransactionRead.model_validate(transaction)
+
+
+@router.get("/users/me/contact-requests", response_model=ContactRequestsResponse)
+def list_my_contact_requests_endpoint(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ContactRequestsResponse:
+    requests = list_contact_requests_for_user(db, current_user)
+    return ContactRequestsResponse(
+        received=[contact_request_read(item, current_user) for item in requests["received"]],
+        sent=[contact_request_read(item, current_user) for item in requests["sent"]],
+    )
+
+
+@router.patch("/contact-requests/{contact_request_id}", response_model=ContactRequestRead)
+def decide_contact_request_endpoint(
+    contact_request_id: UUID,
+    payload: ContactRequestDecision,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ContactRequestRead:
+    contact_request = decide_contact_request(db, str(contact_request_id), payload, current_user)
+    return contact_request_read(contact_request, current_user)
 
 
 @router.get("/moderation/listings", response_model=list[ModerationListingRead])
@@ -97,5 +135,66 @@ def trade_dashboard_endpoint(
         wanted_posts=dashboard["wanted_posts"],
         matches=[TradeMatchRead.model_validate(match) for match in dashboard["matches"]],
         transactions=[TradeTransactionRead.model_validate(transaction) for transaction in dashboard["transactions"]],
+        contact_requests_received=[
+            contact_request_read(contact_request, current_user)
+            for contact_request in dashboard["contact_requests_received"]
+        ],
+        contact_requests_sent=[
+            contact_request_read(contact_request, current_user)
+            for contact_request in dashboard["contact_requests_sent"]
+        ],
         metrics=dashboard["metrics"],
+    )
+
+
+@router.get("/admin/dashboard", response_model=AdminDashboardResponse)
+def admin_dashboard_endpoint(
+    db: Session = Depends(get_db),
+    _admin=Depends(require_app_role(AppRole.ADMIN)),
+) -> AdminDashboardResponse:
+    dashboard = admin_dashboard(db)
+    return AdminDashboardResponse(
+        statistics=AdminStatistics(**dashboard["statistics"]),
+        listings=[ListingRead.model_validate(listing) for listing in dashboard["listings"]],
+        listing_reports=[ListingReportRead.model_validate(report) for report in dashboard["listing_reports"]],
+        user_reports=[UserReportRead.model_validate(report) for report in dashboard["user_reports"]],
+        suspicious_ai_flags=[ListingRead.model_validate(listing) for listing in dashboard["suspicious_ai_flags"]],
+        users=[_admin_user_summary(user) for user in dashboard["users"]],
+    )
+
+
+@router.patch("/admin/listings/{listing_id}", response_model=ListingRead)
+def admin_update_listing_endpoint(
+    listing_id: UUID,
+    payload: AdminListingUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_app_role(AppRole.ADMIN)),
+) -> ListingRead:
+    listing = admin_update_listing(db, str(listing_id), payload, admin)
+    return ListingRead.model_validate(listing)
+
+
+@router.patch("/admin/users/{user_id}/status", response_model=AdminUserSummary)
+def admin_update_user_status_endpoint(
+    user_id: UUID,
+    payload: AdminUserStatusUpdate,
+    db: Session = Depends(get_db),
+    _admin=Depends(require_app_role(AppRole.ADMIN)),
+) -> AdminUserSummary:
+    user = admin_update_user_status(db, str(user_id), payload)
+    return _admin_user_summary(user)
+
+
+def _admin_user_summary(user) -> AdminUserSummary:
+    profile = getattr(user, "profile", None)
+    app_role = getattr(profile, "app_role", None)
+    return AdminUserSummary(
+        id=user.id,
+        email=user.email,
+        username=user.username,
+        status=user.status,
+        app_role=getattr(app_role, "value", app_role),
+        full_name=getattr(profile, "full_name", None),
+        faculty=getattr(profile, "faculty", None),
+        residential_college=getattr(profile, "residential_college", None),
     )

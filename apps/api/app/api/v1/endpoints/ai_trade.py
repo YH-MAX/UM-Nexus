@@ -123,5 +123,8 @@ def simulate_listing_price_endpoint(
 
 
 @router.post("/trade/evaluate")
-def evaluate_trade_intelligence_endpoint(db: Session = Depends(get_db)) -> dict:
+def evaluate_trade_intelligence_endpoint(
+    db: Session = Depends(get_db),
+    _admin=Depends(require_app_role(AppRole.ADMIN)),
+) -> dict:
     return run_trade_evaluation(db)

@@ -123,7 +123,7 @@ def recommend_listings_for_wanted_post(
 ) -> list[dict[str, Any]]:
     recommendations: list[dict[str, Any]] = []
     for listing, pricing in listing_pricing_pairs:
-        if listing.status != "active":
+        if listing.status != "available":
             continue
         scored = score_listing_for_wanted_post(listing, wanted_post, pricing)
         candidate = scored.candidate

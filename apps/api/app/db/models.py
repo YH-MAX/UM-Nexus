@@ -13,9 +13,11 @@ from app.models.media_asset import MediaAsset  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.profile import Profile  # noqa: F401
 from app.models.society import Society  # noqa: F401
+from app.models.trade_contact_request import TradeContactRequest  # noqa: F401
 from app.models.trade_decision_feedback import TradeDecisionFeedback  # noqa: F401
 from app.models.trade_match import TradeMatch  # noqa: F401
 from app.models.trade_transaction import TradeTransaction  # noqa: F401
 from app.models.user import User  # noqa: F401
+from app.models.user_report import UserReport  # noqa: F401
 from app.models.wanted_post import WantedPost  # noqa: F401
 from app.models.wanted_post_embedding import WantedPostEmbedding  # noqa: F401

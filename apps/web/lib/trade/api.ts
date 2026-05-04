@@ -25,6 +25,7 @@ export type Listing = {
   currency: string;
   pickup_area: string | null;
   residential_college: string | null;
+  contact_method: string | null;
   status: string;
   risk_score: number;
   risk_level: string | null;
@@ -39,6 +40,16 @@ export type Listing = {
   created_at: string;
   updated_at: string;
   images: ListingImage[];
+  seller: {
+    id: string;
+    username: string | null;
+    status: string;
+    profile: {
+      full_name: string | null;
+      faculty: string | null;
+      residential_college: string | null;
+    } | null;
+  } | null;
 };
 
 export type WantedPost = {
@@ -288,6 +299,8 @@ export type ListingPayload = {
   currency: string;
   pickup_area?: string;
   residential_college?: string;
+  contact_method?: "telegram" | "whatsapp";
+  contact_value?: string;
 };
 
 export type SellAgentSellerContext = {
@@ -380,6 +393,38 @@ export type ListingReport = {
   created_at: string;
 };
 
+export type UserReport = {
+  id: string;
+  reported_user_id: string;
+  reporter_user_id: string | null;
+  report_type: string;
+  reason: string | null;
+  status: string;
+  moderator_user_id: string | null;
+  resolution: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+};
+
+export type ContactRequest = {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  message: string | null;
+  buyer_contact_method: string;
+  buyer_contact_value: string | null;
+  seller_contact_method: string | null;
+  seller_contact_value: string | null;
+  status: "pending" | "accepted" | "rejected" | string;
+  seller_response: string | null;
+  accepted_at: string | null;
+  rejected_at: string | null;
+  created_at: string;
+  updated_at: string;
+  listing: Listing | null;
+};
+
 export type TradeTransaction = {
   id: string;
   listing_id: string;
@@ -402,12 +447,19 @@ export type TradeDashboard = {
   wanted_posts: WantedPost[];
   matches: TradeMatch[];
   transactions: TradeTransaction[];
+  contact_requests_received: ContactRequest[];
+  contact_requests_sent: ContactRequest[];
   metrics: {
     recommendations_accepted: number;
     decision_feedback_count: number;
     completed_sales_after_ai_recommendation: number;
     average_price_adjustment: number | null;
   };
+};
+
+export type ContactRequestsResponse = {
+  received: ContactRequest[];
+  sent: ContactRequest[];
 };
 
 export type ModerationListing = {
@@ -420,6 +472,31 @@ export type ModerationSummary = {
   pending_review_count: number;
   rejected_count: number;
   approved_count: number;
+};
+
+export type AdminDashboard = {
+  statistics: {
+    total_users: number;
+    active_listings: number;
+    sold_listings: number;
+    reported_listings: number;
+    new_listings_this_week: number;
+    most_popular_categories: Array<{ category: string; count: number }>;
+  };
+  listings: Listing[];
+  listing_reports: ListingReport[];
+  user_reports: UserReport[];
+  suspicious_ai_flags: Listing[];
+  users: Array<{
+    id: string;
+    email: string;
+    username: string | null;
+    status: string;
+    app_role: string | null;
+    full_name: string | null;
+    faculty: string | null;
+    residential_college: string | null;
+  }>;
 };
 
 export type DecisionFeedback = {
@@ -476,11 +553,39 @@ export type RecommendationOptions = {
 };
 
 export const tradeCategories = [
-  { value: "textbooks", label: "Textbooks" },
+  { value: "textbooks_notes", label: "Textbooks & Notes" },
   { value: "electronics", label: "Electronics" },
-  { value: "small_appliances", label: "Small appliances" },
-  { value: "dorm_essentials", label: "Dorm essentials" },
+  { value: "dorm_room", label: "Dorm & Room" },
+  { value: "kitchen_appliances", label: "Kitchen Appliances" },
+  { value: "furniture", label: "Furniture" },
+  { value: "clothing", label: "Clothing" },
+  { value: "sports_hobby", label: "Sports & Hobby" },
+  { value: "tickets_events", label: "Tickets & Events" },
+  { value: "free_items", label: "Free Items" },
+  { value: "others", label: "Others" },
 ] as const;
+
+export const conditionOptions = [
+  { value: "new", label: "New" },
+  { value: "like_new", label: "Like new" },
+  { value: "good", label: "Good" },
+  { value: "fair", label: "Fair" },
+  { value: "poor", label: "Poor" },
+] as const;
+
+export const listingStatusOptions = [
+  { value: "available", label: "Available" },
+  { value: "reserved", label: "Reserved" },
+  { value: "sold", label: "Sold" },
+] as const;
+
+export const contactMethods = [
+  { value: "telegram", label: "Telegram" },
+  { value: "whatsapp", label: "WhatsApp" },
+] as const;
+
+export const tradeSafetyMessage =
+  "Meet in public campus areas. Check the item before payment. UM Nexus does not hold payments in V1.";
 
 export const pickupAreas = [
   { value: "KK", label: "KK" },
@@ -585,7 +690,7 @@ function readPositiveNumber(value: string | undefined, fallback: number): number
 }
 
 export function formatCategory(category: string): string {
-  return category.replaceAll("_", " ");
+  return tradeCategories.find((item) => item.value === category)?.label ?? category.replaceAll("_", " ");
 }
 
 export function formatMoney(value: number | null | undefined, currency = "MYR") {
@@ -740,6 +845,30 @@ export async function reportListing(
   });
 }
 
+export async function reportUser(
+  id: string,
+  payload: { report_type: string; reason?: string },
+): Promise<UserReport> {
+  return fetchJson<UserReport>(`/users/${id}/reports`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createContactRequest(
+  listingId: string,
+  payload: {
+    message?: string;
+    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_value: string;
+  },
+): Promise<ContactRequest> {
+  return fetchJson<ContactRequest>(`/listings/${listingId}/contact-requests`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function submitDecisionFeedback(
   id: string,
   payload: {
@@ -784,6 +913,20 @@ export async function getTradeDashboard(): Promise<TradeDashboard> {
   return fetchJson<TradeDashboard>("/users/me/trade-dashboard");
 }
 
+export async function getContactRequests(): Promise<ContactRequestsResponse> {
+  return fetchJson<ContactRequestsResponse>("/users/me/contact-requests");
+}
+
+export async function updateContactRequest(
+  id: string,
+  payload: { status: "accepted" | "rejected"; seller_response?: string },
+): Promise<ContactRequest> {
+  return fetchJson<ContactRequest>(`/contact-requests/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getModerationListings(): Promise<ModerationListing[]> {
   return fetchJson<ModerationListing[]>("/moderation/listings");
 }
@@ -797,6 +940,30 @@ export async function reviewModerationListing(
   payload: { status: string; moderation_status?: string; resolution?: string },
 ): Promise<Listing> {
   return fetchJson<Listing>(`/moderation/listings/${id}/review`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAdminDashboard(): Promise<AdminDashboard> {
+  return fetchJson<AdminDashboard>("/admin/dashboard");
+}
+
+export async function updateAdminListing(
+  id: string,
+  payload: { status?: string; moderation_status?: string; resolution?: string },
+): Promise<Listing> {
+  return fetchJson<Listing>(`/admin/listings/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminUserStatus(
+  id: string,
+  payload: { status: "active" | "suspended" | "banned" },
+): Promise<AdminDashboard["users"][number]> {
+  return fetchJson<AdminDashboard["users"][number]>(`/admin/users/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });

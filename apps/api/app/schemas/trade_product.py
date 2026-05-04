@@ -3,15 +3,57 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.ai_trade import TradeMatchRead
 from app.schemas.listing import ListingRead, ListingReportRead
 from app.schemas.wanted_post import WantedPostRead
+from app.services.trade_policy import normalize_contact_method, normalize_listing_status
+from app.trade.constants import ContactMethod, ListingStatus, UserStatus
 
 
 class ContactMatchCreate(BaseModel):
     message: str | None = Field(default=None, max_length=2000)
+
+
+class ContactRequestCreate(BaseModel):
+    message: str | None = Field(default=None, max_length=2000)
+    buyer_contact_method: ContactMethod
+    buyer_contact_value: str = Field(..., min_length=1, max_length=255)
+
+    @field_validator("buyer_contact_method", mode="before")
+    @classmethod
+    def normalize_contact_method_value(cls, value: object) -> object:
+        return normalize_contact_method(value) or value
+
+
+class ContactRequestDecision(BaseModel):
+    status: Literal["accepted", "rejected"]
+    seller_response: str | None = Field(default=None, max_length=2000)
+
+
+class ContactRequestRead(BaseModel):
+    id: str
+    listing_id: str
+    buyer_id: str
+    seller_id: str
+    message: str | None
+    buyer_contact_method: str
+    buyer_contact_value: str | None = None
+    seller_contact_method: str | None = None
+    seller_contact_value: str | None = None
+    status: str
+    seller_response: str | None
+    accepted_at: datetime | None
+    rejected_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    listing: ListingRead | None = None
+
+
+class ContactRequestsResponse(BaseModel):
+    received: list[ContactRequestRead] = Field(default_factory=list)
+    sent: list[ContactRequestRead] = Field(default_factory=list)
 
 
 class TradeTransactionRead(BaseModel):
@@ -53,6 +95,8 @@ class TradeDashboardResponse(BaseModel):
     wanted_posts: list[WantedPostRead]
     matches: list[TradeMatchRead]
     transactions: list[TradeTransactionRead]
+    contact_requests_received: list[ContactRequestRead] = Field(default_factory=list)
+    contact_requests_sent: list[ContactRequestRead] = Field(default_factory=list)
     metrics: TradeDashboardMetrics = Field(default_factory=TradeDashboardMetrics)
 
 
@@ -66,6 +110,70 @@ class ModerationSummary(BaseModel):
     pending_review_count: int = 0
     rejected_count: int = 0
     approved_count: int = 0
+
+
+class UserReportCreate(BaseModel):
+    report_type: str = Field(..., min_length=1, max_length=100)
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class UserReportRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    reported_user_id: str
+    reporter_user_id: str | None
+    report_type: str
+    reason: str | None
+    status: str
+    moderator_user_id: str | None
+    resolution: str | None
+    reviewed_at: datetime | None
+    created_at: datetime
+
+
+class AdminListingUpdate(BaseModel):
+    status: ListingStatus | None = None
+    moderation_status: str | None = Field(default=None, max_length=32)
+    resolution: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status_value(cls, value: object) -> object:
+        return normalize_listing_status(value)
+
+
+class AdminUserStatusUpdate(BaseModel):
+    status: UserStatus
+
+
+class AdminUserSummary(BaseModel):
+    id: str
+    email: str
+    username: str | None = None
+    status: str
+    app_role: str | None = None
+    full_name: str | None = None
+    faculty: str | None = None
+    residential_college: str | None = None
+
+
+class AdminStatistics(BaseModel):
+    total_users: int = 0
+    active_listings: int = 0
+    sold_listings: int = 0
+    reported_listings: int = 0
+    new_listings_this_week: int = 0
+    most_popular_categories: list[dict[str, int | str]] = Field(default_factory=list)
+
+
+class AdminDashboardResponse(BaseModel):
+    statistics: AdminStatistics
+    listings: list[ListingRead] = Field(default_factory=list)
+    listing_reports: list[ListingReportRead] = Field(default_factory=list)
+    user_reports: list[UserReportRead] = Field(default_factory=list)
+    suspicious_ai_flags: list[ListingRead] = Field(default_factory=list)
+    users: list[AdminUserSummary] = Field(default_factory=list)
 
 
 class DecisionFeedbackCreate(BaseModel):

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 
+import { RequireAuthCard } from "@/components/auth/require-auth-card";
+import { useAuth } from "@/components/auth/auth-provider";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   formatCategory,
@@ -15,13 +17,24 @@ import {
 } from "@/lib/trade/api";
 
 export default function TradeEvaluationPage() {
+  const { isLoading: isAuthLoading, user } = useAuth();
   const [summary, setSummary] = useState<BenchmarkSummary | null>(null);
   const [providerStatus, setProviderStatus] = useState<TradeProviderStatus | null>(null);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (isAuthLoading) {
+      return;
+    }
+    if (!user) {
+      setIsLoadingSummary(false);
+      return;
+    }
+
     let isMounted = true;
+    setIsLoadingSummary(true);
 
     void Promise.all([getTradeEvaluationSummary(), getTradeProviderStatus()])
       .then(([nextSummary, status]) => {
@@ -34,12 +47,17 @@ export default function TradeEvaluationPage() {
         if (isMounted) {
           setError(nextError instanceof Error ? nextError.message : "Unable to load evaluation summary.");
         }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingSummary(false);
+        }
       });
 
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [isAuthLoading, user]);
 
   async function handleRunEvaluation() {
     setIsRunning(true);
@@ -55,16 +73,22 @@ export default function TradeEvaluationPage() {
 
   return (
     <TradeShell
-      eyebrow="UM Nexus Evaluation"
-      title="AI vs baseline benchmark"
-      description="Scenario-based validation for pricing, matching, trust, and action quality against a simple manual-style baseline."
+      eyebrow="UM Nexus Operations"
+      title="Release quality controls"
+      description="Operator-only checks for pricing, matching, trust, and action quality before marketplace changes go live."
     >
+      {!isAuthLoading && !user ? (
+        <RequireAuthCard description="Sign in with an admin UM account to run release quality checks." />
+      ) : null}
+
+      {user ? (
+      <>
       <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-xl font-semibold text-slate-950">Judge-ready impact run</h2>
+            <h2 className="text-xl font-semibold text-slate-950">Quality gate run</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              The benchmark compares the GLM-centered decision engine against a category-average baseline.
+              Compare the AI decision engine against simple manual heuristics before changing prompts, data, or provider settings.
             </p>
           </div>
           <button
@@ -73,7 +97,7 @@ export default function TradeEvaluationPage() {
             onClick={() => void handleRunEvaluation()}
             type="button"
           >
-            {isRunning ? "Running..." : "Run benchmark"}
+            {isRunning ? "Running..." : "Run quality gate"}
           </button>
         </div>
 
@@ -83,6 +107,12 @@ export default function TradeEvaluationPage() {
           </p>
         ) : null}
       </section>
+
+      {isLoadingSummary ? (
+        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
+          Loading quality controls...
+        </div>
+      ) : null}
 
       {summary ? (
         <>
@@ -99,16 +129,16 @@ export default function TradeEvaluationPage() {
             <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Methodology</p>
               <p className="mt-2 text-sm leading-6 text-slate-600">
-                Baseline uses category averages, budget overlap, and simple risk keywords. AI uses GLM output
+                Manual heuristics use category averages, budget overlap, and simple risk keywords. AI uses GLM output
                 plus item text, public image URLs when available, historical comparables, candidate demand,
-                location context, and risk signals. Metrics are scenario-based until completed transactions
+                location context, and risk signals. These checks stay internal until completed transactions
                 provide enough live marketplace evidence.
               </p>
             </div>
           </section>
 
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric label="AI score" value={`${summary.ai_overall_score}/100`} detail={`Baseline ${summary.baseline_overall_score}/100`} />
+            <Metric label="AI score" value={`${summary.ai_overall_score}/100`} detail={`Heuristic ${summary.baseline_overall_score}/100`} />
             <Metric label="Pricing lift" value={formatDelta(summary.price_accuracy_delta)} detail={`${percent(summary.ai_pricing_accuracy_rate)} AI accuracy`} />
             <Metric label="Risk lift" value={formatDelta(summary.risk_detection_delta)} detail={`${percent(summary.ai_risk_detection_rate)} risk agreement`} />
             <Metric label="Time proxy saved" value={`${summary.time_to_sale_delta_days} days`} detail="Scenario average" />
@@ -123,7 +153,7 @@ export default function TradeEvaluationPage() {
 
           <section className="rounded-lg border border-slate-300 bg-white shadow-sm">
             <div className="border-b border-slate-200 p-5">
-              <h2 className="text-xl font-semibold text-slate-950">Benchmark cases</h2>
+              <h2 className="text-xl font-semibold text-slate-950">Quality cases</h2>
               <p className="mt-2 text-sm text-slate-600">{summary.metrics_note}</p>
             </div>
             <div className="divide-y divide-slate-100">
@@ -133,6 +163,8 @@ export default function TradeEvaluationPage() {
             </div>
           </section>
         </>
+      ) : null}
+      </>
       ) : null}
     </TradeShell>
   );
@@ -158,7 +190,7 @@ function CaseRow({ detail }: Readonly<{ detail: BenchmarkCaseDetail }>) {
       </div>
       <ScoreBox label="AI" score={ai?.overall_score} price={ai?.predicted_price} action={ai?.predicted_action_type} />
       <ScoreBox
-        label="Baseline"
+        label="Heuristic"
         score={baseline?.overall_score}
         price={baseline?.predicted_price}
         action={baseline?.predicted_action_type}
@@ -201,7 +233,7 @@ function ComparisonMetric({ label, ai, baseline }: Readonly<{ label: string; ai:
       </div>
       <div className="mt-3 space-y-2">
         <Bar label="AI" value={ai} tone="emerald" />
-        <Bar label="Baseline" value={baseline} tone="slate" />
+        <Bar label="Heuristic" value={baseline} tone="slate" />
       </div>
     </div>
   );

@@ -9,9 +9,13 @@ import { TradeShell } from "@/components/trade/trade-shell";
 import {
   formatCategory,
   formatMoney,
+  getAdminDashboard,
   getModerationListings,
   getModerationSummary,
   reviewModerationListing,
+  updateAdminListing,
+  updateAdminUserStatus,
+  type AdminDashboard,
   type ModerationListing,
   type ModerationSummary,
 } from "@/lib/trade/api";
@@ -20,14 +24,20 @@ export default function TradeModerationPage() {
   const { isLoading: isAuthLoading, user } = useAuth();
   const [items, setItems] = useState<ModerationListing[]>([]);
   const [summary, setSummary] = useState<ModerationSummary | null>(null);
+  const [adminDashboard, setAdminDashboard] = useState<AdminDashboard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function loadQueue() {
-    const [nextItems, nextSummary] = await Promise.all([getModerationListings(), getModerationSummary()]);
+    const [nextItems, nextSummary, nextAdminDashboard] = await Promise.all([
+      getModerationListings(),
+      getModerationSummary(),
+      getAdminDashboard().catch(() => null),
+    ]);
     setItems(nextItems);
     setSummary(nextSummary);
+    setAdminDashboard(nextAdminDashboard);
   }
 
   useEffect(() => {
@@ -70,6 +80,36 @@ export default function TradeModerationPage() {
     }
   }
 
+  async function setListingStatus(id: string, status: "available" | "hidden" | "removed") {
+    setReviewingId(id);
+    setError(null);
+    try {
+      await updateAdminListing(id, {
+        status,
+        moderation_status: status === "removed" ? "rejected" : status === "available" ? "approved" : undefined,
+        resolution: `Admin changed listing status to ${status}.`,
+      });
+      await loadQueue();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update listing status.");
+    } finally {
+      setReviewingId(null);
+    }
+  }
+
+  async function setUserStatus(id: string, status: "active" | "suspended" | "banned") {
+    setReviewingId(id);
+    setError(null);
+    try {
+      await updateAdminUserStatus(id, { status });
+      await loadQueue();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update user status.");
+    } finally {
+      setReviewingId(null);
+    }
+  }
+
   return (
     <TradeShell
       title="Trust review queue"
@@ -89,13 +129,21 @@ export default function TradeModerationPage() {
         <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
           Loading moderation queue...
         </div>
-      ) : user && items.length === 0 ? (
+      ) : user && !adminDashboard && items.length === 0 ? (
         <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-950">No listings need review</h2>
           <p className="mt-2 text-sm text-slate-600">High-risk decisions and open reports will appear here.</p>
         </section>
       ) : user ? (
         <section className="grid gap-5">
+          {adminDashboard ? (
+            <AdminOverview
+              dashboard={adminDashboard}
+              disabledId={reviewingId}
+              onListingStatus={setListingStatus}
+              onUserStatus={setUserStatus}
+            />
+          ) : null}
           {summary ? (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <Metric label="High risk" value={summary.high_risk_count} />
@@ -178,6 +226,130 @@ function Metric({ label, value }: Readonly<{ label: string; value: number }>) {
     <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-semibold text-slate-950">{value}</p>
+    </div>
+  );
+}
+
+function AdminOverview({
+  dashboard,
+  disabledId,
+  onListingStatus,
+  onUserStatus,
+}: Readonly<{
+  dashboard: AdminDashboard;
+  disabledId: string | null;
+  onListingStatus: (id: string, status: "available" | "hidden" | "removed") => Promise<void>;
+  onUserStatus: (id: string, status: "active" | "suspended" | "banned") => Promise<void>;
+}>) {
+  const stats = dashboard.statistics;
+  return (
+    <div className="grid gap-5">
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Metric label="Total users" value={stats.total_users} />
+        <Metric label="Active listings" value={stats.active_listings} />
+        <Metric label="Sold listings" value={stats.sold_listings} />
+        <Metric label="Reported listings" value={stats.reported_listings} />
+        <Metric label="New this week" value={stats.new_listings_this_week} />
+      </section>
+
+      <section className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-950">All listings</h2>
+          <div className="mt-4 grid gap-3">
+            {dashboard.listings.slice(0, 10).map((listing) => (
+              <div className="rounded-lg border border-slate-200 p-4" key={listing.id}>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="flex flex-wrap gap-2">
+                      <StatusPill>{listing.status}</StatusPill>
+                      <StatusPill tone={listing.moderation_status === "approved" ? "good" : "warn"}>
+                        {listing.moderation_status.replaceAll("_", " ")}
+                      </StatusPill>
+                      <StatusPill>{formatCategory(listing.category)}</StatusPill>
+                    </div>
+                    <p className="mt-2 font-semibold text-slate-950">{listing.title}</p>
+                    <p className="mt-1 text-sm text-slate-600">{formatMoney(listing.price, listing.currency)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                      disabled={disabledId === listing.id}
+                      onClick={() => void onListingStatus(listing.id, "available")}
+                      type="button"
+                    >
+                      Restore
+                    </button>
+                    <button
+                      className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:text-slate-400"
+                      disabled={disabledId === listing.id}
+                      onClick={() => void onListingStatus(listing.id, "hidden")}
+                      type="button"
+                    >
+                      Hide
+                    </button>
+                    <button
+                      className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                      disabled={disabledId === listing.id}
+                      onClick={() => void onListingStatus(listing.id, "removed")}
+                      type="button"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-5">
+          <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-950">User reports</h2>
+            <div className="mt-4 grid gap-3">
+              {dashboard.user_reports.length === 0 ? (
+                <p className="text-sm text-slate-600">No user reports.</p>
+              ) : (
+                dashboard.user_reports.slice(0, 6).map((report) => (
+                  <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700" key={report.id}>
+                    <p className="font-semibold text-slate-950">{report.report_type}</p>
+                    <p className="mt-1">{report.reason ?? "No reason provided."}</p>
+                    <p className="mt-1 text-xs text-slate-500">{report.status}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-950">Users</h2>
+            <div className="mt-4 grid gap-3">
+              {dashboard.users.slice(0, 8).map((user) => (
+                <div className="rounded-lg border border-slate-200 p-3" key={user.id}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-950">{user.full_name ?? user.email}</p>
+                      <p className="mt-1 text-xs text-slate-500">{user.status} · {user.app_role ?? "student"}</p>
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      {(["active", "suspended", "banned"] as const).map((status) => (
+                        <button
+                          className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
+                          disabled={disabledId === user.id || user.status === status}
+                          key={status}
+                          onClick={() => void onUserStatus(user.id, status)}
+                          type="button"
+                        >
+                          {status}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

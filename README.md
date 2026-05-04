@@ -7,11 +7,11 @@ UM Nexus now includes the platform foundation for:
 - `apps/worker` as a Celery bootstrap
 - `infra/docker/docker-compose.yml` for local infrastructure and service startup
 
-Forum, societies, and EventOps remain out of scope. Trade now has a demo-mode decision intelligence slice.
+Forum, societies, and EventOps remain out of scope. Trade is positioned as the launchable campus marketplace product.
 
-## Trade Intelligence Demo Slice
+## UM Nexus Trade Platform
 
-The Trade Intelligence slice runs in demo mode without login/register. It uses a fixed demo user, historical campus comparables, deterministic scoring, and Celery-backed enrichment tasks:
+UM Nexus Trade is a University of Malaya campus marketplace for student resale. It supports authenticated seller listings, wanted posts, image uploads, AI-assisted price guidance, buyer-seller matching, trust review, and transaction outcome capture. The product direction is launch-ready marketplace behavior: real users, real inventory, real moderation, and measurable trade outcomes.
 
 - `POST /api/v1/listings`
 - `POST /api/v1/listings/{id}/images`
@@ -23,13 +23,13 @@ The Trade Intelligence slice runs in demo mode without login/register. It uses a
 - `POST /api/v1/listings/{id}/decision-feedback`
 - `GET /api/v1/ai/trade/provider-status`
 - `POST /api/v1/ai/trade/price-simulation/{listing_id}`
-- `POST /api/v1/ai/trade/evaluation/run`
-- `GET /api/v1/ai/trade/evaluation/summary`
-- `GET /api/v1/ai/trade/evaluation/cases`
+- `POST /api/v1/ai/trade/evaluation/run` for admin quality checks
+- `GET /api/v1/ai/trade/evaluation/summary` for admin quality checks
+- `GET /api/v1/ai/trade/evaluation/cases` for admin quality checks
 
 The completed result includes recommendation, why, expected outcome, and action sections.
 
-Seed demo marketplace data after migrations:
+Seed starter marketplace data after migrations:
 
 ```bash
 cd apps/api
@@ -42,7 +42,7 @@ Or with make:
 make api-seed-trade
 ```
 
-Seed the labelled benchmark scenarios separately if you want them before opening the evaluation pages:
+Seed the labelled quality scenarios separately if you want them before opening the internal evaluation pages:
 
 ```bash
 make api-seed-benchmarks
@@ -57,19 +57,21 @@ python scripts/import_historical_sales.py path/to/historical_sales.csv
 
 Minimum CSV columns are `item_name`, `category`, and `sold_price`. Optional columns include `condition_label`, `currency`, `pickup_area`, `location`, `residential_college`, `sold_at`, `notes`, and `source_type`.
 
-Frontend demo pages:
+Frontend product pages:
 
 - `/trade`
-- `/trade/demo`
 - `/trade/sell`
 - `/trade/want`
 - `/trade/[id]`
 - `/wanted-posts/[id]`
-- `/trade/evaluation`
 - `/trade/dashboard`
 - `/trade/moderation`
 
-For local demos, `CELERY_TASK_ALWAYS_EAGER=true` runs Celery tasks immediately inside the API process. Set it to `false` and run a worker when you want real background processing.
+Internal quality pages remain available for release checks:
+
+- `/trade/evaluation`
+
+For local development, `CELERY_TASK_ALWAYS_EAGER=true` runs Celery tasks immediately inside the API process. Set it to `false` and run a worker when you want real background processing.
 
 ## Z.AI GLM Backend Integration
 
@@ -89,15 +91,15 @@ SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 SUPABASE_STORAGE_BUCKET=listing-images
 ```
 
-`GLM_PROVIDER=demo` keeps the offline deterministic demo provider. Setting `GLM_PROVIDER=zai`, or providing `ZAI_API_KEY` for local backend runs, switches enrichment to the Z.AI provider. Change `ZAI_MODEL` to switch models later without code changes. `ZAI_BASE_URL` defaults to Z.AI's production endpoint: `https://api.z.ai/api/paas/v4`.
+`GLM_PROVIDER=demo` keeps the offline deterministic local provider. Setting `GLM_PROVIDER=zai`, or providing `ZAI_API_KEY` for local backend runs, switches enrichment to the Z.AI provider. Change `ZAI_MODEL` to switch models later without code changes. `ZAI_BASE_URL` defaults to Z.AI's production endpoint: `https://api.z.ai/api/paas/v4`.
 
 Connectivity check:
 
 ```bash
-curl http://localhost:8001/api/v1/ai/trade/test-glm
+curl -H "Authorization: Bearer <admin-token>" http://localhost:8001/api/v1/ai/trade/test-glm
 ```
 
-Judge-safe provider status:
+Provider status:
 
 ```bash
 curl http://localhost:8001/api/v1/ai/trade/provider-status
@@ -114,11 +116,11 @@ curl http://localhost:8001/api/v1/ai/trade/result/<listing_id>
 
 The SDK handles Bearer auth with the backend `ZAI_API_KEY`. Logs redact secrets and only record request status, model, and safe metadata. Multimodal image inputs must use public HTTPS URLs; localhost, plain HTTP, and private network image URLs are skipped and the decision pipeline continues with text-only analysis.
 
-## Benchmark Evaluation And Judge Demo
+## Release Quality Controls
 
-The hackathon-facing validation layer compares UM Nexus Trade Intelligence against a deliberately simple baseline. This is not a production marketplace KPI system yet; it is a scenario-based decision-intelligence benchmark that makes the economic value visible to judges.
+The quality layer compares UM Nexus Trade's AI-assisted decision engine against deliberately simple manual heuristics. It is a scenario-based release check until completed marketplace transactions provide enough live KPI data.
 
-Benchmark cases represent common campus resale decisions:
+Quality cases represent common campus resale decisions:
 
 - fair textbook pricing
 - overpriced calculator
@@ -131,7 +133,7 @@ Benchmark cases represent common campus resale decisions:
 - missing-image study lamp
 - counterfeit or unsafe electronics listing
 
-The baseline engine is intentionally simple:
+The heuristic engine is intentionally simple:
 
 - price = same-category historical average
 - matches = same category and budget overlap
@@ -146,9 +148,9 @@ The AI decision engine is scored against the same labelled cases using:
 - match-count quality
 - composite score from pricing, risk, action, and match quality
 
-The evaluation summary also reports demo-stage impact metrics:
+The evaluation summary also reports launch quality metrics:
 
-- AI overall score vs baseline score
+- AI overall score vs heuristic score
 - pricing accuracy lift
 - risky-listing detection lift
 - action agreement lift
@@ -156,21 +158,20 @@ The evaluation summary also reports demo-stage impact metrics:
 - average time-to-sale proxy improvement
 - estimated buyer search time saved
 
-The time-to-sale metric is a transparent proxy derived from expected outcome text, action type, risk, price fit, and match availability. It is useful for scenario validation because the competition allows simulated validation, but it should not be presented as a live deployment metric.
+The time-to-sale metric is a transparent proxy derived from expected outcome text, action type, risk, price fit, and match availability. Treat it as a release-quality signal until the marketplace has enough completed transactions for live operational metrics.
 
-Run the benchmark from the API:
+Run the quality check from the API with an admin bearer token:
 
 ```bash
-curl -X POST http://localhost:8001/api/v1/ai/trade/evaluation/run
-curl http://localhost:8001/api/v1/ai/trade/evaluation/summary
+curl -H "Authorization: Bearer <admin-token>" -X POST http://localhost:8001/api/v1/ai/trade/evaluation/run
+curl -H "Authorization: Bearer <admin-token>" http://localhost:8001/api/v1/ai/trade/evaluation/summary
 ```
 
-Or open:
+Or open as an admin user:
 
-- `http://localhost:3000/trade/demo`
 - `http://localhost:3000/trade/evaluation`
 
-This supports the core competition claim: if the GLM decision layer is removed, the system falls back to category averages and simple thresholds, losing multimodal condition reasoning, context-aware buyer matching, explainable action recommendations, and measurable decision-quality lift.
+This protects the product value proposition: if the GLM decision layer is removed, the system falls back to category averages and simple thresholds, losing multimodal condition reasoning, context-aware buyer matching, explainable action recommendations, and measurable decision-quality lift.
 
 ## Product Outcome Loop
 
@@ -184,7 +185,7 @@ The product now captures decision outcomes instead of stopping at recommendation
 - completed transaction prices are written back into `historical_sales` with `source_type=transaction`
 - the dashboard reports accepted recommendations, decision feedback count, AI-followed completed sales, and average price adjustment
 
-This creates the demo-stage data flywheel judges expect: recommendations lead to actions, actions create outcomes, and outcomes improve future pricing evidence.
+This creates the marketplace data flywheel required for launch: recommendations lead to actions, actions create outcomes, and outcomes improve future pricing evidence.
 
 ## Recommendation Engine
 
@@ -197,9 +198,9 @@ UM Nexus Trade uses a hybrid v1 recommendation engine for both seller and buyer 
 - Location scoring favors exact same KK, then exact pickup area, then generic KK-related proximity, then workable campus pickup points.
 - Matches at `58+` are suggested; matches at `74+` are treated as strong recommendations. Buyer product suggestions below `58` are suppressed.
 
-### Demo Moderator Access
+### Moderator Access
 
-Moderation endpoints remain role-protected. For a judge demo, sign in with a test UM-domain account and update that user profile to `app_role = moderator` or `admin` in the local database. Then open:
+Moderation endpoints remain role-protected. For local setup, sign in with a UM-domain account and update that user profile to `app_role = moderator` or `admin` in the local database. Then open:
 
 ```text
 http://localhost:3000/trade/moderation
@@ -217,7 +218,7 @@ SUPABASE_STORAGE_BUCKET=listing-images
 
 The upload flow is:
 
-1. `POST /api/v1/listings` creates the listing in demo mode.
+1. `POST /api/v1/listings` creates the listing in the local product flow.
 2. `POST /api/v1/listings/{listing_id}/images` accepts `multipart/form-data` with a `file` field.
 3. The backend validates `jpg`, `jpeg`, `png`, or `webp`, enforces `MAX_UPLOAD_FILE_SIZE_BYTES`, and uploads to:
 
@@ -449,7 +450,7 @@ Why `app_role` lives in our database:
 
 ## Product Readiness Checks
 
-Run these before demos or deployment:
+Run these before releases or deployment:
 
 ```bash
 cd apps/web

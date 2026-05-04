@@ -416,8 +416,9 @@ def get_evaluation_summary(db: Session) -> dict:
         "time_to_sale_delta_days": round(baseline_days - ai_days, 2),
         "estimated_search_time_saved_minutes": max(0, round((ai_match - baseline_match) * len(cases) * 18, 1)),
         "metrics_note": (
-            "Demo-stage impact uses labelled campus resale scenarios. Time-to-sale is a documented proxy "
-            "derived from action, risk, pricing fit, and expected outcome text; it is not a live marketplace KPI."
+            "Decision quality uses labelled campus resale scenarios. Time-to-sale is a documented proxy "
+            "derived from action, risk, pricing fit, and expected outcome text until enough live marketplace "
+            "transactions are available."
         ),
         "cases": details,
     }
@@ -727,7 +728,7 @@ def _time_to_sale_proxy_days(raw_result: dict, *, is_ai: bool) -> float:
 
 def _why_ai_is_better(ai_result: BenchmarkResult | None, baseline_result: BaselineResult | None) -> str:
     if ai_result is None or baseline_result is None:
-        return "Run the benchmark to generate AI and baseline comparison evidence."
+        return "Run the quality check to generate AI and baseline comparison evidence."
     delta = float(ai_result.overall_score or 0) - float(baseline_result.overall_score or 0)
     if delta > 0:
         return (
@@ -736,7 +737,7 @@ def _why_ai_is_better(ai_result: BenchmarkResult | None, baseline_result: Baseli
         )
     if delta == 0:
         return "AI matches the simple baseline score while still providing clearer explanations and action rationale."
-    return "Baseline scored higher on this labelled case; inspect the explanation to refine prompts or benchmark labels."
+    return "Baseline scored higher on this labelled case; inspect the explanation to refine prompts or quality labels."
 
 
 def _rate(values: list[bool | None]) -> float:

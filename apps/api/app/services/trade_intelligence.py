@@ -51,10 +51,16 @@ SUSPICIOUS_KEYWORDS = {
 GOOD_CONDITION_KEYWORDS = {"like new", "excellent", "barely used", "minor scratches", "minor scratch", "works well"}
 POOR_CONDITION_KEYWORDS = {"broken", "faulty", "damaged", "not working", "missing", "cracked", "heavy scratches"}
 CATEGORY_FALLBACK_PRICES = {
-    "textbooks": (28.0, 42.0, 58.0),
+    "textbooks_notes": (28.0, 42.0, 58.0),
     "electronics": (60.0, 120.0, 220.0),
-    "small_appliances": (45.0, 95.0, 180.0),
-    "dorm_essentials": (18.0, 35.0, 70.0),
+    "dorm_room": (18.0, 35.0, 70.0),
+    "kitchen_appliances": (45.0, 95.0, 180.0),
+    "furniture": (35.0, 80.0, 180.0),
+    "clothing": (12.0, 28.0, 60.0),
+    "sports_hobby": (20.0, 55.0, 120.0),
+    "tickets_events": (10.0, 25.0, 80.0),
+    "free_items": (0.0, 0.0, 0.0),
+    "others": (15.0, 45.0, 100.0),
 }
 PRICING_STOPWORDS = {
     "the",
@@ -68,6 +74,7 @@ PRICING_STOPWORDS = {
 }
 CONDITION_MULTIPLIERS = {
     "new": 1.18,
+    "like_new": 1.12,
     "like new": 1.12,
     "excellent": 1.08,
     "good": 1.0,
@@ -859,7 +866,7 @@ def _condition_multiplier(condition_label: str | None) -> float:
 
 
 def _normalize_condition(condition_label: str | None) -> str:
-    text = (condition_label or "unknown").strip().lower()
+    text = (condition_label or "unknown").strip().lower().replace("_", " ")
     if "like" in text and "new" in text:
         return "like new"
     if "excellent" in text:

@@ -37,6 +37,12 @@ export function ListingCard({ listing }: ListingCardProps) {
       <div className="space-y-3 p-4">
         <div className="flex flex-wrap gap-2">
           <StatusPill>{formatCategory(listing.category)}</StatusPill>
+          <StatusPill tone={listing.status === "available" ? "good" : listing.status === "reserved" ? "warn" : "neutral"}>
+            {listing.status}
+          </StatusPill>
+          {listing.condition_label ? (
+            <StatusPill>{listing.condition_label.replaceAll("_", " ")}</StatusPill>
+          ) : null}
           <StatusPill tone={listing.is_ai_enriched ? "good" : "warn"}>
             {listing.is_ai_enriched ? "AI enriched" : "Not enriched"}
           </StatusPill>
@@ -57,6 +63,11 @@ export function ListingCard({ listing }: ListingCardProps) {
             {listing.pickup_area ?? "Pickup TBD"}
             {listing.residential_college ? ` · ${listing.residential_college}` : ""}
           </p>
+          {listing.contact_method ? (
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+              Contact by request · {listing.contact_method}
+            </p>
+          ) : null}
         </div>
         <p className="text-xl font-semibold text-emerald-800">
           {formatMoney(listing.price, listing.currency)}

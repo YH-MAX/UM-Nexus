@@ -58,7 +58,8 @@ Description requirements for listing_payload.description:
 - Include 1-2 buyer-relevant details such as course usefulness, daily use, hostel use, included accessories, or pickup convenience when supported by the clues.
 - Avoid hype, marketing buzzwords, emojis, and hallucinated features.
 
-Use only these category values: textbooks, electronics, small_appliances, dorm_essentials.
+Use only these category values: textbooks_notes, electronics, dorm_room, kitchen_appliances, furniture, clothing, sports_hobby, tickets_events, free_items, others.
+Use only these condition_label values: new, like_new, good, fair, poor.
 Use only these pickup_area values when known: KK, FSKTM, library, faculty_pickup, other.
 Use only these seller action types: list_now, revise_price, upload_better_image, match_with_buyers, flag_for_review.
 Use only these risk levels: low, medium, high.
@@ -70,11 +71,11 @@ Return this shape:
   "listing_payload": {
     "title": "clear listing title",
     "description": "buyer-friendly description",
-    "category": "textbooks | electronics | small_appliances | dorm_essentials",
+    "category": "textbooks_notes | electronics | dorm_room | kitchen_appliances | furniture | clothing | sports_hobby | tickets_events | free_items | others",
     "item_name": "specific item name",
     "brand": "brand if known or null",
     "model": "model if known or null",
-    "condition_label": "short condition label",
+    "condition_label": "new | like_new | good | fair | poor",
     "price": number,
     "currency": "MYR",
     "pickup_area": "KK | FSKTM | library | faculty_pickup | other | null",
@@ -340,8 +341,10 @@ def _fallback_draft(
         suggested = base_price * 1.12
     else:
         suggested = base_price
-    suggested = round(max(suggested, 5), 2)
-    minimum = round(max(suggested * 0.78, 3), 2)
+    floor_price = 0 if category == "free_items" else 5
+    minimum_floor = 0 if category == "free_items" else 3
+    suggested = round(max(suggested, floor_price), 2)
+    minimum = round(max(suggested * 0.78, minimum_floor), 2)
     sell_fast = round(max(minimum, suggested * 0.9), 2)
     fair_range = {"low": round(suggested * 0.88, 2), "high": round(suggested * 1.12, 2)}
     description = _description_from_context(item_name, condition_label, category, seller_context)
@@ -513,13 +516,22 @@ def _normalize_draft(raw: dict[str, Any], fallback: dict[str, Any]) -> dict[str,
 def _normalize_category(value: Any) -> str | None:
     normalized = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
     aliases = {
-        "book": "textbooks",
-        "books": "textbooks",
-        "textbook": "textbooks",
-        "appliance": "small_appliances",
-        "small_appliance": "small_appliances",
-        "dorm": "dorm_essentials",
-        "furniture": "dorm_essentials",
+        "book": "textbooks_notes",
+        "books": "textbooks_notes",
+        "textbook": "textbooks_notes",
+        "textbooks": "textbooks_notes",
+        "notes": "textbooks_notes",
+        "study_tools": "textbooks_notes",
+        "appliance": "kitchen_appliances",
+        "small_appliance": "kitchen_appliances",
+        "small_appliances": "kitchen_appliances",
+        "dorm": "dorm_room",
+        "dorm_essentials": "dorm_room",
+        "room": "dorm_room",
+        "hobby": "sports_hobby",
+        "sports": "sports_hobby",
+        "ticket": "tickets_events",
+        "event": "tickets_events",
         "calculator": "electronics",
         "electronic": "electronics",
     }
@@ -549,12 +561,24 @@ def _infer_category(context: SellAgentSellerContext) -> str:
         if part
     )
     if any(word in text for word in ("book", "textbook", "course", "database", "calculus")):
-        return "textbooks"
+        return "textbooks_notes"
     if any(word in text for word in ("rice cooker", "kettle", "fan", "lamp", "blender")):
-        return "small_appliances"
-    if any(word in text for word in ("mattress", "chair", "desk", "hanger", "basket", "dorm")):
-        return "dorm_essentials"
-    return "electronics"
+        return "kitchen_appliances"
+    if any(word in text for word in ("mattress", "hanger", "basket", "dorm", "bedding")):
+        return "dorm_room"
+    if any(word in text for word in ("chair", "desk", "table", "shelf", "cabinet")):
+        return "furniture"
+    if any(word in text for word in ("shirt", "hoodie", "jacket", "shoe", "dress")):
+        return "clothing"
+    if any(word in text for word in ("racket", "ball", "guitar", "game", "sport")):
+        return "sports_hobby"
+    if any(word in text for word in ("ticket", "event", "concert", "bus pass")):
+        return "tickets_events"
+    if any(word in text for word in ("free", "giveaway")):
+        return "free_items"
+    if any(word in text for word in ("phone", "laptop", "tablet", "calculator", "charger", "earbuds")):
+        return "electronics"
+    return "others"
 
 
 def _base_price(category: str, historical_sales: list[Any]) -> float:
@@ -562,7 +586,18 @@ def _base_price(category: str, historical_sales: list[Any]) -> float:
         prices = [float(sale.sold_price) for sale in historical_sales if sale.sold_price is not None]
         if prices:
             return round(sum(prices) / len(prices), 2)
-    return {"textbooks": 38.0, "electronics": 70.0, "small_appliances": 45.0, "dorm_essentials": 28.0}.get(category, 45.0)
+    return {
+        "textbooks_notes": 38.0,
+        "electronics": 70.0,
+        "dorm_room": 28.0,
+        "kitchen_appliances": 45.0,
+        "furniture": 80.0,
+        "clothing": 25.0,
+        "sports_hobby": 45.0,
+        "tickets_events": 25.0,
+        "free_items": 0.0,
+        "others": 35.0,
+    }.get(category, 35.0)
 
 
 def _missing_fields(context: SellAgentSellerContext, uploaded_images: list[SellAgentUploadedImage]) -> list[str]:
@@ -580,7 +615,7 @@ def _missing_fields(context: SellAgentSellerContext, uploaded_images: list[SellA
 
 def _description_from_context(item_name: str, condition_label: str, category: str, context: SellAgentSellerContext) -> str:
     clean_item = _clean_phrase(item_name)
-    clean_condition = _clean_phrase(condition_label)
+    clean_condition = _clean_phrase(condition_label.replace("_", " "))
     age_usage = _clean_phrase(context.age_usage)
     defects = _clean_phrase(context.defects)
     accessories = _clean_phrase(context.accessories)
@@ -606,14 +641,20 @@ def _description_from_context(item_name: str, condition_label: str, category: st
 
 def _buyer_relevant_detail(category: str, item_name: str) -> str:
     lowered = item_name.lower()
-    if category == "textbooks":
+    if category == "textbooks_notes":
         if any(word in lowered for word in ("algorithm", "database", "calculus", "accounting", "economics")):
             return "It should be useful for coursework, revision, or anyone taking a related class."
         return "It should be useful for coursework or revision if it matches your syllabus."
-    if category == "small_appliances":
+    if category == "kitchen_appliances":
         return "It is practical for hostel or room use if you need something for daily routines."
-    if category == "dorm_essentials":
+    if category == "dorm_room":
         return "It is useful for setting up a hostel room without buying everything new."
+    if category == "furniture":
+        return "It can help set up a room or study space without buying a new piece."
+    if category == "sports_hobby":
+        return "It should be useful for campus activities, hobbies, or casual practice."
+    if category == "tickets_events":
+        return "It may suit students looking for campus or city event access."
     if category == "electronics":
         return "It should be useful for daily campus use if the model fits what you need."
     return ""
@@ -663,11 +704,15 @@ def _title_from_context(item_name: str, context: SellAgentSellerContext) -> str:
 
 def _condition_from_context(context: SellAgentSellerContext) -> str:
     text = (context.condition_notes or context.free_text or "").lower()
-    if "new" in text or "unused" in text:
-        return "like new"
+    if "brand new" in text or "unused" in text:
+        return "new"
+    if "like new" in text or "excellent" in text or "barely used" in text:
+        return "like_new"
     if "scratch" in text or "minor" in text or "good" in text:
         return "good"
     if "defect" in text or "broken" in text or "repair" in text:
+        return "poor"
+    if "fair" in text:
         return "fair"
     return "good"
 
@@ -704,6 +749,30 @@ def _comparable_summary(category: str, historical_sales: list[Any]) -> str:
 
 
 def _price_options(suggested: float, minimum: float, buyer_interest: str) -> list[dict[str, Any]]:
+    if suggested <= 0:
+        return [
+            {
+                "type": "sell_fast",
+                "price": 0,
+                "expected_time_to_sell": "1-2 days",
+                "buyer_interest": "high",
+                "tradeoff_summary": "Free items usually move fastest when pickup details are clear.",
+            },
+            {
+                "type": "fair_price",
+                "price": 0,
+                "expected_time_to_sell": "1-3 days",
+                "buyer_interest": buyer_interest,
+                "tradeoff_summary": "Keeping this free makes the listing simple and accessible.",
+            },
+            {
+                "type": "maximize_revenue",
+                "price": 0,
+                "expected_time_to_sell": "1-3 days",
+                "buyer_interest": "moderate",
+                "tradeoff_summary": "This category is best positioned as a free handoff rather than a paid sale.",
+            },
+        ]
     sell_fast_price = round(max(minimum, suggested * 0.92), 2)
     fair_price = round(max(suggested, 1), 2)
     max_revenue_price = round(max(suggested * 1.12, suggested + 1), 2)
@@ -834,7 +903,8 @@ def _normalize_price_options(
         if option_type not in option_types:
             continue
         option = by_type.get(str(option_type), fallback_option)
-        price = max(_coerce_number(option.get("price"), fallback_option.get("price", suggested)), 1.0)
+        price_floor = 0.0 if suggested <= 0 else 1.0
+        price = max(_coerce_number(option.get("price"), fallback_option.get("price", suggested)), price_floor)
         normalized.append(
             SellAgentPriceOption(
                 type=option_type,

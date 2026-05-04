@@ -9,12 +9,12 @@ type TradeShellProps = Readonly<{
 
 export function TradeShell({
   children,
-  eyebrow = "UM Nexus Trade Intelligence",
+  eyebrow = "UM Nexus Trade",
   title,
   description,
 }: TradeShellProps) {
   return (
-    <main className="min-h-screen bg-[#f7f8f3] text-slate-950">
+    <main className="min-h-screen bg-slate-50 text-slate-950">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-5 py-8 sm:px-8">
         <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 md:flex-row md:items-end md:justify-between">
           <div className="max-w-3xl">
@@ -35,13 +35,13 @@ export function TradeShell({
               className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
               href="/trade"
             >
-              Listings
+              Marketplace
             </Link>
             <Link
               className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
               href="/trade/dashboard"
             >
-              Dashboard
+              My Trade
             </Link>
             <Link
               className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
@@ -53,25 +53,7 @@ export function TradeShell({
               className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
               href="/trade/want"
             >
-              Want
-            </Link>
-            <Link
-              className="rounded-lg border border-cyan-700 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 shadow-sm transition hover:bg-cyan-100"
-              href="/trade/moderation"
-            >
-              Review
-            </Link>
-            <Link
-              className="rounded-lg border border-cyan-700 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 shadow-sm transition hover:bg-cyan-100"
-              href="/trade/demo"
-            >
-              Demo
-            </Link>
-            <Link
-              className="rounded-lg border border-cyan-700 bg-cyan-50 px-4 py-2 text-sm font-semibold text-cyan-900 shadow-sm transition hover:bg-cyan-100"
-              href="/trade/evaluation"
-            >
-              Evaluate
+              Wanted
             </Link>
           </nav>
         </header>

@@ -16,11 +16,14 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { StatusPill } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
+  conditionOptions,
+  contactMethods,
   formatMoney,
   generateSellAgentDraft,
   getTradeResultStatus,
   pickupAreas,
   publishSellAgentDraft,
+  tradeSafetyMessage,
   tradeCategories,
   type ListingPayload,
   type SellAgentDraft,
@@ -292,7 +295,11 @@ export default function SellPage() {
       setSellerContext(contextForDraft);
       setFreeText("");
       setDraft(nextDraft);
-      setEditableDraft(nextDraft.listing_payload);
+      setEditableDraft({
+        ...nextDraft.listing_payload,
+        condition_label: nextDraft.listing_payload.condition_label ?? "good",
+        contact_method: nextDraft.listing_payload.contact_method ?? "telegram",
+      });
       setSelectedPriceType("fair_price");
       addMessage({ role: "agent", body: nextDraft.assistant_message });
       if (nextDraft.missing_fields.length > 0) {
@@ -307,6 +314,10 @@ export default function SellPage() {
 
   async function handlePublish() {
     if (!draft || !editableDraft) {
+      return;
+    }
+    if (!editableDraft.contact_method || !editableDraft.contact_value?.trim()) {
+      setError("Choose Telegram or WhatsApp and enter your contact before publishing.");
       return;
     }
     setIsPublishing(true);
@@ -967,10 +978,11 @@ function DraftReviewPanel({
             </label>
 
             <div className="grid gap-3 sm:grid-cols-2">
-              <EditableField
+              <EditableSelect
                 label="Condition"
-                value={editableDraft.condition_label ?? ""}
-                onChange={(value) => onUpdateDraftField("condition_label", value || undefined)}
+                options={conditionOptions}
+                value={editableDraft.condition_label ?? "good"}
+                onChange={(value) => onUpdateDraftField("condition_label", value)}
               />
               <EditableSelect
                 allowEmpty
@@ -979,6 +991,26 @@ function DraftReviewPanel({
                 value={editableDraft.pickup_area ?? ""}
                 onChange={(value) => onUpdateDraftField("pickup_area", value || undefined)}
               />
+            </div>
+
+            <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4">
+              <h3 className="text-sm font-semibold text-cyan-950">Contact request setup</h3>
+              <p className="mt-1 text-sm leading-6 text-cyan-900">
+                Your contact stays hidden until you accept a buyer request.
+              </p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <EditableSelect
+                  label="Contact method"
+                  options={contactMethods}
+                  value={editableDraft.contact_method ?? "telegram"}
+                  onChange={(value) => onUpdateDraftField("contact_method", value)}
+                />
+                <EditableField
+                  label="Contact value"
+                  value={editableDraft.contact_value ?? ""}
+                  onChange={(value) => onUpdateDraftField("contact_value", value || undefined)}
+                />
+              </div>
             </div>
 
             <details className="rounded-lg border border-slate-200 bg-slate-50">
@@ -1028,6 +1060,10 @@ function DraftReviewPanel({
             <PublishProgress phase={publishPhase} listingId={publishedListingId} onOpenListing={onOpenListing} />
           ) : null}
 
+          <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+            {tradeSafetyMessage}
+          </p>
+
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -1040,7 +1076,7 @@ function DraftReviewPanel({
             </div>
             <button
               className="mt-4 w-full rounded-lg bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-              disabled={isPublishing || publishPhase === "ready"}
+              disabled={isPublishing || publishPhase === "ready" || !editableDraft.contact_value?.trim()}
               onClick={onPublish}
               type="button"
             >

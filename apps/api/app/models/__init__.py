@@ -15,9 +15,11 @@ from app.models.notification import Notification
 from app.models.profile import Profile
 from app.models.society import Society
 from app.models.trade_decision_feedback import TradeDecisionFeedback
+from app.models.trade_contact_request import TradeContactRequest
 from app.models.trade_match import TradeMatch
 from app.models.trade_transaction import TradeTransaction
 from app.models.user import User
+from app.models.user_report import UserReport
 from app.models.wanted_post import WantedPost
 from app.models.wanted_post_embedding import WantedPostEmbedding
 
@@ -38,10 +40,12 @@ __all__ = [
     "Notification",
     "Profile",
     "Society",
+    "TradeContactRequest",
     "TradeDecisionFeedback",
     "TradeMatch",
     "TradeTransaction",
     "User",
+    "UserReport",
     "WantedPost",
     "WantedPostEmbedding",
 ]

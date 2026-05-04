@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { RequireAuthCard } from "@/components/auth/require-auth-card";
+import { useAuth } from "@/components/auth/auth-provider";
 import { MatchSuggestions } from "@/components/trade/match-suggestions";
 import { StatusPill } from "@/components/trade/status-pill";
 import { TradeResultCard } from "@/components/trade/trade-result-card";
@@ -9,6 +11,8 @@ import { TradeShell } from "@/components/trade/trade-shell";
 import {
   applyRecommendedPrice,
   contactMatch,
+  contactMethods,
+  createContactRequest,
   enrichListing,
   formatCategory,
   formatMoney,
@@ -16,8 +20,10 @@ import {
   getListingMatches,
   getTradeResultStatus,
   reportListing,
+  reportUser,
   simulateListingPrice,
   submitDecisionFeedback,
+  tradeSafetyMessage,
   type Listing,
   type PriceSimulation,
   type TradeMatch,
@@ -29,6 +35,7 @@ type ListingDetailPageProps = Readonly<{
 }>;
 
 export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
+  const { user } = useAuth();
   const [listing, setListing] = useState<Listing | null>(null);
   const [resultStatus, setResultStatus] = useState<TradeResultStatus | null>(null);
   const [matches, setMatches] = useState<TradeMatch[]>([]);
@@ -37,6 +44,11 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   const [isActing, setIsActing] = useState(false);
   const [simulationPrice, setSimulationPrice] = useState("");
   const [simulation, setSimulation] = useState<PriceSimulation | null>(null);
+  const [contactDraft, setContactDraft] = useState({
+    message: "I am interested in this item. Is it still available?",
+    buyer_contact_method: "telegram" as "telegram" | "whatsapp",
+    buyer_contact_value: "",
+  });
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const primaryImage =
@@ -141,6 +153,51 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       await loadData();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to report listing.");
+    } finally {
+      setIsActing(false);
+    }
+  }
+
+  async function handleReportSeller() {
+    if (!listing) {
+      return;
+    }
+    setIsActing(true);
+    setError(null);
+    setActionNotice(null);
+    try {
+      await reportUser(listing.seller_id, {
+        report_type: "unsafe_trade_behavior",
+        reason: "Reported from listing detail for admin review.",
+      });
+      setActionNotice("Seller report submitted for admin review.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to report this seller.");
+    } finally {
+      setIsActing(false);
+    }
+  }
+
+  async function handleContactRequest() {
+    if (!listing) {
+      return;
+    }
+    if (!contactDraft.buyer_contact_value.trim()) {
+      setError("Enter your Telegram or WhatsApp contact before sending the request.");
+      return;
+    }
+    setIsActing(true);
+    setError(null);
+    setActionNotice(null);
+    try {
+      await createContactRequest(listing.id, {
+        message: contactDraft.message.trim() || undefined,
+        buyer_contact_method: contactDraft.buyer_contact_method,
+        buyer_contact_value: contactDraft.buyer_contact_value.trim(),
+      });
+      setActionNotice("Contact request sent. The seller can accept or reject it from their dashboard.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to send contact request.");
     } finally {
       setIsActing(false);
     }
@@ -289,6 +346,10 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
               <RiskWarning listing={listing} />
             ) : null}
 
+            <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
+              {tradeSafetyMessage}
+            </section>
+
             <TradeResultCard
               result={resultStatus?.result ?? null}
               status={resultStatus?.status}
@@ -367,16 +428,87 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
                 Control Center
               </p>
-              <h2 className="mt-2 text-xl font-semibold">Enrichment</h2>
+              <h2 className="mt-2 text-xl font-semibold">Buyer request</h2>
             </div>
             <div className="p-5">
+              {user ? (
+                user.id === listing.seller_id ? (
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    This is your listing. Buyer contact requests will appear in your dashboard.
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    <p className="text-sm leading-6 text-slate-600">
+                      Send an interest request. Contact details stay hidden until the seller accepts.
+                    </p>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-slate-800">Message</span>
+                      <textarea
+                        className="min-h-24 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm leading-6 outline-none focus:border-emerald-600"
+                        value={contactDraft.message}
+                        onChange={(event) =>
+                          setContactDraft((current) => ({ ...current, message: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-slate-800">Your contact method</span>
+                        <select
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+                          value={contactDraft.buyer_contact_method}
+                          onChange={(event) =>
+                            setContactDraft((current) => ({
+                              ...current,
+                              buyer_contact_method: event.target.value as "telegram" | "whatsapp",
+                            }))
+                          }
+                        >
+                          {contactMethods.map((method) => (
+                            <option key={method.value} value={method.value}>
+                              {method.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-slate-800">Your contact</span>
+                        <input
+                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+                          placeholder={contactDraft.buyer_contact_method === "telegram" ? "@username" : "+60..."}
+                          value={contactDraft.buyer_contact_value}
+                          onChange={(event) =>
+                            setContactDraft((current) => ({ ...current, buyer_contact_value: event.target.value }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <button
+                      className="rounded-lg bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                      disabled={isActing || listing.status !== "available"}
+                      onClick={() => void handleContactRequest()}
+                      type="button"
+                    >
+                      I&apos;m interested
+                    </button>
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+                      {tradeSafetyMessage}
+                    </p>
+                  </div>
+                )
+              ) : (
+                <RequireAuthCard description="Sign in with your UM account to request seller contact details." />
+              )}
+
+              <div className="my-5 border-t border-slate-200" />
+              <h3 className="text-sm font-semibold text-slate-950">Seller tools</h3>
               <p className="text-sm leading-6 text-slate-600">
                 Queue the decision engine to refresh pricing, risk, demand, and
                 buyer-match recommendations.
               </p>
               <button
                 className="mt-4 w-full rounded-lg bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                disabled={isEnriching || resultStatus?.status === "pending" || resultStatus?.status === "running"}
+                disabled={user?.id !== listing.seller_id || isEnriching || resultStatus?.status === "pending" || resultStatus?.status === "running"}
                 onClick={() => void handleEnrich()}
                 type="button"
               >
@@ -385,7 +517,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
               <div className="mt-3 grid gap-2">
                 <button
                   className="w-full rounded-lg border border-emerald-700 bg-white px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
-                  disabled={isActing || !resultStatus?.result}
+                  disabled={user?.id !== listing.seller_id || isActing || !resultStatus?.result}
                   onClick={() => void handleApplyPrice()}
                   type="button"
                 >
@@ -393,11 +525,11 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                 </button>
                 <button
                   className="w-full rounded-lg border border-cyan-700 bg-white px-4 py-3 text-sm font-semibold text-cyan-900 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
-                  disabled={isActing || matches.length === 0}
+                  disabled={user?.id !== listing.seller_id || isActing || matches.length === 0}
                   onClick={() => void handleContactTopMatch()}
                   type="button"
                 >
-                  Contact top buyer
+                  Contact top wanted match
                 </button>
                 <button
                   className="w-full rounded-lg border border-rose-300 bg-white px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-400"
@@ -406,6 +538,14 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                   type="button"
                 >
                   Report listing
+                </button>
+                <button
+                  className="w-full rounded-lg border border-rose-300 bg-white px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                  disabled={isActing}
+                  onClick={() => void handleReportSeller()}
+                  type="button"
+                >
+                  Report seller
                 </button>
               </div>
               <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
@@ -445,7 +585,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                 </p>
                 <button
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={isActing || !resultStatus?.result}
+                  disabled={user?.id !== listing.seller_id || isActing || !resultStatus?.result}
                   onClick={() => void handleFeedback("accepted_price")}
                   type="button"
                 >
@@ -453,7 +593,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                 </button>
                 <button
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={isActing || !resultStatus?.result}
+                  disabled={user?.id !== listing.seller_id || isActing || !resultStatus?.result}
                   onClick={() => void handleFeedback("changed_price")}
                   type="button"
                 >
@@ -461,7 +601,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                 </button>
                 <button
                   className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={isActing || !resultStatus?.result}
+                  disabled={user?.id !== listing.seller_id || isActing || !resultStatus?.result}
                   onClick={() => void handleFeedback("rejected_price")}
                   type="button"
                 >

@@ -1,10 +1,22 @@
-from app.models import BaselineResult, BenchmarkCase, BenchmarkResult
+from app.models import AppRole, BaselineResult, BenchmarkCase, BenchmarkResult, Profile, User
 from app.services.trade_evaluation_service import DEFAULT_BENCHMARK_CASES
 from app.services.trade_intelligence_glm_service import normalize_trade_decision
 
 
-def test_evaluation_cases_endpoint_seeds_benchmark_cases(client, db_session) -> None:
-    response = client.get("/api/v1/ai/trade/evaluation/cases")
+AUTH_HEADERS = {"Authorization": "Bearer test-token"}
+
+
+def make_admin(db_session, token_verifier) -> None:
+    admin = User(id=str(token_verifier.claims.sub), email="admin@siswa.um.edu.my")
+    admin.profile = Profile(app_role=AppRole.ADMIN)
+    db_session.add(admin)
+    db_session.commit()
+
+
+def test_evaluation_cases_endpoint_seeds_benchmark_cases(client, db_session, token_verifier) -> None:
+    make_admin(db_session, token_verifier)
+
+    response = client.get("/api/v1/ai/trade/evaluation/cases", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     cases = response.json()
@@ -13,8 +25,10 @@ def test_evaluation_cases_endpoint_seeds_benchmark_cases(client, db_session) -> 
     assert cases[0]["case"]["expected_action_type"]
 
 
-def test_evaluation_run_persists_ai_and_baseline_results(client, db_session) -> None:
-    response = client.post("/api/v1/ai/trade/evaluation/run")
+def test_evaluation_run_persists_ai_and_baseline_results(client, db_session, token_verifier) -> None:
+    make_admin(db_session, token_verifier)
+
+    response = client.post("/api/v1/ai/trade/evaluation/run", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     body = response.json()
@@ -27,10 +41,12 @@ def test_evaluation_run_persists_ai_and_baseline_results(client, db_session) -> 
     assert db_session.query(BaselineResult).count() >= 10
 
 
-def test_evaluation_summary_returns_latest_comparison(client) -> None:
-    client.post("/api/v1/ai/trade/evaluation/run")
+def test_evaluation_summary_returns_latest_comparison(client, db_session, token_verifier) -> None:
+    make_admin(db_session, token_verifier)
 
-    response = client.get("/api/v1/ai/trade/evaluation/summary")
+    client.post("/api/v1/ai/trade/evaluation/run", headers=AUTH_HEADERS)
+
+    response = client.get("/api/v1/ai/trade/evaluation/summary", headers=AUTH_HEADERS)
 
     assert response.status_code == 200
     body = response.json()

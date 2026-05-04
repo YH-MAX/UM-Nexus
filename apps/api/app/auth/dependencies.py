@@ -45,7 +45,13 @@ def require_authenticated_user(
     token_claims: TokenClaims = Depends(get_token_claims),
     db: Session = Depends(get_db),
 ) -> User:
-    return ensure_local_user(db, token_claims)
+    user = ensure_local_user(db, token_claims)
+    if user.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your UM Nexus account is suspended or banned.",
+        )
+    return user
 
 
 def require_app_role(required_role: AppRole | str) -> Callable[..., User]:

@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.trade.constants import PickupArea, TradeCategory
+from app.services.trade_policy import normalize_category, normalize_condition, normalize_contact_method, normalize_listing_status
+from app.trade.constants import ConditionLabel, ContactMethod, ListingStatus, PickupArea, TradeCategory
 
 
 class ListingImageCreate(BaseModel):
@@ -26,6 +27,23 @@ class ListingImageRead(BaseModel):
     created_at: datetime
 
 
+class SellerProfileSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    full_name: str | None = None
+    faculty: str | None = None
+    residential_college: str | None = None
+
+
+class SellerSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    username: str | None = None
+    status: str
+    profile: SellerProfileSummary | None = None
+
+
 class ListingCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: str | None = None
@@ -33,11 +51,28 @@ class ListingCreate(BaseModel):
     item_name: str | None = Field(default=None, max_length=255)
     brand: str | None = Field(default=None, max_length=255)
     model: str | None = Field(default=None, max_length=255)
-    condition_label: str | None = Field(default=None, max_length=64)
-    price: float = Field(..., gt=0)
+    condition_label: ConditionLabel | None = Field(default=None, max_length=64)
+    price: float = Field(..., ge=0)
     currency: str = Field(default="MYR", min_length=3, max_length=3)
     pickup_area: PickupArea | None = None
     residential_college: str | None = Field(default=None, max_length=255)
+    contact_method: ContactMethod | None = None
+    contact_value: str | None = Field(default=None, max_length=255)
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def normalize_category_value(cls, value: object) -> object:
+        return normalize_category(value) or value
+
+    @field_validator("condition_label", mode="before")
+    @classmethod
+    def normalize_condition_value(cls, value: object) -> object:
+        return normalize_condition(value)
+
+    @field_validator("contact_method", mode="before")
+    @classmethod
+    def normalize_contact_method_value(cls, value: object) -> object:
+        return normalize_contact_method(value)
 
 
 class ListingUpdate(BaseModel):
@@ -47,12 +82,34 @@ class ListingUpdate(BaseModel):
     item_name: str | None = Field(default=None, max_length=255)
     brand: str | None = Field(default=None, max_length=255)
     model: str | None = Field(default=None, max_length=255)
-    condition_label: str | None = Field(default=None, max_length=64)
-    price: float | None = Field(default=None, gt=0)
+    condition_label: ConditionLabel | None = Field(default=None, max_length=64)
+    price: float | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     pickup_area: PickupArea | None = None
     residential_college: str | None = Field(default=None, max_length=255)
-    status: str | None = Field(default=None, max_length=32)
+    contact_method: ContactMethod | None = None
+    contact_value: str | None = Field(default=None, max_length=255)
+    status: ListingStatus | None = Field(default=None, max_length=32)
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def normalize_category_value(cls, value: object) -> object:
+        return normalize_category(value) or value
+
+    @field_validator("condition_label", mode="before")
+    @classmethod
+    def normalize_condition_value(cls, value: object) -> object:
+        return normalize_condition(value)
+
+    @field_validator("contact_method", mode="before")
+    @classmethod
+    def normalize_contact_method_value(cls, value: object) -> object:
+        return normalize_contact_method(value)
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status_value(cls, value: object) -> object:
+        return normalize_listing_status(value)
 
 
 class ListingRead(BaseModel):
@@ -71,6 +128,7 @@ class ListingRead(BaseModel):
     currency: str
     pickup_area: str | None
     residential_college: str | None
+    contact_method: str | None
     status: str
     risk_score: float
     risk_level: str | None
@@ -85,6 +143,7 @@ class ListingRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     images: list[ListingImageRead] = Field(default_factory=list)
+    seller: SellerSummary | None = None
 
 
 class ListingReportCreate(BaseModel):
