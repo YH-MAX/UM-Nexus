@@ -10,6 +10,7 @@ import { TradeShell } from "@/components/trade/trade-shell";
 import {
   formatMoney,
   formatPickupLocation,
+  cancelContactRequest,
   getTradeDashboard,
   updateContactRequest,
   updateTradeTransaction,
@@ -98,6 +99,19 @@ export default function TradeDashboardPage() {
       await loadDashboard();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update contact request.");
+    } finally {
+      setIsUpdating(null);
+    }
+  }
+
+  async function cancelSentRequest(request: ContactRequest) {
+    setIsUpdating(request.id);
+    setError(null);
+    try {
+      await cancelContactRequest(request.id);
+      await loadDashboard();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to cancel contact request.");
     } finally {
       setIsUpdating(null);
     }
@@ -232,6 +246,7 @@ export default function TradeDashboardPage() {
                     request={request}
                     role="buyer"
                     onAnswer={answerContactRequest}
+                    onCancel={cancelSentRequest}
                   />
                 ))
               )}
@@ -375,11 +390,13 @@ function ContactRequestCard({
   request,
   role,
   onAnswer,
+  onCancel,
 }: Readonly<{
   isUpdating: boolean;
   request: ContactRequest;
   role: "seller" | "buyer";
   onAnswer: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
+  onCancel?: (request: ContactRequest) => Promise<void>;
 }>) {
   const listingTitle = request.listing?.title ?? "Listing";
   const canAnswer = role === "seller" && request.status === "pending";
@@ -419,6 +436,16 @@ function ContactRequestCard({
             Reject
           </button>
         </div>
+      ) : null}
+      {role === "buyer" && request.status === "pending" && onCancel ? (
+        <button
+          className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:text-slate-400"
+          disabled={isUpdating}
+          onClick={() => void onCancel(request)}
+          type="button"
+        >
+          Cancel request
+        </button>
       ) : null}
     </div>
   );

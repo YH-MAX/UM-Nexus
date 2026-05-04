@@ -300,6 +300,37 @@ export type TradeProviderStatus = {
   message: string | null;
 };
 
+export type CurrentProfile = {
+  id: string;
+  user_id: string;
+  full_name: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  bio: string | null;
+  faculty: string | null;
+  year_of_study: number | null;
+  residential_college: string | null;
+  college_or_location: string | null;
+  contact_preference: string | null;
+  contact_value: string | null;
+  verified_um_email: boolean;
+  app_role: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CurrentUserResponse = {
+  user: {
+    id: string;
+    email: string;
+    username: string | null;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  };
+  profile: CurrentProfile;
+};
+
 export type ListingPayload = {
   title: string;
   description?: string;
@@ -575,6 +606,20 @@ export type AdminDashboard = {
   } | null;
 };
 
+export type TradeNotification = {
+  id: string;
+  user_id: string;
+  type: string;
+  title: string;
+  body: string;
+  action_url: string | null;
+  entity_type: string | null;
+  entity_id: string | null;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
+};
+
 export type DecisionFeedback = {
   id: string;
   listing_id: string;
@@ -802,6 +847,36 @@ export function formatMoney(value: number | null | undefined, currency = "MYR") 
   }).format(value);
 }
 
+export function isProfileComplete(profile: CurrentProfile | null | undefined): boolean {
+  return Boolean(
+    (profile?.display_name || profile?.full_name)?.trim() &&
+      profile?.faculty?.trim() &&
+      (profile?.college_or_location || profile?.residential_college)?.trim(),
+  );
+}
+
+export async function getCurrentUser(): Promise<CurrentUserResponse> {
+  return fetchJson<CurrentUserResponse>("/auth/me");
+}
+
+export async function updateMyProfile(payload: {
+  full_name?: string | null;
+  display_name?: string | null;
+  bio?: string | null;
+  faculty?: string | null;
+  year_of_study?: number | null;
+  residential_college?: string | null;
+  college_or_location?: string | null;
+  contact_preference?: string | null;
+  contact_value?: string | null;
+  avatar_url?: string | null;
+}): Promise<CurrentProfile> {
+  return fetchJson<CurrentProfile>("/users/me/profile", {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function getListings(filters: Record<string, string> = {}): Promise<Listing[]> {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
@@ -905,7 +980,7 @@ export async function generateSellAgentDraft(
 ): Promise<SellAgentDraft> {
   const formData = new FormData();
   formData.append("seller_context", JSON.stringify(sellerContext));
-  images.slice(0, 4).forEach((image) => {
+  images.slice(0, 5).forEach((image) => {
     formData.append("images", image);
   });
 
@@ -1003,6 +1078,22 @@ export async function createContactRequest(
 
 export async function getFavorites(): Promise<ListingFavorite[]> {
   return fetchJson<ListingFavorite[]>("/users/me/favorites");
+}
+
+export async function getNotifications(): Promise<TradeNotification[]> {
+  return fetchJson<TradeNotification[]>("/users/me/notifications");
+}
+
+export async function markNotificationRead(id: string): Promise<TradeNotification> {
+  return fetchJson<TradeNotification>(`/notifications/${id}/read`, {
+    method: "PATCH",
+  });
+}
+
+export async function markAllNotificationsRead(): Promise<{ updated: number }> {
+  return fetchJson<{ updated: number }>("/notifications/read-all", {
+    method: "PATCH",
+  });
 }
 
 export async function addFavorite(listingId: string): Promise<ListingFavorite> {
@@ -1124,6 +1215,66 @@ export async function updateAdminUserStatus(
   payload: { status: "active" | "suspended" | "banned"; reason?: string },
 ): Promise<AdminDashboard["users"][number]> {
   return fetchJson<AdminDashboard["users"][number]>(`/admin/users/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminUserRole(
+  id: string,
+  payload: { app_role: "student" | "organizer" | "moderator" | "admin"; reason?: string },
+): Promise<AdminDashboard["users"][number]> {
+  return fetchJson<AdminDashboard["users"][number]>(`/admin/users/${id}/role`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAdminActions(): Promise<NonNullable<AdminDashboard["admin_actions"]>> {
+  return fetchJson<AdminDashboard["admin_actions"]>("/admin/actions");
+}
+
+export async function getAdminAIUsage(): Promise<NonNullable<AdminDashboard["ai_usage_logs"]>> {
+  return fetchJson<AdminDashboard["ai_usage_logs"]>("/admin/ai-usage");
+}
+
+export async function getAdminCategories(): Promise<AdminDashboard["categories"]> {
+  return fetchJson<AdminDashboard["categories"]>("/admin/categories");
+}
+
+export async function createAdminCategory(payload: {
+  slug: string;
+  label: string;
+  sort_order?: number;
+  is_active?: boolean;
+}): Promise<AdminDashboard["categories"][number]> {
+  return fetchJson<AdminDashboard["categories"][number]>("/admin/categories", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateAdminCategory(
+  id: string,
+  payload: { label?: string; sort_order?: number; is_active?: boolean },
+): Promise<AdminDashboard["categories"][number]> {
+  return fetchJson<AdminDashboard["categories"][number]>(`/admin/categories/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAdminAISettings(): Promise<NonNullable<AdminDashboard["ai_settings"]>> {
+  return fetchJson<NonNullable<AdminDashboard["ai_settings"]>>("/admin/ai-settings");
+}
+
+export async function updateAdminAISettings(payload: {
+  ai_trade_enabled?: boolean;
+  ai_student_daily_limit?: number;
+  ai_staff_daily_limit?: number;
+  ai_global_daily_limit?: number;
+}): Promise<NonNullable<AdminDashboard["ai_settings"]>> {
+  return fetchJson<NonNullable<AdminDashboard["ai_settings"]>>("/admin/ai-settings", {
     method: "PATCH",
     body: JSON.stringify(payload),
   });

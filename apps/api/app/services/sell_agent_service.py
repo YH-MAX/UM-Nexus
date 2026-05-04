@@ -254,7 +254,7 @@ def publish_sell_agent_draft(
     payload: SellAgentPublishRequest,
     current_user: User,
 ) -> SellAgentPublishResponse:
-    listing = create_listing(db, payload.listing_payload, current_user, publish=True, require_profile=False)
+    listing = create_listing(db, payload.listing_payload, current_user, publish=True, require_profile=True)
     repo = TradeRepository(db)
     created_images: list[ListingImage] = []
     for index, image in enumerate(payload.uploaded_images[:4]):

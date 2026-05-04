@@ -19,6 +19,7 @@ import {
   formatCategory,
   formatMoney,
   formatPickupLocation,
+  getFavorites,
   getListing,
   getListingMatches,
   getTradeResultStatus,
@@ -72,7 +73,11 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     setSimulationPrice(String(Math.round(nextListing.price)));
     setResultStatus(nextResult);
     setMatches(nextMatches);
-  }, [listingId]);
+    if (user) {
+      const favorites = await getFavorites().catch(() => []);
+      setIsSaved(favorites.some((favorite) => favorite.listing_id === listingId));
+    }
+  }, [listingId, user]);
 
   useEffect(() => {
     let isMounted = true;
@@ -617,7 +622,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                 </button>
                 <button
                   className="w-full rounded-lg border border-rose-300 bg-white px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={isActing}
+                  disabled={!user || isActing}
                   onClick={() => void handleReportListing()}
                   type="button"
                 >
@@ -625,7 +630,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                 </button>
                 <button
                   className="w-full rounded-lg border border-rose-300 bg-white px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={isActing}
+                  disabled={!user || isActing}
                   onClick={() => void handleReportSeller()}
                   type="button"
                 >

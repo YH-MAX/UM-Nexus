@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   type ChangeEvent,
@@ -18,13 +19,18 @@ import { TradeShell } from "@/components/trade/trade-shell";
 import {
   conditionOptions,
   contactMethods,
+  createListing,
   formatMoney,
   generateSellAgentDraft,
+  getCurrentUser,
   getTradeResultStatus,
+  isProfileComplete,
   pickupAreas,
   publishSellAgentDraft,
   tradeSafetyMessage,
   tradeCategories,
+  uploadListingImage,
+  type CurrentProfile,
   type ListingPayload,
   type SellAgentDraft,
   type SellAgentSellerContext,
@@ -111,6 +117,19 @@ const publishSteps: Array<{ phase: PublishPhase; label: string }> = [
   { phase: "ready", label: "Ready" },
 ];
 
+const initialListingPayload: ListingPayload = {
+  title: "",
+  description: "",
+  category: "others",
+  condition_label: "good",
+  price: 0,
+  currency: "MYR",
+  pickup_location: "kk1",
+  pickup_area: "kk1",
+  contact_method: "telegram",
+  contact_value: "",
+};
+
 export default function SellPage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -130,12 +149,15 @@ export default function SellPage() {
     },
   ]);
   const [draft, setDraft] = useState<SellAgentDraft | null>(null);
-  const [editableDraft, setEditableDraft] = useState<ListingPayload | null>(null);
+  const [editableDraft, setEditableDraft] = useState<ListingPayload>(initialListingPayload);
+  const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(null);
   const [selectedPriceType, setSelectedPriceType] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [publishPhase, setPublishPhase] = useState<PublishPhase>("idle");
   const [publishedListingId, setPublishedListingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -143,6 +165,38 @@ export default function SellPage() {
       images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
     };
   }, [images]);
+
+  useEffect(() => {
+    if (!user) {
+      setCurrentProfile(null);
+      return;
+    }
+    let isMounted = true;
+    void getCurrentUser()
+      .then((current) => {
+        if (!isMounted) {
+          return;
+        }
+        setCurrentProfile(current.profile);
+        const preferredMethod =
+          current.profile.contact_preference === "telegram" || current.profile.contact_preference === "whatsapp"
+            ? current.profile.contact_preference
+            : null;
+        setEditableDraft((existing) => ({
+          ...existing,
+          contact_method: preferredMethod ?? existing.contact_method,
+          contact_value: current.profile.contact_value ?? existing.contact_value,
+        }));
+      })
+      .catch((nextError) => {
+        if (isMounted) {
+          setError(nextError instanceof Error ? nextError.message : "Unable to load your trade profile.");
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
 
   const canGenerate = useMemo(
     () =>
@@ -155,32 +209,14 @@ export default function SellPage() {
     [freeText, images.length, sellerContext.free_text, sellerContext.product_name],
   );
 
-  const hasSellerClues = useMemo(
-    () =>
-      Boolean(
-        sellerContext.product_name ||
-          sellerContext.condition_notes ||
-          sellerContext.pickup_area ||
-          sellerContext.free_text ||
-          freeText.trim(),
-      ),
-    [
-      freeText,
-      sellerContext.condition_notes,
-      sellerContext.free_text,
-      sellerContext.pickup_area,
-      sellerContext.product_name,
-    ],
-  );
-
   const workflowSteps = useMemo(
     () => [
       { label: "Photos", complete: images.length > 0 },
-      { label: "Seller clues", complete: hasSellerClues },
-      { label: "AI draft", complete: Boolean(draft) },
+      { label: "Details", complete: hasManualMinimum(editableDraft) },
+      { label: "AI optional", complete: Boolean(draft) },
       { label: "Publish", complete: publishPhase === "ready" },
     ],
-    [draft, hasSellerClues, images.length, publishPhase],
+    [draft, editableDraft, images.length, publishPhase],
   );
 
   const followUpClues = useMemo(() => {
@@ -251,10 +287,10 @@ export default function SellPage() {
     if (selectedFiles.length === 0) {
       return;
     }
-    const availableSlots = Math.max(0, 4 - images.length);
+    const availableSlots = Math.max(0, 5 - images.length);
     const filesToAdd = selectedFiles.slice(0, availableSlots);
     if (filesToAdd.length === 0) {
-      setError("You can upload up to 4 photos.");
+      setError("You can upload up to 5 photos.");
       event.target.value = "";
       return;
     }
@@ -313,7 +349,12 @@ export default function SellPage() {
   }
 
   async function handlePublish() {
-    if (!draft || !editableDraft) {
+    if (!draft) {
+      return;
+    }
+    const validationError = validateManualListing(editableDraft, currentProfile);
+    if (validationError) {
+      setError(validationError);
       return;
     }
     if (!editableDraft.contact_method || !editableDraft.contact_value?.trim()) {
@@ -362,6 +403,58 @@ export default function SellPage() {
     }
   }
 
+  async function handleSaveManualDraft() {
+    setIsSavingDraft(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const listing = await createListing(prepareListingPayload(editableDraft), { publish: false });
+      await uploadSelectedImages(listing.id);
+      setPublishedListingId(listing.id);
+      setNotice("Draft saved. You can finish it from your dashboard.");
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to save draft.");
+    } finally {
+      setIsSavingDraft(false);
+    }
+  }
+
+  async function handlePublishManual() {
+    const validationError = validateManualListing(editableDraft, currentProfile);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setIsPublishing(true);
+    setError(null);
+    setNotice(null);
+    setPublishPhase("creating");
+    try {
+      const listing = await createListing(prepareListingPayload(editableDraft), { publish: true });
+      setPublishedListingId(listing.id);
+      setPublishPhase("images");
+      await uploadSelectedImages(listing.id);
+      setPublishPhase("risk");
+      await sleep(250);
+      setPublishPhase("ready");
+      router.push(`/trade/${listing.id}`);
+    } catch (nextError) {
+      setPublishPhase("failed");
+      setError(nextError instanceof Error ? nextError.message : "Unable to publish listing.");
+    } finally {
+      setIsPublishing(false);
+    }
+  }
+
+  async function uploadSelectedImages(listingId: string) {
+    for (const [index, image] of images.entries()) {
+      await uploadListingImage(listingId, image.file, {
+        sortOrder: index,
+        isPrimary: index === 0,
+      });
+    }
+  }
+
   function updateDraftField(field: keyof ListingPayload, value: string | number | undefined) {
     setEditableDraft((current) => (current ? { ...current, [field]: value } : current));
   }
@@ -373,13 +466,25 @@ export default function SellPage() {
     addMessage({ role: "agent", body: option.tradeoff_summary });
   }
 
-  const isBusy = isGenerating || isPublishing;
+  const profileReady = isProfileComplete(currentProfile);
+  const isBusy = isGenerating || isPublishing || isSavingDraft;
 
   return (
     <TradeShell
-      title="Sell with AI"
-      description="Upload photos, answer quick seller clues, review the AI draft, then publish only after approval."
+      title="Sell an item"
+      description="Create a campus listing manually, then use AI only when you want draft help."
     >
+      {error ? (
+        <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          {notice}
+        </p>
+      ) : null}
+
       {!user ? (
         <RequireAuthCard description="Sign in with your UM account before creating seller listings." />
       ) : null}
@@ -387,6 +492,19 @@ export default function SellPage() {
       {user ? (
         <div className="space-y-5">
           <WorkflowProgress steps={workflowSteps} />
+
+          {!profileReady ? <ProfileRequiredPanel /> : null}
+
+          <ManualListingPanel
+            disabled={isBusy || !profileReady}
+            draft={editableDraft}
+            imageCount={images.length}
+            isPublishing={isPublishing}
+            isSavingDraft={isSavingDraft}
+            onPublish={handlePublishManual}
+            onSaveDraft={handleSaveManualDraft}
+            onUpdateDraftField={updateDraftField}
+          />
 
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_430px]">
             <PhotoUploadPanel
@@ -442,6 +560,162 @@ export default function SellPage() {
         </div>
       ) : null}
     </TradeShell>
+  );
+}
+
+function ProfileRequiredPanel() {
+  return (
+    <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-amber-950">Complete your trade profile</h2>
+          <p className="mt-2 text-sm leading-6 text-amber-900">
+            Display name, faculty, and campus location are required before publishing.
+          </p>
+        </div>
+        <Link
+          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+          href="/trade/profile"
+        >
+          Edit profile
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function ManualListingPanel({
+  disabled,
+  draft,
+  imageCount,
+  isPublishing,
+  isSavingDraft,
+  onPublish,
+  onSaveDraft,
+  onUpdateDraftField,
+}: Readonly<{
+  disabled: boolean;
+  draft: ListingPayload;
+  imageCount: number;
+  isPublishing: boolean;
+  isSavingDraft: boolean;
+  onPublish: () => void;
+  onSaveDraft: () => void;
+  onUpdateDraftField: (field: keyof ListingPayload, value: string | number | undefined) => void;
+}>) {
+  return (
+    <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Manual listing</p>
+          <h2 className="mt-2 text-xl font-semibold text-slate-950">Product details</h2>
+        </div>
+        <StatusPill tone={imageCount > 0 ? "good" : "warn"}>{imageCount}/5 photos</StatusPill>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <EditableField
+          label="Title"
+          value={draft.title}
+          onChange={(value) => onUpdateDraftField("title", value)}
+        />
+        <EditableNumber
+          label="Price"
+          value={draft.price}
+          onChange={(value) => onUpdateDraftField("price", value)}
+        />
+        <EditableSelect
+          label="Category"
+          options={tradeCategories}
+          value={draft.category}
+          onChange={(value) => {
+            onUpdateDraftField("category", value);
+            if (value === "free_items") {
+              onUpdateDraftField("price", 0);
+            }
+          }}
+        />
+        <EditableSelect
+          label="Condition"
+          options={conditionOptions}
+          value={draft.condition_label ?? "good"}
+          onChange={(value) => onUpdateDraftField("condition_label", value)}
+        />
+        <EditableSelect
+          label="Pickup location"
+          options={pickupAreas}
+          value={draft.pickup_location ?? draft.pickup_area ?? "kk1"}
+          onChange={(value) => {
+            onUpdateDraftField("pickup_location", value);
+            onUpdateDraftField("pickup_area", value);
+          }}
+        />
+        <EditableField
+          label="Pickup note"
+          value={draft.pickup_note ?? ""}
+          onChange={(value) => onUpdateDraftField("pickup_note", value || undefined)}
+        />
+        <label className="grid gap-2 lg:col-span-2">
+          <span className="text-sm font-semibold text-slate-800">Description</span>
+          <textarea
+            className="min-h-28 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-emerald-600"
+            value={draft.description ?? ""}
+            onChange={(event) => onUpdateDraftField("description", event.target.value || undefined)}
+          />
+        </label>
+        <EditableSelect
+          label="Contact method"
+          options={contactMethods}
+          value={draft.contact_method ?? "telegram"}
+          onChange={(value) => onUpdateDraftField("contact_method", value)}
+        />
+        <EditableField
+          label="Contact value"
+          value={draft.contact_value ?? ""}
+          onChange={(value) => onUpdateDraftField("contact_value", value || undefined)}
+        />
+      </div>
+
+      <details className="mt-4 rounded-lg border border-slate-200 bg-slate-50">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">Extra item fields</summary>
+        <div className="grid gap-3 border-t border-slate-200 p-4 sm:grid-cols-3">
+          <EditableField
+            label="Item name"
+            value={draft.item_name ?? ""}
+            onChange={(value) => onUpdateDraftField("item_name", value || undefined)}
+          />
+          <EditableField
+            label="Brand"
+            value={draft.brand ?? ""}
+            onChange={(value) => onUpdateDraftField("brand", value || undefined)}
+          />
+          <EditableField
+            label="Model"
+            value={draft.model ?? ""}
+            onChange={(value) => onUpdateDraftField("model", value || undefined)}
+          />
+        </div>
+      </details>
+
+      <div className="mt-5 flex flex-wrap gap-3">
+        <button
+          className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:border-emerald-500 disabled:cursor-not-allowed disabled:text-slate-400"
+          disabled={disabled || isSavingDraft}
+          onClick={onSaveDraft}
+          type="button"
+        >
+          {isSavingDraft ? "Saving..." : "Save draft"}
+        </button>
+        <button
+          className="rounded-lg bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+          disabled={disabled || isPublishing}
+          onClick={onPublish}
+          type="button"
+        >
+          {isPublishing ? "Publishing..." : "Publish manually"}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -506,7 +780,7 @@ function PhotoUploadPanel({
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onRemoveImage: (previewUrl: string) => void;
 }>) {
-  const slots = Array.from({ length: 4 }, (_, index) => images[index] ?? null);
+  const slots = Array.from({ length: 5 }, (_, index) => images[index] ?? null);
 
   return (
     <section className={`rounded-lg border border-slate-200 bg-white p-5 shadow-sm ${className ?? ""}`}>
@@ -537,7 +811,7 @@ function PhotoUploadPanel({
             Clear photos help the AI estimate item type, condition, and risk.
           </p>
         </div>
-        <StatusPill tone={images.length > 0 ? "good" : "neutral"}>{images.length}/4 photos</StatusPill>
+        <StatusPill tone={images.length > 0 ? "good" : "neutral"}>{images.length}/5 photos</StatusPill>
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-4">
@@ -586,7 +860,7 @@ function PhotoUploadPanel({
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-          disabled={disabled || images.length >= 4}
+          disabled={disabled || images.length >= 5}
           onClick={() => fileInputRef.current?.click()}
           type="button"
         >
@@ -595,7 +869,7 @@ function PhotoUploadPanel({
         </button>
         <button
           className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-emerald-500 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
-          disabled={disabled || images.length >= 4}
+          disabled={disabled || images.length >= 5}
           onClick={() => cameraInputRef.current?.click()}
           type="button"
         >
@@ -661,7 +935,7 @@ function AgentConversationPanel({
             <h2 className="mt-2 text-xl font-semibold text-slate-950">AI listing assistant</h2>
           </div>
           <div className="flex flex-wrap gap-2">
-            <StatusPill tone={imagesCount > 0 ? "good" : "neutral"}>{imagesCount}/4 photos</StatusPill>
+            <StatusPill tone={imagesCount > 0 ? "good" : "neutral"}>{imagesCount}/5 photos</StatusPill>
             {draft ? (
               <StatusPill tone={draft.metadata.used_fallback ? "warn" : "good"}>
                 {draft.metadata.used_fallback ? "fallback" : draft.metadata.analysis_mode}
@@ -1331,7 +1605,7 @@ function EditableNumber({
       <span className="text-sm font-semibold text-slate-800">{label}</span>
       <input
         className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-600"
-        min="1"
+        min="0"
         step="0.01"
         type="number"
         value={Number.isFinite(value) ? value : ""}
@@ -1501,6 +1775,56 @@ function riskTone(level: "low" | "medium" | "high") {
     return "warn" as const;
   }
   return "good" as const;
+}
+
+function hasManualMinimum(payload: ListingPayload): boolean {
+  return Boolean(payload.title.trim() && payload.description?.trim() && payload.category && payload.condition_label);
+}
+
+function prepareListingPayload(payload: ListingPayload): ListingPayload {
+  const pickupLocation = payload.pickup_location || payload.pickup_area || "kk1";
+  const category = payload.category || "others";
+  return {
+    ...payload,
+    title: payload.title.trim(),
+    description: payload.description?.trim(),
+    category,
+    condition_label: payload.condition_label || payload.condition || "good",
+    price: category === "free_items" ? 0 : Number(payload.price || 0),
+    currency: payload.currency || "MYR",
+    pickup_location: pickupLocation,
+    pickup_area: pickupLocation,
+    contact_value: payload.contact_value?.trim(),
+  };
+}
+
+function validateManualListing(payload: ListingPayload, profile: CurrentProfile | null): string | null {
+  const prepared = prepareListingPayload(payload);
+  if (!isProfileComplete(profile)) {
+    return "Complete your trade profile before publishing.";
+  }
+  if (prepared.title.length < 5 || prepared.title.length > 100) {
+    return "Title must be 5 to 100 characters.";
+  }
+  if (!prepared.description || prepared.description.length < 10 || prepared.description.length > 2000) {
+    return "Description must be 10 to 2000 characters.";
+  }
+  if (!prepared.category) {
+    return "Choose a category.";
+  }
+  if (!prepared.condition_label) {
+    return "Choose a condition.";
+  }
+  if (!prepared.pickup_location) {
+    return "Choose a pickup location.";
+  }
+  if (prepared.price < 0) {
+    return "Price must be 0 or more.";
+  }
+  if (!prepared.contact_method || !prepared.contact_value) {
+    return "Choose Telegram or WhatsApp and enter your contact before publishing.";
+  }
+  return null;
 }
 
 function UploadIcon() {

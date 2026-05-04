@@ -25,19 +25,36 @@ def listing_payload(**overrides):
     return payload
 
 
-def test_feed_filters_and_legacy_category_normalization(client) -> None:
-    first = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload()).json()
-    second = client.post(
-        "/api/v1/listings",
+def complete_profile(client) -> None:
+    response = client.patch(
+        "/api/v1/users/me/profile",
         headers=AUTH_HEADERS,
-        json=listing_payload(
-            title="Rice cooker",
-            category="small_appliances",
-            condition_label="fair",
-            price=45,
-            pickup_area="KK",
-        ),
-    ).json()
+        json={
+            "display_name": "UM Seller",
+            "faculty": "FSKTM",
+            "college_or_location": "kk12",
+        },
+    )
+    assert response.status_code == 200
+
+
+def create_published_listing(client, **overrides) -> dict:
+    complete_profile(client)
+    response = client.post("/api/v1/listings?publish=true", headers=AUTH_HEADERS, json=listing_payload(**overrides))
+    assert response.status_code == 201
+    return response.json()
+
+
+def test_feed_filters_and_legacy_category_normalization(client) -> None:
+    first = create_published_listing(client)
+    second = create_published_listing(
+        client,
+        title="Rice cooker",
+        category="small_appliances",
+        condition_label="fair",
+        price=45,
+        pickup_area="KK",
+    )
 
     assert first["category"] == "textbooks_notes"
     assert second["category"] == "kitchen_appliances"
@@ -52,17 +69,13 @@ def test_feed_filters_and_legacy_category_normalization(client) -> None:
 
 
 def test_public_feed_excludes_hidden_and_review_required_listings(client, db_session) -> None:
-    visible = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload()).json()
-    hidden = client.post(
-        "/api/v1/listings",
-        headers=AUTH_HEADERS,
-        json=listing_payload(title="Hidden listing", category="dorm_essentials"),
-    ).json()
-    review_required = client.post(
-        "/api/v1/listings",
-        headers=AUTH_HEADERS,
-        json=listing_payload(title="Cash urgent phone", description="No receipt, pay first, urgent cash."),
-    ).json()
+    visible = create_published_listing(client)
+    hidden = create_published_listing(client, title="Hidden listing", category="dorm_essentials")
+    review_required = create_published_listing(
+        client,
+        title="Cash urgent phone",
+        description="No receipt, pay first, urgent cash.",
+    )
     db_session.query(Listing).filter(Listing.id == hidden["id"]).update({"status": "hidden"})
     db_session.commit()
 
@@ -76,13 +89,14 @@ def test_public_feed_excludes_hidden_and_review_required_listings(client, db_ses
 
 
 def test_prohibited_item_blocks_creation_and_suspicious_item_enters_review(client) -> None:
+    complete_profile(client)
     blocked = client.post(
-        "/api/v1/listings",
+        "/api/v1/listings?publish=true",
         headers=AUTH_HEADERS,
         json=listing_payload(title="Vape pod", description="Unused vape pod for sale."),
     )
     suspicious = client.post(
-        "/api/v1/listings",
+        "/api/v1/listings?publish=true",
         headers=AUTH_HEADERS,
         json=listing_payload(title="Cheap phone", description="No receipt and urgent cash sale."),
     )
@@ -94,7 +108,7 @@ def test_prohibited_item_blocks_creation_and_suspicious_item_enters_review(clien
 
 def test_contact_request_accept_reject_and_reveal_permissions(client, token_verifier) -> None:
     seller_claims = token_verifier.claims
-    listing = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload()).json()
+    listing = create_published_listing(client)
 
     buyer_id = uuid4()
     token_verifier.claims = seller_claims.model_copy(
@@ -167,7 +181,7 @@ def test_report_user_admin_dashboard_and_user_status_actions(client, db_session,
     suspended = client.patch(
         f"/api/v1/admin/users/{reported.id}/status",
         headers=AUTH_HEADERS,
-        json={"status": "suspended"},
+        json={"status": "suspended", "reason": "Unsafe trade behavior."},
     )
 
     assert report.status_code == 201
@@ -175,6 +189,50 @@ def test_report_user_admin_dashboard_and_user_status_actions(client, db_session,
     assert dashboard.json()["statistics"]["total_users"] == 2
     assert suspended.status_code == 200
     assert suspended.json()["status"] == "suspended"
+
+
+def test_admin_categories_roles_ai_settings_and_actions(client, db_session, token_verifier) -> None:
+    admin_id = str(token_verifier.claims.sub)
+    admin = User(id=admin_id, email="admin@siswa.um.edu.my")
+    admin.profile = Profile(app_role=AppRole.ADMIN)
+    target = User(id=str(uuid4()), email="moderator@siswa.um.edu.my")
+    target.profile = Profile(app_role=AppRole.STUDENT)
+    db_session.add_all([admin, target])
+    db_session.commit()
+
+    category = client.post(
+        "/api/v1/admin/categories",
+        headers=AUTH_HEADERS,
+        json={"slug": "lab_tools", "label": "Lab Tools", "sort_order": 120, "is_active": True},
+    )
+    updated_category = client.patch(
+        f"/api/v1/admin/categories/{category.json()['id']}",
+        headers=AUTH_HEADERS,
+        json={"is_active": False},
+    )
+    role = client.patch(
+        f"/api/v1/admin/users/{target.id}/role",
+        headers=AUTH_HEADERS,
+        json={"app_role": "moderator", "reason": "Launch moderation staffing."},
+    )
+    settings = client.patch(
+        "/api/v1/admin/ai-settings",
+        headers=AUTH_HEADERS,
+        json={"ai_trade_enabled": False, "ai_student_daily_limit": 2},
+    )
+    actions = client.get("/api/v1/admin/actions", headers=AUTH_HEADERS)
+    ai_usage = client.get("/api/v1/admin/ai-usage", headers=AUTH_HEADERS)
+
+    assert category.status_code == 201
+    assert updated_category.status_code == 200
+    assert updated_category.json()["is_active"] is False
+    assert role.status_code == 200
+    assert role.json()["app_role"] == "moderator"
+    assert settings.status_code == 200
+    assert settings.json()["ai_trade_enabled"] is False
+    assert actions.status_code == 200
+    assert len(actions.json()) >= 3
+    assert ai_usage.status_code == 200
 
 
 def test_suspended_user_cannot_create_listing(client, db_session, token_verifier) -> None:
@@ -237,9 +295,42 @@ def test_draft_publish_view_count_and_favorites(client, token_verifier) -> None:
     assert removed.status_code == 204
 
 
+def test_default_listing_create_is_draft_and_notifications_can_be_read(client, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    draft = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload())
+
+    assert draft.status_code == 201
+    assert draft.json()["status"] == "draft"
+
+    complete_profile(client)
+    published = client.post(f"/api/v1/listings/{draft.json()['id']}/publish", headers=AUTH_HEADERS).json()
+    token_verifier.claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "notify-buyer@siswa.um.edu.my"})
+    request = client.post(
+        f"/api/v1/listings/{published['id']}/contact-requests",
+        headers=AUTH_HEADERS,
+        json={
+            "message": "Interested.",
+            "buyer_contact_method": "telegram",
+            "buyer_contact_value": "@buyer",
+        },
+    )
+
+    token_verifier.claims = seller_claims
+    notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+    read = client.patch(f"/api/v1/notifications/{notifications.json()[0]['id']}/read", headers=AUTH_HEADERS)
+    read_all = client.patch("/api/v1/notifications/read-all", headers=AUTH_HEADERS)
+
+    assert request.status_code == 201
+    assert notifications.status_code == 200
+    assert notifications.json()[0]["type"] == "contact_request_received"
+    assert read.status_code == 200
+    assert read.json()["is_read"] is True
+    assert read_all.status_code == 200
+
+
 def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> None:
     seller_claims = token_verifier.claims
-    listing = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload()).json()
+    listing = create_published_listing(client)
 
     token_verifier.claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "buyer@siswa.um.edu.my"})
     request = client.post(
@@ -290,7 +381,7 @@ def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> No
 
 def test_duplicate_report_prevention_and_threshold_auto_hide(client, db_session, token_verifier) -> None:
     seller_claims = token_verifier.claims
-    listing = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload()).json()
+    listing = create_published_listing(client)
 
     reporter_one = seller_claims.model_copy(update={"sub": uuid4(), "email": "r1@siswa.um.edu.my"})
     token_verifier.claims = reporter_one

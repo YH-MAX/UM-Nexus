@@ -7,13 +7,18 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { StatusPill } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
+  createAdminCategory,
   formatCategory,
   formatMoney,
+  formatPickupLocation,
   getAdminDashboard,
   getModerationListings,
   getModerationSummary,
   reviewModerationListing,
+  updateAdminAISettings,
+  updateAdminCategory,
   updateAdminListing,
+  updateAdminUserRole,
   updateAdminUserStatus,
   type AdminDashboard,
   type ModerationListing,
@@ -102,7 +107,7 @@ export default function TradeModerationPage() {
     setReviewingId(id);
     setError(null);
     try {
-      await updateAdminUserStatus(id, { status });
+      await updateAdminUserStatus(id, { status, reason: `Admin changed user status to ${status}.` });
       await loadQueue();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update user status.");
@@ -142,6 +147,7 @@ export default function TradeModerationPage() {
               dashboard={adminDashboard}
               disabledId={reviewingId}
               onListingStatus={setListingStatus}
+              onReload={loadQueue}
               onUserStatus={setUserStatus}
             />
           ) : null}
@@ -235,11 +241,13 @@ function AdminOverview({
   dashboard,
   disabledId,
   onListingStatus,
+  onReload,
   onUserStatus,
 }: Readonly<{
   dashboard: AdminDashboard;
   disabledId: string | null;
   onListingStatus: (id: string, status: "available" | "hidden" | "deleted") => Promise<void>;
+  onReload: () => Promise<void>;
   onUserStatus: (id: string, status: "active" | "suspended" | "banned") => Promise<void>;
 }>) {
   const stats = dashboard.statistics;
@@ -351,6 +359,328 @@ function AdminOverview({
           </div>
         </div>
       </section>
+
+      <AdminLaunchOps dashboard={dashboard} disabledId={disabledId} onReload={onReload} />
+    </div>
+  );
+}
+
+function AdminLaunchOps({
+  dashboard,
+  disabledId,
+  onReload,
+}: Readonly<{
+  dashboard: AdminDashboard;
+  disabledId: string | null;
+  onReload: () => Promise<void>;
+}>) {
+  const [categoryDraft, setCategoryDraft] = useState({ slug: "", label: "" });
+  const [aiDraft, setAiDraft] = useState({
+    ai_trade_enabled: dashboard.ai_settings?.ai_trade_enabled ?? true,
+    ai_student_daily_limit: String(dashboard.ai_settings?.ai_student_daily_limit ?? 3),
+    ai_staff_daily_limit: String(dashboard.ai_settings?.ai_staff_daily_limit ?? 50),
+    ai_global_daily_limit: String(dashboard.ai_settings?.ai_global_daily_limit ?? 200),
+  });
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAiDraft({
+      ai_trade_enabled: dashboard.ai_settings?.ai_trade_enabled ?? true,
+      ai_student_daily_limit: String(dashboard.ai_settings?.ai_student_daily_limit ?? 3),
+      ai_staff_daily_limit: String(dashboard.ai_settings?.ai_staff_daily_limit ?? 50),
+      ai_global_daily_limit: String(dashboard.ai_settings?.ai_global_daily_limit ?? 200),
+    });
+  }, [
+    dashboard.ai_settings?.ai_global_daily_limit,
+    dashboard.ai_settings?.ai_staff_daily_limit,
+    dashboard.ai_settings?.ai_student_daily_limit,
+    dashboard.ai_settings?.ai_trade_enabled,
+  ]);
+
+  async function createCategory() {
+    setBusyKey("category-create");
+    setLocalError(null);
+    try {
+      await createAdminCategory({
+        slug: categoryDraft.slug,
+        label: categoryDraft.label,
+        sort_order: dashboard.categories.length * 10 + 10,
+        is_active: true,
+      });
+      setCategoryDraft({ slug: "", label: "" });
+      await onReload();
+    } catch (nextError) {
+      setLocalError(nextError instanceof Error ? nextError.message : "Unable to create category.");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function toggleCategory(category: AdminDashboard["categories"][number]) {
+    setBusyKey(category.id);
+    setLocalError(null);
+    try {
+      await updateAdminCategory(category.id, { is_active: !category.is_active });
+      await onReload();
+    } catch (nextError) {
+      setLocalError(nextError instanceof Error ? nextError.message : "Unable to update category.");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function saveAISettings() {
+    setBusyKey("ai-settings");
+    setLocalError(null);
+    try {
+      await updateAdminAISettings({
+        ai_trade_enabled: aiDraft.ai_trade_enabled,
+        ai_student_daily_limit: Number(aiDraft.ai_student_daily_limit),
+        ai_staff_daily_limit: Number(aiDraft.ai_staff_daily_limit),
+        ai_global_daily_limit: Number(aiDraft.ai_global_daily_limit),
+      });
+      await onReload();
+    } catch (nextError) {
+      setLocalError(nextError instanceof Error ? nextError.message : "Unable to update AI settings.");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function setUserRole(id: string, appRole: "student" | "organizer" | "moderator" | "admin") {
+    setBusyKey(`${id}-${appRole}`);
+    setLocalError(null);
+    try {
+      await updateAdminUserRole(id, {
+        app_role: appRole,
+        reason: `Admin changed user role to ${appRole}.`,
+      });
+      await onReload();
+    } catch (nextError) {
+      setLocalError(nextError instanceof Error ? nextError.message : "Unable to update user role.");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  const stats = dashboard.statistics;
+
+  return (
+    <section className="grid gap-5">
+      {localError ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{localError}</div>
+      ) : null}
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-950">Categories</h2>
+          <div className="mt-4 grid gap-2">
+            {dashboard.categories.map((category) => (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 p-3" key={category.id}>
+                <div>
+                  <p className="text-sm font-semibold text-slate-950">{category.label}</p>
+                  <p className="mt-1 text-xs text-slate-500">{category.slug}</p>
+                </div>
+                <button
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                  disabled={busyKey === category.id}
+                  onClick={() => void toggleCategory(category)}
+                  type="button"
+                >
+                  {category.is_active ? "Deactivate" : "Activate"}
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="category_slug"
+              value={categoryDraft.slug}
+              onChange={(event) => setCategoryDraft((current) => ({ ...current, slug: event.target.value }))}
+            />
+            <input
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+              placeholder="Category label"
+              value={categoryDraft.label}
+              onChange={(event) => setCategoryDraft((current) => ({ ...current, label: event.target.value }))}
+            />
+            <button
+              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+              disabled={busyKey === "category-create" || !categoryDraft.slug.trim() || !categoryDraft.label.trim()}
+              onClick={() => void createCategory()}
+              type="button"
+            >
+              Add
+            </button>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-950">AI controls</h2>
+          <label className="mt-4 flex items-center gap-3 text-sm font-semibold text-slate-800">
+            <input
+              checked={aiDraft.ai_trade_enabled}
+              onChange={(event) => setAiDraft((current) => ({ ...current, ai_trade_enabled: event.target.checked }))}
+              type="checkbox"
+            />
+            AI Trade enabled
+          </label>
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <NumberField
+              label="Student daily"
+              value={aiDraft.ai_student_daily_limit}
+              onChange={(value) => setAiDraft((current) => ({ ...current, ai_student_daily_limit: value }))}
+            />
+            <NumberField
+              label="Staff daily"
+              value={aiDraft.ai_staff_daily_limit}
+              onChange={(value) => setAiDraft((current) => ({ ...current, ai_staff_daily_limit: value }))}
+            />
+            <NumberField
+              label="Global daily"
+              value={aiDraft.ai_global_daily_limit}
+              onChange={(value) => setAiDraft((current) => ({ ...current, ai_global_daily_limit: value }))}
+            />
+          </div>
+          <button
+            className="mt-4 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
+            disabled={busyKey === "ai-settings"}
+            onClick={() => void saveAISettings()}
+            type="button"
+          >
+            Save AI settings
+          </button>
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-3">
+        <StatList title="Popular categories" items={stats.most_popular_categories.map((item) => `${formatCategory(String(item.category))}: ${item.count}`)} />
+        <StatList title="Pickup locations" items={stats.most_popular_pickup_locations.map((item) => `${formatPickupLocation(String(item.pickup_location))}: ${item.count}`)} />
+        <StatList
+          title="AI usage"
+          items={[
+            `${stats.ai_generations_used} generation(s)`,
+            `${Math.round(stats.ai_failure_rate * 100)}% failure/denial rate`,
+            `${stats.contact_requests_accepted}/${stats.contact_requests_sent} contact requests accepted`,
+          ]}
+        />
+      </div>
+
+      <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-950">Role management</h2>
+        <div className="mt-4 grid gap-3">
+          {dashboard.users.slice(0, 10).map((user) => (
+            <div className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between" key={user.id}>
+              <div>
+                <p className="text-sm font-semibold text-slate-950">{user.display_name ?? user.full_name ?? user.email}</p>
+                <p className="mt-1 text-xs text-slate-500">{user.status} · {user.app_role ?? "student"}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(["student", "moderator", "admin"] as const).map((role) => (
+                  <button
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                    disabled={disabledId === user.id || busyKey === `${user.id}-${role}` || user.app_role === role}
+                    key={role}
+                    onClick={() => void setUserRole(user.id, role)}
+                    type="button"
+                  >
+                    {role}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <LogPanel
+          title="AI usage logs"
+          rows={dashboard.ai_usage_logs.slice(0, 8).map((log) => ({
+            id: log.id,
+            primary: `${log.feature} · ${log.request_status}`,
+            secondary: log.error_message ?? `${log.provider ?? "provider"} ${log.model ?? ""}`,
+          }))}
+        />
+        <LogPanel
+          title="Admin actions"
+          rows={dashboard.admin_actions.slice(0, 8).map((action) => ({
+            id: action.id,
+            primary: `${action.action_type} · ${action.target_type}`,
+            secondary: action.reason ?? action.target_id,
+          }))}
+        />
+      </div>
+    </section>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  onChange,
+}: Readonly<{
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}>) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-sm font-semibold text-slate-800">{label}</span>
+      <input
+        className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+        min="0"
+        type="number"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function StatList({ items, title }: Readonly<{ title: string; items: string[] }>) {
+  return (
+    <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+      <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+      <div className="mt-3 grid gap-2">
+        {items.length === 0 ? (
+          <p className="text-sm text-slate-600">No data yet.</p>
+        ) : (
+          items.map((item) => (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700" key={item}>
+              {item}
+            </p>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LogPanel({
+  rows,
+  title,
+}: Readonly<{
+  title: string;
+  rows: Array<{ id: string; primary: string; secondary: string }>;
+}>) {
+  return (
+    <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+      <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
+      <div className="mt-3 grid gap-2">
+        {rows.length === 0 ? (
+          <p className="text-sm text-slate-600">No records.</p>
+        ) : (
+          rows.map((row) => (
+            <div className="rounded-lg border border-slate-200 p-3 text-sm" key={row.id}>
+              <p className="font-semibold text-slate-950">{row.primary}</p>
+              <p className="mt-1 text-slate-600">{row.secondary}</p>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

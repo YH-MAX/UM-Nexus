@@ -254,6 +254,22 @@ class AISettingsUpdate(BaseModel):
     ai_global_daily_limit: int | None = Field(default=None, ge=0)
 
 
+class NotificationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str
+    type: str
+    title: str
+    body: str
+    action_url: str | None
+    entity_type: str | None
+    entity_id: str | None
+    is_read: bool
+    read_at: datetime | None
+    created_at: datetime
+
+
 class AdminDashboardResponse(BaseModel):
     statistics: AdminStatistics
     listings: list[ListingRead] = Field(default_factory=list)

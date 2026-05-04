@@ -47,18 +47,16 @@ router = APIRouter()
 @router.post("", response_model=ListingRead, status_code=status.HTTP_201_CREATED)
 def create_listing_endpoint(
     payload: ListingCreate,
-    publish: bool | None = Query(default=None),
+    publish: bool = Query(default=False),
     db: Session = Depends(get_db),
     current_user=Depends(require_authenticated_user),
 ) -> ListingRead:
-    # Backward compatibility: pre-launch clients posted directly to publish.
-    should_publish = True if publish is None else publish
     listing = create_listing(
         db,
         payload,
         current_user,
-        publish=should_publish,
-        require_profile=publish is True,
+        publish=publish,
+        require_profile=publish,
     )
     return ListingRead.model_validate(listing)
 

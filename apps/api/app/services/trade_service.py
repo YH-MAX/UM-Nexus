@@ -507,13 +507,25 @@ def cancel_contact_request(db: Session, contact_request_id: str, current_user: U
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the buyer can cancel this request.")
     if contact_request.status != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending contact requests can be cancelled.")
-    return repo.update_contact_request(
+    updated = repo.update_contact_request(
         contact_request,
         {
             "status": "cancelled",
             "cancelled_at": datetime.now(UTC),
         },
     )
+    repo.create_notification(
+        {
+            "user_id": updated.seller_id,
+            "type": "contact_request_cancelled",
+            "title": "Buyer cancelled a request",
+            "body": "A pending contact request was cancelled by the buyer.",
+            "action_url": "/trade/dashboard",
+            "entity_type": "contact_request",
+            "entity_id": updated.id,
+        }
+    )
+    return updated
 
 
 def contact_request_read(contact_request: TradeContactRequest, viewer: User) -> ContactRequestRead:
@@ -564,6 +576,23 @@ def create_user_report(
             "status": "pending",
         }
     )
+
+
+def list_notifications(db: Session, current_user: User):
+    return list(TradeRepository(db).list_notifications_for_user(current_user.id))
+
+
+def mark_notification_read(db: Session, notification_id: str, current_user: User):
+    repo = TradeRepository(db)
+    notification = repo.get_notification_or_none(notification_id)
+    if notification is None or notification.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    return repo.mark_notification_read(notification)
+
+
+def mark_all_notifications_read(db: Session, current_user: User) -> dict[str, int]:
+    count = TradeRepository(db).mark_all_notifications_read(current_user.id)
+    return {"updated": count}
 
 
 def list_moderation_listings(db: Session) -> list[Listing]:
@@ -873,6 +902,8 @@ def admin_update_user_status(
     user = repo.get_user_or_none(user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not payload.reason:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin user actions require a reason.")
     updated = repo.update_user(user, {"status": payload.status})
     if payload.status in {"suspended", "banned"}:
         for listing in repo.list_listings_by_seller(user.id):
@@ -904,6 +935,8 @@ def admin_update_user_role(db: Session, user_id: str, payload: AdminUserRoleUpda
     user = repo.get_user_or_none(user_id)
     if user is None or user.profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if not payload.reason:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin user actions require a reason.")
     user.profile.app_role = AppRole(payload.app_role)
     db.add(user.profile)
     db.commit()

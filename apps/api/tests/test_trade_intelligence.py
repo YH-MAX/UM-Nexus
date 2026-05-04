@@ -3,9 +3,10 @@ from uuid import uuid4
 
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.integrations.glm_client import DemoGLMClient
 from app.integrations.supabase_storage import SupabaseStoredFile
-from app.models import AppRole, HistoricalSale, Listing, ListingEmbedding, ListingReport, MediaAsset, Profile, User, WantedPost
+from app.models import AIUsageLog, AgentOutput, AppRole, HistoricalSale, Listing, ListingEmbedding, ListingReport, MediaAsset, Profile, User, WantedPost
 from app.services.embedding_service import make_demo_embedding_text
 from app.services import sell_agent_service as sell_agent_module
 from app.services import storage_service as storage_module
@@ -30,6 +31,8 @@ def listing_payload() -> dict:
         "price": 55.0,
         "pickup_area": "FSKTM",
         "residential_college": "KK12",
+        "contact_method": "telegram",
+        "contact_value": "@seller",
     }
 
 
@@ -46,7 +49,8 @@ def wanted_post_payload() -> dict:
 
 
 def create_listing(client, payload: dict | None = None) -> dict:
-    response = client.post("/api/v1/listings", json=payload or listing_payload(), headers=AUTH_HEADERS)
+    complete_profile(client)
+    response = client.post("/api/v1/listings?publish=true", json=payload or listing_payload(), headers=AUTH_HEADERS)
     assert response.status_code == 201
     return response.json()
 
@@ -62,6 +66,19 @@ def make_admin(db_session, token_verifier) -> None:
     admin.profile = Profile(app_role=AppRole.ADMIN)
     db_session.add(admin)
     db_session.commit()
+
+
+def complete_profile(client) -> None:
+    response = client.patch(
+        "/api/v1/users/me/profile",
+        headers=AUTH_HEADERS,
+        json={
+            "display_name": "UM Seller",
+            "faculty": "FSKTM",
+            "college_or_location": "kk12",
+        },
+    )
+    assert response.status_code == 200
 
 
 def add_image(client, listing_id: str) -> None:
@@ -324,6 +341,7 @@ def test_sell_agent_draft_rejects_unsupported_image(client) -> None:
 
 
 def test_sell_agent_publish_creates_listing_images_and_enrichment(client, db_session) -> None:
+    complete_profile(client)
     payload = {
         "draft_id": str(uuid4()),
         "listing_payload": {
@@ -338,6 +356,8 @@ def test_sell_agent_publish_creates_listing_images_and_enrichment(client, db_ses
             "currency": "MYR",
             "pickup_area": "KK",
             "residential_college": "KK12",
+            "contact_method": "telegram",
+            "contact_value": "@seller",
         },
         "uploaded_images": [
             {
@@ -440,9 +460,11 @@ def test_suspicious_price_risk_classification(client, db_session) -> None:
             "item_name": "phone",
             "brand": "Apple",
             "model": "iPhone",
-            "condition_label": "unknown",
+            "condition_label": "poor",
             "price": 80.0,
             "pickup_area": "other",
+            "contact_method": "telegram",
+            "contact_value": "@seller",
         },
     )
     db_session.add(ListingReport(listing_id=listing["id"], report_type="suspicious_payment", reason="Seed test report"))
@@ -568,6 +590,20 @@ def test_async_enrich_listing_flow_returns_accepted(client, db_session) -> None:
     assert body["listing_id"] == listing["id"]
     assert body["agent_run_id"]
     assert body["status"] == "accepted"
+    assert db_session.query(AgentOutput).count() >= 1
+
+
+def test_enrich_listing_respects_ai_disabled_and_logs_denial(client, db_session) -> None:
+    listing = create_listing(client)
+    settings = get_settings()
+    settings.ai_trade_enabled = False
+
+    response = client.post(f"/api/v1/ai/trade/enrich-listing/{listing['id']}", headers=AUTH_HEADERS)
+
+    assert response.status_code == 429
+    assert "AI_TRADE_ENABLED" in response.json()["detail"]
+    log = db_session.query(AIUsageLog).filter(AIUsageLog.feature == "trade_enrichment").one()
+    assert log.request_status == "denied"
 
 
 def test_provider_status_returns_configured_state(client) -> None:

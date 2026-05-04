@@ -27,6 +27,7 @@ from app.schemas.trade_product import (
     ContactRequestsResponse,
     ModerationListingRead,
     ModerationSummary,
+    NotificationRead,
     TradeCategoryCreate,
     TradeCategoryRead,
     TradeCategoryUpdate,
@@ -51,7 +52,10 @@ from app.services.trade_service import (
     list_contact_requests_for_user,
     list_favorites,
     list_moderation_listings,
+    list_notifications,
     list_trade_categories,
+    mark_all_notifications_read,
+    mark_notification_read,
     moderation_summary,
     review_listing_reports,
     trade_dashboard,
@@ -104,6 +108,31 @@ def list_my_favorites_endpoint(
     current_user=Depends(require_authenticated_user),
 ) -> list[ListingFavoriteRead]:
     return [ListingFavoriteRead.model_validate(favorite) for favorite in list_favorites(db, current_user)]
+
+
+@router.get("/users/me/notifications", response_model=list[NotificationRead])
+def list_my_notifications_endpoint(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> list[NotificationRead]:
+    return [NotificationRead.model_validate(notification) for notification in list_notifications(db, current_user)]
+
+
+@router.patch("/notifications/{notification_id}/read", response_model=NotificationRead)
+def mark_notification_read_endpoint(
+    notification_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> NotificationRead:
+    return NotificationRead.model_validate(mark_notification_read(db, str(notification_id), current_user))
+
+
+@router.patch("/notifications/read-all")
+def mark_all_notifications_read_endpoint(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> dict[str, int]:
+    return mark_all_notifications_read(db, current_user)
 
 
 @router.patch("/contact-requests/{contact_request_id}", response_model=ContactRequestRead)

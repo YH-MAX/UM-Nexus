@@ -87,9 +87,19 @@ def test_enrich_listing_uses_mocked_zai_provider_and_persists_output(client, db_
             return result
 
     monkeypatch.setattr(glm_module, "ZAIGLMClient", FakeZAIGLMClient)
+    profile_response = client.patch(
+        "/api/v1/users/me/profile",
+        headers=AUTH_HEADERS,
+        json={
+            "display_name": "UM Seller",
+            "faculty": "FSKTM",
+            "college_or_location": "kk12",
+        },
+    )
+    assert profile_response.status_code == 200
 
     listing_response = client.post(
-        "/api/v1/listings",
+        "/api/v1/listings?publish=true",
         headers=AUTH_HEADERS,
         json={
             "title": "Casio calculator with clear photo",
@@ -100,6 +110,8 @@ def test_enrich_listing_uses_mocked_zai_provider_and_persists_output(client, db_
             "price": 52,
             "currency": "MYR",
             "pickup_area": "KK",
+            "contact_method": "telegram",
+            "contact_value": "@seller",
         },
     )
     listing_id = listing_response.json()["id"]

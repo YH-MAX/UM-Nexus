@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from math import ceil
 from re import findall
@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.integrations.glm_client import GLMProviderError, get_glm_client
-from app.models import AgentRun, HistoricalSale, Listing, TradeMatch, WantedPost
+from app.models import AgentRun, AppRole, HistoricalSale, Listing, TradeMatch, WantedPost
 from app.models.user import User
 from app.repositories.trade import TradeRepository
 from app.schemas.trade_intelligence import (
@@ -115,6 +115,17 @@ def create_pending_trade_intelligence_run(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
     if current_user is not None and listing.seller_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can enrich this listing.")
+    if current_user is not None:
+        denial = _ai_limit_denial(repo, current_user, feature="trade_enrichment")
+        if denial:
+            _log_ai_usage(
+                repo,
+                current_user,
+                feature="trade_enrichment",
+                request_status="denied",
+                error_message=denial,
+            )
+            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=denial)
 
     agent_run = repo.create_agent_run(
         {
@@ -126,6 +137,16 @@ def create_pending_trade_intelligence_run(
             "started_at": None,
         }
     )
+    if current_user is not None:
+        settings = get_settings()
+        _log_ai_usage(
+            repo,
+            current_user,
+            feature="trade_enrichment",
+            request_status="queued",
+            provider="zai" if settings.should_use_zai_provider else "demo",
+            model=settings.zai_model if settings.should_use_zai_provider else "deterministic-campus-pricing-v1",
+        )
     return EnrichListingAccepted(
         listing_id=listing.id,
         agent_run_id=agent_run.id,
@@ -197,11 +218,31 @@ def compute_trade_intelligence(db: Session, listing_id: str, agent_run_id: str |
             repo.create_agent_output(agent_run.id, "trade_intelligence_provider_error", {"error": str(provider_error)})
         repo.create_agent_output(agent_run.id, "trade_intelligence_result", result.model_dump(mode="json"))
         repo.update_agent_run(agent_run, {"status": "completed", "finished_at": datetime.now(UTC)})
+        repo.create_ai_usage_log(
+            {
+                "user_id": listing.seller_id,
+                "feature": "trade_enrichment",
+                "provider": result.metadata.provider,
+                "model": result.metadata.model,
+                "request_status": "succeeded",
+                "error_message": str(provider_error) if provider_error is not None else None,
+            }
+        )
         return result
     except Exception as exc:
         repo.update_agent_run(
             agent_run,
             {"status": "failed", "finished_at": datetime.now(UTC), "error_message": str(exc)},
+        )
+        repo.create_ai_usage_log(
+            {
+                "user_id": listing.seller_id,
+                "feature": "trade_enrichment",
+                "provider": None,
+                "model": None,
+                "request_status": "failed",
+                "error_message": str(exc),
+            }
         )
         raise
 
@@ -808,6 +849,51 @@ def _mark_fallback_result(result: TradeIntelligenceResult, error_message: str) -
     data["action"]["next_steps"].append("Review the recommendation once the GLM provider is available again.")
     data["provider_error"] = error_message
     return TradeIntelligenceResult.model_validate(data)
+
+
+def _ai_limit_denial(repo: TradeRepository, current_user: User, *, feature: str) -> str | None:
+    settings = get_settings()
+    if not settings.ai_trade_enabled:
+        return "AI_TRADE_ENABLED is false."
+
+    day_start = datetime.now(UTC) - timedelta(days=1)
+    global_count = repo.count_ai_usage_logs(statuses=("succeeded", "failed"), since=day_start)
+    if global_count >= settings.ai_global_daily_limit:
+        return "Global AI daily limit reached."
+
+    role = getattr(getattr(current_user, "profile", None), "app_role", AppRole.STUDENT)
+    user_limit = settings.ai_staff_daily_limit if role in {AppRole.MODERATOR, AppRole.ADMIN} else settings.ai_student_daily_limit
+    user_count = repo.count_ai_usage_logs(
+        feature=feature,
+        user_id=current_user.id,
+        statuses=("succeeded", "failed"),
+        since=day_start,
+    )
+    if user_count >= user_limit:
+        return "User AI daily limit reached."
+    return None
+
+
+def _log_ai_usage(
+    repo: TradeRepository,
+    current_user: User,
+    *,
+    feature: str,
+    request_status: str,
+    provider: str | None = None,
+    model: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    repo.create_ai_usage_log(
+        {
+            "user_id": current_user.id,
+            "feature": feature,
+            "provider": provider,
+            "model": model,
+            "request_status": request_status,
+            "error_message": error_message,
+        }
+    )
 
 
 def _decision_evidence(

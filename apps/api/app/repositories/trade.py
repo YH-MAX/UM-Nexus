@@ -593,6 +593,41 @@ class TradeRepository:
         self.db.refresh(notification)
         return notification
 
+    def list_notifications_for_user(self, user_id: str, limit: int = 50) -> Sequence[Notification]:
+        stmt = (
+            select(Notification)
+            .where(Notification.user_id == user_id)
+            .order_by(desc(Notification.created_at))
+            .limit(limit)
+        )
+        return self.db.scalars(stmt).all()
+
+    def get_notification_or_none(self, notification_id: str) -> Notification | None:
+        return self.db.get(Notification, notification_id)
+
+    def mark_notification_read(self, notification: Notification, *, read_at: datetime | None = None) -> Notification:
+        notification.is_read = True
+        notification.read_at = read_at or datetime.now(UTC)
+        self.db.add(notification)
+        self.db.commit()
+        self.db.refresh(notification)
+        return notification
+
+    def mark_all_notifications_read(self, user_id: str, *, read_at: datetime | None = None) -> int:
+        now = read_at or datetime.now(UTC)
+        notifications = list(
+            self.db.scalars(
+                select(Notification).where(Notification.user_id == user_id, Notification.is_read.is_(False))
+            ).all()
+        )
+        for notification in notifications:
+            notification.is_read = True
+            notification.read_at = now
+            self.db.add(notification)
+        if notifications:
+            self.db.commit()
+        return len(notifications)
+
     def create_admin_action(self, values: dict) -> AdminAction:
         action = AdminAction(**values)
         self.db.add(action)
@@ -742,8 +777,8 @@ class TradeRepository:
             .limit(6)
         )
         pickup_rows = self.db.execute(pickup_stmt).all()
-        ai_total = self.count_ai_usage_logs(feature="sell_agent_draft")
-        ai_failed = self.count_ai_usage_logs(feature="sell_agent_draft", statuses=("failed", "denied"))
+        ai_total = self.count_ai_usage_logs(statuses=("succeeded", "failed", "denied"))
+        ai_failed = self.count_ai_usage_logs(statuses=("failed", "denied"))
         return {
             "total_users": int(self.db.scalar(select(func.count()).select_from(User)) or 0),
             "active_listings": int(
