@@ -10,20 +10,26 @@ import { TradeResultCard } from "@/components/trade/trade-result-card";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   applyRecommendedPrice,
+  addFavorite,
   contactMatch,
   contactMethods,
   createContactRequest,
+  deleteListing,
   enrichListing,
   formatCategory,
   formatMoney,
+  formatPickupLocation,
   getListing,
   getListingMatches,
   getTradeResultStatus,
+  publishListing,
+  removeFavorite,
   reportListing,
   reportUser,
   simulateListingPrice,
   submitDecisionFeedback,
   tradeSafetyMessage,
+  updateListingStatus,
   type Listing,
   type PriceSimulation,
   type TradeMatch,
@@ -42,6 +48,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isEnriching, setIsEnriching] = useState(false);
   const [isActing, setIsActing] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
   const [simulationPrice, setSimulationPrice] = useState("");
   const [simulation, setSimulation] = useState<PriceSimulation | null>(null);
   const [contactDraft, setContactDraft] = useState({
@@ -146,7 +153,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     setActionNotice(null);
     try {
       await reportListing(listingId, {
-        report_type: "suspicious_listing",
+        report_type: "scam_suspicion",
         reason: "Reported from listing detail for moderator review.",
       });
       setActionNotice("Report submitted for moderator review.");
@@ -167,12 +174,60 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     setActionNotice(null);
     try {
       await reportUser(listing.seller_id, {
-        report_type: "unsafe_trade_behavior",
+        report_type: "unsafe_transaction",
         reason: "Reported from listing detail for admin review.",
       });
       setActionNotice("Seller report submitted for admin review.");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to report this seller.");
+    } finally {
+      setIsActing(false);
+    }
+  }
+
+  async function handleFavorite() {
+    if (!listing) {
+      return;
+    }
+    setIsActing(true);
+    setError(null);
+    setActionNotice(null);
+    try {
+      if (isSaved) {
+        await removeFavorite(listing.id);
+        setIsSaved(false);
+        setActionNotice("Listing removed from saved items.");
+      } else {
+        await addFavorite(listing.id);
+        setIsSaved(true);
+        setActionNotice("Listing saved.");
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update saved listing.");
+    } finally {
+      setIsActing(false);
+    }
+  }
+
+  async function handleListingStatus(status: "available" | "reserved" | "sold" | "hidden" | "deleted") {
+    if (!listing) {
+      return;
+    }
+    setIsActing(true);
+    setError(null);
+    setActionNotice(null);
+    try {
+      const updated =
+        status === "available" && listing.status === "draft"
+          ? await publishListing(listing.id)
+          : status === "deleted"
+            ? await deleteListing(listing.id)
+            : await updateListingStatus(listing.id, { status, reason: `Seller marked listing ${status}.` });
+      setListing(updated);
+      setActionNotice(`Listing marked ${updated.status}.`);
+      await loadData();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update listing status.");
     } finally {
       setIsActing(false);
     }
@@ -336,8 +391,8 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
 
               <div className="grid border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
                 <Fact label="Item" value={listing.item_name ?? "Not specified"} />
-                <Fact label="Condition" value={listing.condition_label ?? "Unknown"} />
-                <Fact label="Pickup" value={listing.pickup_area ?? "TBD"} />
+                <Fact label="Condition" value={(listing.condition ?? listing.condition_label ?? "Unknown").replaceAll("_", " ")} />
+                <Fact label="Pickup" value={formatPickupLocation(listing.pickup_location ?? listing.pickup_area)} />
                 <Fact label="College" value={listing.residential_college ?? "TBD"} />
               </div>
             </section>
@@ -433,8 +488,29 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
             <div className="p-5">
               {user ? (
                 user.id === listing.seller_id ? (
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    This is your listing. Buyer contact requests will appear in your dashboard.
+                  <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+                    <p>This is your listing. Buyer contact requests will appear in your dashboard.</p>
+                    <div className="flex flex-wrap gap-2">
+                      {(["available", "reserved", "sold", "hidden"] as const).map((status) => (
+                        <button
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                          disabled={isActing || listing.status === status}
+                          key={status}
+                          onClick={() => void handleListingStatus(status)}
+                          type="button"
+                        >
+                          {status.replaceAll("_", " ")}
+                        </button>
+                      ))}
+                      <button
+                        className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                        disabled={isActing || listing.status === "deleted"}
+                        onClick={() => void handleListingStatus("deleted")}
+                        type="button"
+                      >
+                        delete
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="grid gap-3">
@@ -485,11 +561,19 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                     </div>
                     <button
                       className="rounded-lg bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                      disabled={isActing || listing.status !== "available"}
+                      disabled={isActing || !["available", "reserved"].includes(listing.status)}
                       onClick={() => void handleContactRequest()}
                       type="button"
                     >
                       I&apos;m interested
+                    </button>
+                    <button
+                      className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                      disabled={isActing}
+                      onClick={() => void handleFavorite()}
+                      type="button"
+                    >
+                      {isSaved ? "Saved" : "Save listing"}
                     </button>
                     <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
                       {tradeSafetyMessage}
@@ -624,8 +708,10 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                 <SideMetric label="Image analysis" value={resultStatus?.result?.metadata.image_analysis_skipped ? "Text only" : "Image ready"} />
                 <SideMetric label="Moderation" value={listing.moderation_status.replaceAll("_", " ")} />
                 <SideMetric label="Listing status" value={listing.status} />
+                <SideMetric label="Views" value={String(listing.view_count)} />
                 <SideMetric label="Brand" value={listing.brand ?? "Not specified"} />
                 <SideMetric label="Model" value={listing.model ?? "Not specified"} />
+                <SideMetric label="Pickup note" value={listing.pickup_note ?? "Not specified"} />
               </div>
             </div>
           </aside>

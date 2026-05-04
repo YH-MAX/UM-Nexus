@@ -68,6 +68,10 @@ def reset_database() -> Generator[None, None, None]:
     original_zai_model = settings.zai_model
     original_zai_timeout_seconds = settings.zai_timeout_seconds
     original_zai_max_retries = settings.zai_max_retries
+    original_ai_trade_enabled = settings.ai_trade_enabled
+    original_ai_student_daily_limit = settings.ai_student_daily_limit
+    original_ai_staff_daily_limit = settings.ai_staff_daily_limit
+    original_ai_global_daily_limit = settings.ai_global_daily_limit
     temp_upload_dir = tempfile.mkdtemp(prefix="umnexus-test-uploads-")
     settings.allowed_email_domains = ("siswa.um.edu.my", "um.edu.my")
     settings.upload_storage_dir = temp_upload_dir
@@ -77,6 +81,10 @@ def reset_database() -> Generator[None, None, None]:
     settings.supabase_storage_bucket = "listing-images"
     settings.glm_provider = "demo"
     settings.zai_api_key = ""
+    settings.ai_trade_enabled = True
+    settings.ai_student_daily_limit = 3
+    settings.ai_staff_daily_limit = 50
+    settings.ai_global_daily_limit = 200
     celery_app.conf.task_always_eager = True
     session_module.SessionLocal = TestingSessionLocal
     trade_task_module.SessionLocal = TestingSessionLocal
@@ -95,6 +103,10 @@ def reset_database() -> Generator[None, None, None]:
     settings.zai_model = original_zai_model
     settings.zai_timeout_seconds = original_zai_timeout_seconds
     settings.zai_max_retries = original_zai_max_retries
+    settings.ai_trade_enabled = original_ai_trade_enabled
+    settings.ai_student_daily_limit = original_ai_student_daily_limit
+    settings.ai_staff_daily_limit = original_ai_staff_daily_limit
+    settings.ai_global_daily_limit = original_ai_global_daily_limit
     shutil.rmtree(temp_upload_dir, ignore_errors=True)
 
 

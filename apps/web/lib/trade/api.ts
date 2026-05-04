@@ -20,13 +20,24 @@ export type Listing = {
   item_name: string | null;
   brand: string | null;
   model: string | null;
+  condition: string | null;
   condition_label: string | null;
   price: number;
+  original_price: number | null;
   currency: string;
+  pickup_location: string | null;
   pickup_area: string | null;
+  pickup_note: string | null;
   residential_college: string | null;
   contact_method: string | null;
   status: string;
+  view_count: number;
+  hidden_at: string | null;
+  hidden_by: string | null;
+  hidden_reason: string | null;
+  deleted_at: string | null;
+  deleted_by: string | null;
+  deleted_reason: string | null;
   risk_score: number;
   risk_level: string | null;
   risk_evidence: Record<string, unknown> | null;
@@ -46,8 +57,10 @@ export type Listing = {
     status: string;
     profile: {
       full_name: string | null;
+      display_name: string | null;
       faculty: string | null;
       residential_college: string | null;
+      college_or_location: string | null;
     } | null;
   } | null;
 };
@@ -294,10 +307,14 @@ export type ListingPayload = {
   item_name?: string;
   brand?: string;
   model?: string;
+  condition?: string;
   condition_label?: string;
   price: number;
+  original_price?: number;
   currency: string;
+  pickup_location?: string;
   pickup_area?: string;
+  pickup_note?: string;
   residential_college?: string;
   contact_method?: "telegram" | "whatsapp";
   contact_value?: string;
@@ -416,10 +433,21 @@ export type ContactRequest = {
   buyer_contact_value: string | null;
   seller_contact_method: string | null;
   seller_contact_value: string | null;
-  status: "pending" | "accepted" | "rejected" | string;
+  status: "pending" | "accepted" | "rejected" | "cancelled" | "expired" | string;
   seller_response: string | null;
   accepted_at: string | null;
   rejected_at: string | null;
+  cancelled_at: string | null;
+  expired_at: string | null;
+  created_at: string;
+  updated_at: string;
+  listing: Listing | null;
+};
+
+export type ListingFavorite = {
+  id: string;
+  user_id: string;
+  listing_id: string;
   created_at: string;
   updated_at: string;
   listing: Listing | null;
@@ -444,6 +472,7 @@ export type TradeTransaction = {
 
 export type TradeDashboard = {
   listings: Listing[];
+  favorites: ListingFavorite[];
   wanted_posts: WantedPost[];
   matches: TradeMatch[];
   transactions: TradeTransaction[];
@@ -482,6 +511,14 @@ export type AdminDashboard = {
     reported_listings: number;
     new_listings_this_week: number;
     most_popular_categories: Array<{ category: string; count: number }>;
+    reserved_listings: number;
+    contact_requests_sent: number;
+    contact_requests_accepted: number;
+    favorite_count: number;
+    report_count: number;
+    ai_generations_used: number;
+    ai_failure_rate: number;
+    most_popular_pickup_locations: Array<{ pickup_location: string; count: number }>;
   };
   listings: Listing[];
   listing_reports: ListingReport[];
@@ -494,9 +531,48 @@ export type AdminDashboard = {
     status: string;
     app_role: string | null;
     full_name: string | null;
+    display_name: string | null;
     faculty: string | null;
     residential_college: string | null;
+    college_or_location: string | null;
   }>;
+  categories: Array<{
+    id: string;
+    slug: string;
+    label: string;
+    sort_order: number;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+  }>;
+  ai_usage_logs: Array<{
+    id: string;
+    user_id: string | null;
+    feature: string;
+    provider: string | null;
+    model: string | null;
+    request_status: string;
+    input_tokens: number | null;
+    output_tokens: number | null;
+    estimated_cost: number | null;
+    error_message: string | null;
+    created_at: string;
+  }>;
+  admin_actions: Array<{
+    id: string;
+    admin_id: string | null;
+    target_type: string;
+    target_id: string;
+    action_type: string;
+    reason: string | null;
+    created_at: string;
+  }>;
+  ai_settings: {
+    ai_trade_enabled: boolean;
+    ai_student_daily_limit: number;
+    ai_staff_daily_limit: number;
+    ai_global_daily_limit: number;
+  } | null;
 };
 
 export type DecisionFeedback = {
@@ -574,6 +650,7 @@ export const conditionOptions = [
 ] as const;
 
 export const listingStatusOptions = [
+  { value: "", label: "Available & reserved" },
   { value: "available", label: "Available" },
   { value: "reserved", label: "Reserved" },
   { value: "sold", label: "Sold" },
@@ -588,10 +665,23 @@ export const tradeSafetyMessage =
   "Meet in public campus areas. Check the item before payment. UM Nexus does not hold payments in V1.";
 
 export const pickupAreas = [
-  { value: "KK", label: "KK" },
-  { value: "FSKTM", label: "FSKTM" },
-  { value: "library", label: "Library" },
-  { value: "faculty_pickup", label: "Faculty pickup" },
+  { value: "kk1", label: "KK1" },
+  { value: "kk2", label: "KK2" },
+  { value: "kk3", label: "KK3" },
+  { value: "kk4", label: "KK4" },
+  { value: "kk5", label: "KK5" },
+  { value: "kk6", label: "KK6" },
+  { value: "kk7", label: "KK7" },
+  { value: "kk8", label: "KK8" },
+  { value: "kk9", label: "KK9" },
+  { value: "kk10", label: "KK10" },
+  { value: "kk11", label: "KK11" },
+  { value: "kk12", label: "KK12" },
+  { value: "fsktm", label: "FSKTM" },
+  { value: "main_library", label: "Main Library" },
+  { value: "um_sentral", label: "UM Sentral" },
+  { value: "faculty_area", label: "Faculty Area" },
+  { value: "kk_mart", label: "KK Mart" },
   { value: "other", label: "Other" },
 ] as const;
 
@@ -693,6 +783,13 @@ export function formatCategory(category: string): string {
   return tradeCategories.find((item) => item.value === category)?.label ?? category.replaceAll("_", " ");
 }
 
+export function formatPickupLocation(value: string | null | undefined): string {
+  if (!value) {
+    return "Pickup TBD";
+  }
+  return pickupAreas.find((item) => item.value === value)?.label ?? value.replaceAll("_", " ");
+}
+
 export function formatMoney(value: number | null | undefined, currency = "MYR") {
   if (value === null || value === undefined) {
     return "No budget";
@@ -720,10 +817,33 @@ export async function getListing(id: string): Promise<Listing> {
   return fetchJson<Listing>(`/listings/${id}`);
 }
 
-export async function createListing(payload: ListingPayload): Promise<Listing> {
-  return fetchJson<Listing>("/listings", {
+export async function createListing(payload: ListingPayload, options: { publish?: boolean } = {}): Promise<Listing> {
+  const query = options.publish === undefined ? "" : `?publish=${String(options.publish)}`;
+  return fetchJson<Listing>(`/listings${query}`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function publishListing(id: string): Promise<Listing> {
+  return fetchJson<Listing>(`/listings/${id}/publish`, {
+    method: "POST",
+  });
+}
+
+export async function updateListingStatus(
+  id: string,
+  payload: { status: "available" | "reserved" | "sold" | "hidden" | "deleted"; reason?: string },
+): Promise<Listing> {
+  return fetchJson<Listing>(`/listings/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteListing(id: string): Promise<Listing> {
+  return fetchJson<Listing>(`/listings/${id}`, {
+    method: "DELETE",
   });
 }
 
@@ -765,6 +885,18 @@ export async function uploadListingImage(
   }
 
   return response.json() as Promise<ListingImage>;
+}
+
+export async function removeListingImage(listingId: string, imageId: string): Promise<void> {
+  const authHeaders = await getAuthHeaders();
+  const response = await fetchWithTimeout(`${API_BASE_URL}/listings/${listingId}/images/${imageId}`, {
+    method: "DELETE",
+    headers: authHeaders,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(getApiErrorMessage(body, response.status));
+  }
 }
 
 export async function generateSellAgentDraft(
@@ -869,6 +1001,28 @@ export async function createContactRequest(
   });
 }
 
+export async function getFavorites(): Promise<ListingFavorite[]> {
+  return fetchJson<ListingFavorite[]>("/users/me/favorites");
+}
+
+export async function addFavorite(listingId: string): Promise<ListingFavorite> {
+  return fetchJson<ListingFavorite>(`/listings/${listingId}/favorite`, {
+    method: "POST",
+  });
+}
+
+export async function removeFavorite(listingId: string): Promise<void> {
+  const authHeaders = await getAuthHeaders();
+  const response = await fetchWithTimeout(`${API_BASE_URL}/listings/${listingId}/favorite`, {
+    method: "DELETE",
+    headers: authHeaders,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(getApiErrorMessage(body, response.status));
+  }
+}
+
 export async function submitDecisionFeedback(
   id: string,
   payload: {
@@ -927,6 +1081,12 @@ export async function updateContactRequest(
   });
 }
 
+export async function cancelContactRequest(id: string): Promise<ContactRequest> {
+  return fetchJson<ContactRequest>(`/contact-requests/${id}/cancel`, {
+    method: "PATCH",
+  });
+}
+
 export async function getModerationListings(): Promise<ModerationListing[]> {
   return fetchJson<ModerationListing[]>("/moderation/listings");
 }
@@ -951,7 +1111,7 @@ export async function getAdminDashboard(): Promise<AdminDashboard> {
 
 export async function updateAdminListing(
   id: string,
-  payload: { status?: string; moderation_status?: string; resolution?: string },
+  payload: { status?: string; moderation_status?: string; resolution?: string; reason?: string },
 ): Promise<Listing> {
   return fetchJson<Listing>(`/admin/listings/${id}`, {
     method: "PATCH",
@@ -961,7 +1121,7 @@ export async function updateAdminListing(
 
 export async function updateAdminUserStatus(
   id: string,
-  payload: { status: "active" | "suspended" | "banned" },
+  payload: { status: "active" | "suspended" | "banned"; reason?: string },
 ): Promise<AdminDashboard["users"][number]> {
   return fetchJson<AdminDashboard["users"][number]>(`/admin/users/${id}/status`, {
     method: "PATCH",

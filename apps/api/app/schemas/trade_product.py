@@ -6,7 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.ai_trade import TradeMatchRead
-from app.schemas.listing import ListingRead, ListingReportRead
+from app.schemas.listing import ListingFavoriteRead, ListingRead, ListingReportRead
 from app.schemas.wanted_post import WantedPostRead
 from app.services.trade_policy import normalize_contact_method, normalize_listing_status
 from app.trade.constants import ContactMethod, ListingStatus, UserStatus
@@ -46,6 +46,8 @@ class ContactRequestRead(BaseModel):
     seller_response: str | None
     accepted_at: datetime | None
     rejected_at: datetime | None
+    cancelled_at: datetime | None = None
+    expired_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     listing: ListingRead | None = None
@@ -92,6 +94,7 @@ class TradeDashboardMetrics(BaseModel):
 
 class TradeDashboardResponse(BaseModel):
     listings: list[ListingRead]
+    favorites: list[ListingFavoriteRead] = Field(default_factory=list)
     wanted_posts: list[WantedPostRead]
     matches: list[TradeMatchRead]
     transactions: list[TradeTransactionRead]
@@ -136,6 +139,7 @@ class AdminListingUpdate(BaseModel):
     status: ListingStatus | None = None
     moderation_status: str | None = Field(default=None, max_length=32)
     resolution: str | None = Field(default=None, max_length=2000)
+    reason: str | None = Field(default=None, max_length=2000)
 
     @field_validator("status", mode="before")
     @classmethod
@@ -145,6 +149,12 @@ class AdminListingUpdate(BaseModel):
 
 class AdminUserStatusUpdate(BaseModel):
     status: UserStatus
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class AdminUserRoleUpdate(BaseModel):
+    app_role: Literal["student", "organizer", "moderator", "admin"]
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class AdminUserSummary(BaseModel):
@@ -154,8 +164,10 @@ class AdminUserSummary(BaseModel):
     status: str
     app_role: str | None = None
     full_name: str | None = None
+    display_name: str | None = None
     faculty: str | None = None
     residential_college: str | None = None
+    college_or_location: str | None = None
 
 
 class AdminStatistics(BaseModel):
@@ -165,6 +177,81 @@ class AdminStatistics(BaseModel):
     reported_listings: int = 0
     new_listings_this_week: int = 0
     most_popular_categories: list[dict[str, int | str]] = Field(default_factory=list)
+    reserved_listings: int = 0
+    contact_requests_sent: int = 0
+    contact_requests_accepted: int = 0
+    favorite_count: int = 0
+    report_count: int = 0
+    ai_generations_used: int = 0
+    ai_failure_rate: float = 0
+    most_popular_pickup_locations: list[dict[str, int | str]] = Field(default_factory=list)
+
+
+class AdminActionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    admin_id: str | None
+    target_type: str
+    target_id: str
+    action_type: str
+    reason: str | None
+    created_at: datetime
+
+
+class AIUsageLogRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    user_id: str | None
+    feature: str
+    provider: str | None
+    model: str | None
+    request_status: str
+    input_tokens: int | None
+    output_tokens: int | None
+    estimated_cost: float | None
+    error_message: str | None
+    created_at: datetime
+
+
+class TradeCategoryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    slug: str
+    label: str
+    sort_order: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class TradeCategoryCreate(BaseModel):
+    slug: str = Field(..., min_length=2, max_length=64)
+    label: str = Field(..., min_length=2, max_length=120)
+    sort_order: int = 0
+    is_active: bool = True
+
+
+class TradeCategoryUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=2, max_length=120)
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
+class AISettingsRead(BaseModel):
+    ai_trade_enabled: bool
+    ai_student_daily_limit: int
+    ai_staff_daily_limit: int
+    ai_global_daily_limit: int
+
+
+class AISettingsUpdate(BaseModel):
+    ai_trade_enabled: bool | None = None
+    ai_student_daily_limit: int | None = Field(default=None, ge=0)
+    ai_staff_daily_limit: int | None = Field(default=None, ge=0)
+    ai_global_daily_limit: int | None = Field(default=None, ge=0)
 
 
 class AdminDashboardResponse(BaseModel):
@@ -174,6 +261,10 @@ class AdminDashboardResponse(BaseModel):
     user_reports: list[UserReportRead] = Field(default_factory=list)
     suspicious_ai_flags: list[ListingRead] = Field(default_factory=list)
     users: list[AdminUserSummary] = Field(default_factory=list)
+    categories: list[TradeCategoryRead] = Field(default_factory=list)
+    ai_usage_logs: list[AIUsageLogRead] = Field(default_factory=list)
+    admin_actions: list[AdminActionRead] = Field(default_factory=list)
+    ai_settings: AISettingsRead | None = None
 
 
 class DecisionFeedbackCreate(BaseModel):

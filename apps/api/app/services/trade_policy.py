@@ -9,7 +9,11 @@ from app.trade.constants import (
     CONTACT_METHODS,
     LEGACY_CATEGORY_ALIASES,
     LEGACY_LISTING_STATUS_ALIASES,
+    LEGACY_PICKUP_AREA_ALIASES,
     LISTING_STATUSES,
+    LISTING_REPORT_REASONS,
+    PICKUP_AREAS,
+    REPORT_STATUSES,
     TRADE_CATEGORIES,
 )
 
@@ -103,6 +107,14 @@ def normalize_condition(value: Any) -> str | None:
     return normalized if normalized in CONDITION_LABELS else "good"
 
 
+def normalize_pickup_location(value: Any) -> str | None:
+    normalized = _token(value)
+    if not normalized:
+        return None
+    normalized = LEGACY_PICKUP_AREA_ALIASES.get(normalized, normalized)
+    return normalized if normalized in PICKUP_AREAS else None
+
+
 def normalize_listing_status(value: Any) -> str | None:
     normalized = _token(value)
     if not normalized:
@@ -114,6 +126,31 @@ def normalize_listing_status(value: Any) -> str | None:
 def normalize_contact_method(value: Any) -> str | None:
     normalized = _token(value)
     return normalized if normalized in CONTACT_METHODS else None
+
+
+def normalize_listing_report_reason(value: Any) -> str | None:
+    normalized = _token(value)
+    aliases = {
+        "suspicious_payment": "unsafe_transaction",
+        "unsafe_trade_behavior": "unsafe_transaction",
+        "scam": "scam_suspicion",
+        "prohibited": "prohibited_item",
+        "fake_photo": "fake_photos",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in LISTING_REPORT_REASONS else None
+
+
+def normalize_report_status(value: Any) -> str | None:
+    normalized = _token(value)
+    aliases = {
+        "open": "pending",
+        "resolved": "reviewed",
+        "closed": "reviewed",
+        "actioned": "action_taken",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in REPORT_STATUSES else None
 
 
 def scan_listing_policy(*values: Any) -> PolicyScanResult:

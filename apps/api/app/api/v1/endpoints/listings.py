@@ -1,18 +1,20 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, status
 from sqlalchemy.orm import Session
 from starlette.datastructures import UploadFile as StarletteUploadFile
 
-from app.auth.dependencies import require_authenticated_user
+from app.auth.dependencies import get_optional_authenticated_user, require_authenticated_user
 from app.db.session import get_db
 from app.schemas.listing import (
     ListingCreate,
+    ListingFavoriteRead,
     ListingImageCreate,
     ListingImageRead,
     ListingRead,
     ListingReportCreate,
     ListingReportRead,
+    ListingStatusUpdate,
     ListingUpdate,
 )
 from app.schemas.trade_product import ContactRequestCreate, ContactRequestRead, DecisionFeedbackCreate, DecisionFeedbackRead
@@ -27,7 +29,13 @@ from app.services.trade_service import (
     create_listing,
     create_decision_feedback,
     create_listing_report,
+    add_favorite,
+    delete_listing,
     get_listing,
+    publish_listing,
+    remove_favorite,
+    remove_listing_image,
+    update_listing_status,
     list_listings,
     update_listing,
 )
@@ -39,10 +47,19 @@ router = APIRouter()
 @router.post("", response_model=ListingRead, status_code=status.HTTP_201_CREATED)
 def create_listing_endpoint(
     payload: ListingCreate,
+    publish: bool | None = Query(default=None),
     db: Session = Depends(get_db),
     current_user=Depends(require_authenticated_user),
 ) -> ListingRead:
-    listing = create_listing(db, payload, current_user)
+    # Backward compatibility: pre-launch clients posted directly to publish.
+    should_publish = True if publish is None else publish
+    listing = create_listing(
+        db,
+        payload,
+        current_user,
+        publish=should_publish,
+        require_profile=publish is True,
+    )
     return ListingRead.model_validate(listing)
 
 
@@ -54,10 +71,11 @@ def list_listings_endpoint(
     min_price: float | None = Query(default=None, ge=0),
     max_price: float | None = Query(default=None, ge=0),
     pickup_area: str | None = Query(default=None),
+    pickup_location: str | None = Query(default=None),
     condition: str | None = Query(default=None),
     risk_level: str | None = Query(default=None),
-    status_filter: str | None = Query(default="available", alias="status"),
-    sort: str = Query(default="newest"),
+    status_filter: str | None = Query(default=None, alias="status"),
+    sort: str = Query(default="latest"),
 ) -> list[ListingRead]:
     return [
         ListingRead.model_validate(listing)
@@ -68,6 +86,7 @@ def list_listings_endpoint(
             min_price=min_price,
             max_price=max_price,
             pickup_area=pickup_area,
+            pickup_location=pickup_location,
             condition=condition,
             risk_level=risk_level,
             status=status_filter,
@@ -79,9 +98,13 @@ def list_listings_endpoint(
 @router.get("/{listing_id}", response_model=ListingRead)
 def get_listing_endpoint(
     listing_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
+    current_user=Depends(get_optional_authenticated_user),
 ) -> ListingRead:
-    return ListingRead.model_validate(get_listing(db, str(listing_id)))
+    return ListingRead.model_validate(
+        get_listing(db, str(listing_id), viewer=current_user, request=request, increment_view=True)
+    )
 
 
 @router.patch("/{listing_id}", response_model=ListingRead)
@@ -92,6 +115,37 @@ def update_listing_endpoint(
     current_user=Depends(require_authenticated_user),
 ) -> ListingRead:
     listing = update_listing(db, str(listing_id), payload, current_user)
+    return ListingRead.model_validate(listing)
+
+
+@router.post("/{listing_id}/publish", response_model=ListingRead)
+def publish_listing_endpoint(
+    listing_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ListingRead:
+    listing = publish_listing(db, str(listing_id), current_user)
+    return ListingRead.model_validate(listing)
+
+
+@router.patch("/{listing_id}/status", response_model=ListingRead)
+def update_listing_status_endpoint(
+    listing_id: UUID,
+    payload: ListingStatusUpdate,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ListingRead:
+    listing = update_listing_status(db, str(listing_id), payload, current_user)
+    return ListingRead.model_validate(listing)
+
+
+@router.delete("/{listing_id}", response_model=ListingRead)
+def delete_listing_endpoint(
+    listing_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ListingRead:
+    listing = delete_listing(db, str(listing_id), current_user)
     return ListingRead.model_validate(listing)
 
 
@@ -123,6 +177,36 @@ async def add_listing_image_endpoint(
     payload = ListingImageCreate.model_validate(await request.json())
     image = add_listing_image(db, str(listing_id), payload, current_user)
     return ListingImageRead.model_validate(image)
+
+
+@router.delete("/{listing_id}/images/{image_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_listing_image_endpoint(
+    listing_id: UUID,
+    image_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> Response:
+    remove_listing_image(db, str(listing_id), str(image_id), current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{listing_id}/favorite", response_model=ListingFavoriteRead, status_code=status.HTTP_201_CREATED)
+def add_favorite_endpoint(
+    listing_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ListingFavoriteRead:
+    return ListingFavoriteRead.model_validate(add_favorite(db, str(listing_id), current_user))
+
+
+@router.delete("/{listing_id}/favorite", status_code=status.HTTP_204_NO_CONTENT)
+def remove_favorite_endpoint(
+    listing_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> Response:
+    remove_favorite(db, str(listing_id), current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{listing_id}/apply-recommended-price", response_model=ListingRead)

@@ -50,7 +50,25 @@ STOPWORDS = {
     "seller",
     "campus",
 }
-CAMPUS_PICKUP_AREAS = {"kk", "fsktm", "library", "faculty_pickup"}
+CAMPUS_PICKUP_AREAS = {
+    "kk1",
+    "kk2",
+    "kk3",
+    "kk4",
+    "kk5",
+    "kk6",
+    "kk7",
+    "kk8",
+    "kk9",
+    "kk10",
+    "kk11",
+    "kk12",
+    "fsktm",
+    "main_library",
+    "um_sentral",
+    "faculty_area",
+    "kk_mart",
+}
 
 
 @dataclass(frozen=True)
@@ -323,7 +341,7 @@ def _location_fit_score(listing: Listing, intent: BuyerIntent) -> float:
     if listing_college and intent.normalized_residential_college and listing_college == intent.normalized_residential_college:
         return 100.0
 
-    listing_pickup = _normalize_pickup_area(listing.pickup_area)
+    listing_pickup = _normalize_pickup_area(getattr(listing, "pickup_location", None) or listing.pickup_area)
     buyer_pickup = _normalize_pickup_area(intent.preferred_pickup_area)
     if listing_pickup and buyer_pickup and listing_pickup == buyer_pickup:
         return 94.0
@@ -388,7 +406,7 @@ def _location_fit_summary(listing: Listing, intent: BuyerIntent, score: float) -
     if score >= 100 and listing_college:
         return f"Both sides are in {listing_college}, so pickup friction is very low."
     if score >= 94:
-        return f"Both sides prefer {listing.pickup_area}, making pickup highly convenient."
+        return f"Both sides prefer {getattr(listing, 'pickup_location', None) or listing.pickup_area}, making pickup highly convenient."
     if score >= 88:
         return "Both sides are KK-related, so handoff friction is low."
     if score >= 66:
@@ -409,11 +427,17 @@ def _item_fit_summary(listing: Listing, intent: BuyerIntent, score: float) -> st
 
 
 def _normalize_pickup_area(value: str | None) -> str | None:
-    return value.strip().lower() if value else None
+    normalized = value.strip().lower().replace(" ", "_").replace("-", "_") if value else None
+    aliases = {
+        "kk": "kk1",
+        "library": "main_library",
+        "faculty_pickup": "faculty_area",
+    }
+    return aliases.get(normalized, normalized) if normalized else None
 
 
 def _is_kk_related(pickup_area: str | None, normalized_college: str | None) -> bool:
-    return pickup_area == "kk" or bool(normalized_college and normalized_college.startswith("KK"))
+    return bool((pickup_area and pickup_area.startswith("kk")) or (normalized_college and normalized_college.startswith("KK")))
 
 
 def _tokens(value: str) -> set[str]:

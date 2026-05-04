@@ -188,3 +188,139 @@ def test_suspended_user_cannot_create_listing(client, db_session, token_verifier
 
     assert response.status_code == 403
     assert "suspended or banned" in response.json()["detail"]
+
+
+def test_draft_publish_view_count_and_favorites(client, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    draft = client.post(
+        "/api/v1/listings?publish=false",
+        headers=AUTH_HEADERS,
+        json=listing_payload(pickup_area="main_library"),
+    )
+    assert draft.status_code == 201
+    assert draft.json()["status"] == "draft"
+
+    publish_blocked = client.post(f"/api/v1/listings/{draft.json()['id']}/publish", headers=AUTH_HEADERS)
+    assert publish_blocked.status_code == 400
+
+    profile = client.patch(
+        "/api/v1/users/me/profile",
+        headers=AUTH_HEADERS,
+        json={
+            "display_name": "UM Seller",
+            "faculty": "FSKTM",
+            "college_or_location": "KK12",
+        },
+    )
+    published = client.post(f"/api/v1/listings/{draft.json()['id']}/publish", headers=AUTH_HEADERS)
+    detail = client.get(f"/api/v1/listings/{draft.json()['id']}")
+    detail_again = client.get(f"/api/v1/listings/{draft.json()['id']}")
+
+    assert profile.status_code == 200
+    assert published.status_code == 200
+    assert published.json()["status"] == "available"
+    assert detail.json()["view_count"] == 1
+    assert detail_again.json()["view_count"] == 1
+
+    token_verifier.claims = seller_claims.model_copy(
+        update={"sub": uuid4(), "email": "favorite-buyer@siswa.um.edu.my"}
+    )
+    favorite = client.post(f"/api/v1/listings/{draft.json()['id']}/favorite", headers=AUTH_HEADERS)
+    duplicate = client.post(f"/api/v1/listings/{draft.json()['id']}/favorite", headers=AUTH_HEADERS)
+    favorites = client.get("/api/v1/users/me/favorites", headers=AUTH_HEADERS)
+    removed = client.delete(f"/api/v1/listings/{draft.json()['id']}/favorite", headers=AUTH_HEADERS)
+
+    assert favorite.status_code == 201
+    assert duplicate.status_code == 201
+    assert favorites.status_code == 200
+    assert len(favorites.json()) == 1
+    assert removed.status_code == 204
+
+
+def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    listing = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload()).json()
+
+    token_verifier.claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "buyer@siswa.um.edu.my"})
+    request = client.post(
+        f"/api/v1/listings/{listing['id']}/contact-requests",
+        headers=AUTH_HEADERS,
+        json={
+            "message": "Interested.",
+            "buyer_contact_method": "telegram",
+            "buyer_contact_value": "@buyer",
+        },
+    )
+    cancelled = client.patch(f"/api/v1/contact-requests/{request.json()['id']}/cancel", headers=AUTH_HEADERS)
+    second = client.post(
+        f"/api/v1/listings/{listing['id']}/contact-requests",
+        headers=AUTH_HEADERS,
+        json={
+            "message": "Still interested.",
+            "buyer_contact_method": "telegram",
+            "buyer_contact_value": "@buyer",
+        },
+    )
+
+    token_verifier.claims = seller_claims
+    sold = client.patch(
+        f"/api/v1/listings/{listing['id']}/status",
+        headers=AUTH_HEADERS,
+        json={"status": "sold", "reason": "Sold after campus meetup."},
+    )
+
+    token_verifier.claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "third@siswa.um.edu.my"})
+    blocked = client.post(
+        f"/api/v1/listings/{listing['id']}/contact-requests",
+        headers=AUTH_HEADERS,
+        json={
+            "message": "Can I buy?",
+            "buyer_contact_method": "telegram",
+            "buyer_contact_value": "@third",
+        },
+    )
+
+    assert request.status_code == 201
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert second.status_code == 201
+    assert sold.status_code == 200
+    assert blocked.status_code == 409
+
+
+def test_duplicate_report_prevention_and_threshold_auto_hide(client, db_session, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    listing = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload()).json()
+
+    reporter_one = seller_claims.model_copy(update={"sub": uuid4(), "email": "r1@siswa.um.edu.my"})
+    token_verifier.claims = reporter_one
+    first = client.post(
+        f"/api/v1/listings/{listing['id']}/reports",
+        headers=AUTH_HEADERS,
+        json={"report_type": "misleading_description", "reason": "Details seem wrong."},
+    )
+    duplicate = client.post(
+        f"/api/v1/listings/{listing['id']}/reports",
+        headers=AUTH_HEADERS,
+        json={"report_type": "misleading_description", "reason": "Same report."},
+    )
+
+    for index in range(2, 4):
+        token_verifier.claims = seller_claims.model_copy(
+            update={"sub": uuid4(), "email": f"r{index}@siswa.um.edu.my"}
+        )
+        response = client.post(
+            f"/api/v1/listings/{listing['id']}/reports",
+            headers=AUTH_HEADERS,
+            json={"report_type": "unsafe_transaction", "reason": "Asked to pay first."},
+        )
+        assert response.status_code == 201
+
+    db_session.expire_all()
+    db_listing = db_session.query(Listing).filter(Listing.id == listing["id"]).one()
+
+    assert first.status_code == 201
+    assert first.json()["status"] == "pending"
+    assert duplicate.status_code == 409
+    assert db_listing.status == "hidden"
+    assert db_listing.moderation_status == "review_required"

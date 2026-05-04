@@ -42,6 +42,8 @@ class TradeContactRequest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     seller_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     listing: Mapped["Listing"] = relationship(back_populates="contact_requests")
     buyer: Mapped["User"] = relationship(foreign_keys=[buyer_id])

@@ -18,7 +18,7 @@ type ListingFilters = {
   search: string;
   category: string;
   condition: string;
-  pickup_area: string;
+  pickup_location: string;
   status: string;
   risk_level: string;
   min_price: string;
@@ -30,12 +30,12 @@ const initialFilters: ListingFilters = {
   search: "",
   category: "",
   condition: "",
-  pickup_area: "",
-  status: "available",
+  pickup_location: "",
+  status: "",
   risk_level: "",
   min_price: "",
   max_price: "",
-  sort: "newest",
+  sort: "latest",
 };
 
 export default function TradePage() {
@@ -157,8 +157,8 @@ export default function TradePage() {
         </select>
         <select
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
-          value={filters.pickup_area}
-          onChange={(event) => setFilters((current) => ({ ...current, pickup_area: event.target.value }))}
+          value={filters.pickup_location}
+          onChange={(event) => setFilters((current) => ({ ...current, pickup_location: event.target.value }))}
         >
           <option value="">Any pickup</option>
           {pickupAreas.map((item) => (
@@ -205,10 +205,10 @@ export default function TradePage() {
           value={filters.sort}
           onChange={(event) => setFilters((current) => ({ ...current, sort: event.target.value }))}
         >
-          <option value="newest">Newest</option>
-          <option value="price_asc">Lowest price</option>
-          <option value="price_desc">Highest price</option>
-          <option value="risk">Risk first</option>
+          <option value="latest">Newest</option>
+          <option value="oldest">Oldest</option>
+          <option value="price_low_high">Lowest price</option>
+          <option value="price_high_low">Highest price</option>
         </select>
         <select
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"

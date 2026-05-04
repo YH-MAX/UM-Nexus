@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, SmallInteger, String, Text, Uuid
+from sqlalchemy import Boolean, Enum, ForeignKey, SmallInteger, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -30,11 +30,16 @@ class Profile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
     faculty: Mapped[str | None] = mapped_column(String(255), nullable=True)
     year_of_study: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     residential_college: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    college_or_location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    contact_preference: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contact_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verified_um_email: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
     app_role: Mapped[AppRole] = mapped_column(
         app_role_enum,
         nullable=False,

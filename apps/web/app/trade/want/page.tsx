@@ -22,7 +22,7 @@ export default function WantPage() {
     category: "electronics",
     desired_item_name: "",
     max_budget: "",
-    preferred_pickup_area: "KK",
+    preferred_pickup_area: "kk1",
     residential_college: "",
   });
   const [isSubmitting, setIsSubmitting] = useState(false);

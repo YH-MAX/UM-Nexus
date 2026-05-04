@@ -54,6 +54,23 @@ def require_authenticated_user(
     return user
 
 
+def get_optional_authenticated_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    verifier=Depends(get_token_verifier),
+    db: Session = Depends(get_db),
+) -> User | None:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        return None
+    try:
+        token_claims = verifier.verify_access_token(credentials.credentials)
+    except TokenVerificationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    return ensure_local_user(db, token_claims)
+
+
 def require_app_role(required_role: AppRole | str) -> Callable[..., User]:
     normalized_required_role = AppRole(required_role)
 

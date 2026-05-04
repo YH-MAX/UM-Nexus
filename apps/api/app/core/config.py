@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     zai_model: str = "glm-4.6v"
     zai_timeout_seconds: int = 60
     zai_max_retries: int = 2
+    ai_trade_enabled: bool = True
+    ai_student_daily_limit: int = 3
+    ai_staff_daily_limit: int = 50
+    ai_global_daily_limit: int = 200
 
     model_config = SettingsConfigDict(
         env_file=find_env_file(),

@@ -44,6 +44,12 @@ export function TradeShell({
               My Trade
             </Link>
             <Link
+              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
+              href="/trade/saved"
+            >
+              Saved
+            </Link>
+            <Link
               className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
               href="/trade/sell"
             >

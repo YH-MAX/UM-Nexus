@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import json
 from typing import Any
@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.integrations.glm_client import GLMProviderError, collect_public_image_urls, get_glm_client
-from app.models import ListingImage, User
+from app.models import AppRole, ListingImage, User
 from app.repositories.trade import TradeRepository
 from app.schemas.listing import ListingCreate, ListingImageRead, ListingRead
 from app.schemas.sell_agent import (
@@ -60,7 +60,7 @@ Description requirements for listing_payload.description:
 
 Use only these category values: textbooks_notes, electronics, dorm_room, kitchen_appliances, furniture, clothing, sports_hobby, tickets_events, free_items, others.
 Use only these condition_label values: new, like_new, good, fair, poor.
-Use only these pickup_area values when known: KK, FSKTM, library, faculty_pickup, other.
+Use only these pickup_area values when known: kk1, kk2, kk3, kk4, kk5, kk6, kk7, kk8, kk9, kk10, kk11, kk12, fsktm, main_library, um_sentral, faculty_area, kk_mart, other.
 Use only these seller action types: list_now, revise_price, upload_better_image, match_with_buyers, flag_for_review.
 Use only these risk levels: low, medium, high.
 
@@ -78,7 +78,7 @@ Return this shape:
     "condition_label": "new | like_new | good | fair | poor",
     "price": number,
     "currency": "MYR",
-    "pickup_area": "KK | FSKTM | library | faculty_pickup | other | null",
+    "pickup_area": "kk1 | kk2 | kk3 | kk4 | kk5 | kk6 | kk7 | kk8 | kk9 | kk10 | kk11 | kk12 | fsktm | main_library | um_sentral | faculty_area | kk_mart | other | null",
     "residential_college": "college if known or null"
   },
   "pricing": {
@@ -181,8 +181,29 @@ async def generate_sell_agent_draft(
         fallback=fallback,
     )
 
-    client = get_glm_client()
+    denial = _ai_limit_denial(repo, current_user)
+    if denial:
+        normalized = deepcopy(fallback)
+        normalized["assistant_message"] = "AI suggestions are temporarily unavailable. You can still create your listing manually."
+        normalized["metadata"] = {
+            **normalized.get("metadata", {}),
+            "provider": "none",
+            "model": None,
+            "used_fallback": True,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "analysis_mode": "manual_fallback",
+            "image_analysis_skipped": True,
+            "data_source": "sell_agent_unavailable",
+            "provider_error": denial,
+        }
+        _log_ai_usage(repo, current_user, request_status="denied", error_message=denial)
+        _store_ai_suggestion(repo, current_user, seller_context, uploaded_images, normalized, status_value="fallback")
+        normalized["draft_id"] = draft_id
+        normalized["uploaded_images"] = [image.model_dump(mode="json") for image in uploaded_images]
+        return SellAgentDraftResponse.model_validate(normalized)
+
     try:
+        client = get_glm_client()
         raw = client.generate_sell_listing_draft(payload)
         normalized = _normalize_draft(raw, fallback)
         normalized["metadata"] = {
@@ -195,6 +216,13 @@ async def generate_sell_agent_draft(
             "image_analysis_skipped": not bool(collect_public_image_urls([image.model_dump() for image in uploaded_images])),
             "data_source": "sell_agent_glm_draft",
         }
+        _log_ai_usage(
+            repo,
+            current_user,
+            request_status="succeeded",
+            provider=_provider_name(client),
+            model=getattr(client, "model_name", None),
+        )
     except (GLMProviderError, TypeError, ValueError, ValidationError) as exc:
         normalized = deepcopy(fallback)
         normalized["assistant_message"] = (
@@ -212,9 +240,11 @@ async def generate_sell_agent_draft(
             "data_source": "sell_agent_fallback_draft",
             "provider_error": str(exc),
         }
+        _log_ai_usage(repo, current_user, request_status="failed", provider="heuristic", error_message=str(exc))
 
     normalized["draft_id"] = draft_id
     normalized["uploaded_images"] = [image.model_dump(mode="json") for image in uploaded_images]
+    _store_ai_suggestion(repo, current_user, seller_context, uploaded_images, normalized)
     return SellAgentDraftResponse.model_validate(normalized)
 
 
@@ -224,7 +254,7 @@ def publish_sell_agent_draft(
     payload: SellAgentPublishRequest,
     current_user: User,
 ) -> SellAgentPublishResponse:
-    listing = create_listing(db, payload.listing_payload, current_user)
+    listing = create_listing(db, payload.listing_payload, current_user, publish=True, require_profile=False)
     repo = TradeRepository(db)
     created_images: list[ListingImage] = []
     for index, image in enumerate(payload.uploaded_images[:4]):
@@ -544,7 +574,16 @@ def _normalize_pickup_area(value: Any) -> str | None:
     if not normalized:
         return None
     lookup = {area.lower(): area for area in PICKUP_AREAS}
-    aliases = {"faculty": "faculty_pickup", "faculty pickup": "faculty_pickup", "kk": "KK"}
+    aliases = {
+        "faculty": "faculty_area",
+        "faculty pickup": "faculty_area",
+        "kk": "kk1",
+        "library": "main_library",
+        "fsk": "fsktm",
+        "um central": "um_sentral",
+        "um sentral": "um_sentral",
+        "kk mart": "kk_mart",
+    }
     candidate = aliases.get(normalized.lower(), lookup.get(normalized.lower(), normalized))
     return candidate if candidate in PICKUP_AREAS else "other"
 
@@ -965,3 +1004,86 @@ def _provider_name(client: Any) -> str:
     if "demo" in name:
         return "demo"
     return name or "glm"
+
+
+def _ai_limit_denial(repo: TradeRepository, current_user: User) -> str | None:
+    settings = get_settings()
+    if not settings.ai_trade_enabled:
+        return "AI_TRADE_ENABLED is false."
+
+    day_start = datetime.now(UTC) - timedelta(days=1)
+    global_count = repo.count_ai_usage_logs(
+        feature="sell_agent_draft",
+        statuses=("succeeded", "failed"),
+        since=day_start,
+    )
+    if global_count >= settings.ai_global_daily_limit:
+        return "Global AI daily limit reached."
+
+    role = getattr(getattr(current_user, "profile", None), "app_role", AppRole.STUDENT)
+    user_limit = settings.ai_staff_daily_limit if role in {AppRole.MODERATOR, AppRole.ADMIN} else settings.ai_student_daily_limit
+    user_count = repo.count_ai_usage_logs(
+        feature="sell_agent_draft",
+        user_id=current_user.id,
+        statuses=("succeeded", "failed"),
+        since=day_start,
+    )
+    if user_count >= user_limit:
+        return "User AI daily limit reached."
+    return None
+
+
+def _log_ai_usage(
+    repo: TradeRepository,
+    current_user: User,
+    *,
+    request_status: str,
+    provider: str | None = None,
+    model: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    repo.create_ai_usage_log(
+        {
+            "user_id": current_user.id,
+            "feature": "sell_agent_draft",
+            "provider": provider,
+            "model": model,
+            "request_status": request_status,
+            "error_message": error_message,
+        }
+    )
+
+
+def _store_ai_suggestion(
+    repo: TradeRepository,
+    current_user: User,
+    seller_context: SellAgentSellerContext,
+    uploaded_images: list[SellAgentUploadedImage],
+    normalized: dict[str, Any],
+    *,
+    status_value: str = "generated",
+) -> None:
+    listing_payload = normalized.get("listing_payload") or {}
+    pricing = normalized.get("pricing") or {}
+    fair_range = pricing.get("fair_price_range") or {}
+    repo.create_ai_suggestion(
+        {
+            "user_id": current_user.id,
+            "listing_id": None,
+            "input_notes": seller_context.free_text or seller_context.product_name or seller_context.condition_notes,
+            "input_image_urls": [
+                image.public_url for image in uploaded_images if image.public_url
+            ],
+            "suggested_title": listing_payload.get("title"),
+            "suggested_description": listing_payload.get("description"),
+            "suggested_category": listing_payload.get("category"),
+            "suggested_condition": listing_payload.get("condition_label"),
+            "price_min": fair_range.get("low"),
+            "price_max": fair_range.get("high"),
+            "recommended_price": pricing.get("suggested_listing_price"),
+            "risk_level": pricing.get("risk_level"),
+            "risk_flags": normalized.get("missing_fields") or [],
+            "raw_response": normalized,
+            "status": status_value,
+        }
+    )

@@ -9,6 +9,7 @@ import { StatusPill } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   formatMoney,
+  formatPickupLocation,
   getTradeDashboard,
   updateContactRequest,
   updateTradeTransaction,
@@ -125,6 +126,7 @@ export default function TradeDashboardPage() {
         <div className="grid gap-5">
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Metric label="My listings" value={dashboard.listings.length} />
+            <Metric label="Saved listings" value={dashboard.favorites.length} />
             <Metric label="Wanted posts" value={dashboard.wanted_posts.length} />
             <Metric label="Suggested matches" value={dashboard.matches.length} />
             <Metric label="Contact requests" value={dashboard.contact_requests_received.length} />
@@ -164,6 +166,28 @@ export default function TradeDashboardPage() {
               )}
             </Panel>
 
+            <Panel title="Saved listings">
+              {dashboard.favorites.length === 0 ? (
+                <EmptyState text="No saved listings yet." href="/trade" label="Browse marketplace" />
+              ) : (
+                dashboard.favorites.slice(0, 6).map((favorite) => (
+                  favorite.listing ? (
+                    <Link className="block rounded-lg border border-slate-200 p-4 transition hover:border-emerald-300" href={`/trade/${favorite.listing.id}`} key={favorite.id}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-950">{favorite.listing.title}</p>
+                          <p className="mt-1 text-sm text-slate-600">{formatMoney(favorite.listing.price, favorite.listing.currency)}</p>
+                        </div>
+                        <StatusPill>{favorite.listing.status}</StatusPill>
+                      </div>
+                    </Link>
+                  ) : null
+                ))
+              )}
+            </Panel>
+          </section>
+
+          <section className="grid gap-5 lg:grid-cols-2">
             <Panel title="Buyer wanted posts">
               {dashboard.wanted_posts.length === 0 ? (
                 <EmptyState text="No wanted posts yet." href="/trade/want" label="Create wanted post" />
@@ -172,7 +196,7 @@ export default function TradeDashboardPage() {
                   <Link className="block rounded-lg border border-slate-200 p-4 transition hover:border-emerald-300" href={`/wanted-posts/${post.id}`} key={post.id}>
                     <p className="font-semibold text-slate-950">{post.title}</p>
                     <p className="mt-1 text-sm text-slate-600">
-                      Budget {formatMoney(post.max_budget, post.currency)} · {post.preferred_pickup_area ?? "Any pickup"}
+                      Budget {formatMoney(post.max_budget, post.currency)} · {formatPickupLocation(post.preferred_pickup_area)}
                     </p>
                   </Link>
                 ))

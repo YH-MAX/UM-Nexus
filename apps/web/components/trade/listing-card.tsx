@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   formatCategory,
   formatMoney,
+  formatPickupLocation,
   type Listing,
 } from "@/lib/trade/api";
 
@@ -40,8 +41,8 @@ export function ListingCard({ listing }: ListingCardProps) {
           <StatusPill tone={listing.status === "available" ? "good" : listing.status === "reserved" ? "warn" : "neutral"}>
             {listing.status}
           </StatusPill>
-          {listing.condition_label ? (
-            <StatusPill>{listing.condition_label.replaceAll("_", " ")}</StatusPill>
+          {(listing.condition ?? listing.condition_label) ? (
+            <StatusPill>{(listing.condition ?? listing.condition_label)?.replaceAll("_", " ")}</StatusPill>
           ) : null}
           <StatusPill tone={listing.is_ai_enriched ? "good" : "warn"}>
             {listing.is_ai_enriched ? "AI enriched" : "Not enriched"}
@@ -60,7 +61,7 @@ export function ListingCard({ listing }: ListingCardProps) {
             {listing.title}
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            {listing.pickup_area ?? "Pickup TBD"}
+            {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}
             {listing.residential_college ? ` · ${listing.residential_college}` : ""}
           </p>
           {listing.contact_method ? (
@@ -71,6 +72,9 @@ export function ListingCard({ listing }: ListingCardProps) {
         </div>
         <p className="text-xl font-semibold text-emerald-800">
           {formatMoney(listing.price, listing.currency)}
+        </p>
+        <p className="text-xs text-slate-500">
+          {listing.view_count} views · seller {listing.seller?.profile?.display_name ?? listing.seller?.profile?.full_name ?? "UM student"}
         </p>
       </div>
     </Link>

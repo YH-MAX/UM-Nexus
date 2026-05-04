@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.services.trade_policy import normalize_category
+from app.services.trade_policy import normalize_category, normalize_pickup_location
 from app.trade.constants import PickupArea, TradeCategory
 
 
@@ -20,6 +20,11 @@ class WantedPostCreate(BaseModel):
     @classmethod
     def normalize_category_value(cls, value: object) -> object:
         return normalize_category(value) or value
+
+    @field_validator("preferred_pickup_area", mode="before")
+    @classmethod
+    def normalize_pickup_value(cls, value: object) -> object:
+        return normalize_pickup_location(value)
 
 
 class WantedPostRead(BaseModel):

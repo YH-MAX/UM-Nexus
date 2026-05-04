@@ -13,13 +13,56 @@ TradeCategory = Literal[
     "free_items",
     "others",
 ]
-PickupArea = Literal["KK", "FSKTM", "library", "faculty_pickup", "other"]
+PickupArea = Literal[
+    "kk1",
+    "kk2",
+    "kk3",
+    "kk4",
+    "kk5",
+    "kk6",
+    "kk7",
+    "kk8",
+    "kk9",
+    "kk10",
+    "kk11",
+    "kk12",
+    "fsktm",
+    "main_library",
+    "um_sentral",
+    "faculty_area",
+    "kk_mart",
+    "other",
+]
 ConditionLabel = Literal["new", "like_new", "good", "fair", "poor"]
-ListingStatus = Literal["available", "reserved", "sold", "hidden", "removed"]
+ListingStatus = Literal["draft", "available", "reserved", "sold", "hidden", "deleted"]
 ContactMethod = Literal["telegram", "whatsapp"]
-ContactRequestStatus = Literal["pending", "accepted", "rejected"]
-UserStatus = Literal["active", "suspended", "banned"]
+ContactRequestStatus = Literal["pending", "accepted", "rejected", "cancelled", "expired"]
+UserStatus = Literal["active", "suspended", "banned", "deleted"]
 RiskLevel = Literal["low", "medium", "high"]
+ListingReportReason = Literal[
+    "scam_suspicion",
+    "prohibited_item",
+    "misleading_description",
+    "duplicate_listing",
+    "offensive_content",
+    "fake_photos",
+    "unsafe_transaction",
+    "other",
+]
+ReportStatus = Literal["pending", "reviewed", "dismissed", "action_taken"]
+AdminActionType = Literal[
+    "hide_listing",
+    "restore_listing",
+    "delete_listing",
+    "dismiss_report",
+    "mark_report_action_taken",
+    "suspend_user",
+    "ban_user",
+    "restore_user",
+    "remove_image",
+    "change_category",
+    "change_user_role",
+]
 TradeActionType = Literal[
     "list_now",
     "revise_price",
@@ -40,14 +83,57 @@ TRADE_CATEGORIES = (
     "free_items",
     "others",
 )
-PICKUP_AREAS = ("KK", "FSKTM", "library", "faculty_pickup", "other")
+PICKUP_AREAS = (
+    "kk1",
+    "kk2",
+    "kk3",
+    "kk4",
+    "kk5",
+    "kk6",
+    "kk7",
+    "kk8",
+    "kk9",
+    "kk10",
+    "kk11",
+    "kk12",
+    "fsktm",
+    "main_library",
+    "um_sentral",
+    "faculty_area",
+    "kk_mart",
+    "other",
+)
 CONDITION_LABELS = ("new", "like_new", "good", "fair", "poor")
-LISTING_STATUSES = ("available", "reserved", "sold", "hidden", "removed")
-PUBLIC_LISTING_STATUSES = ("available", "reserved", "sold")
+LISTING_STATUSES = ("draft", "available", "reserved", "sold", "hidden", "deleted")
+PUBLIC_LISTING_STATUSES = ("available", "reserved")
 CONTACT_METHODS = ("telegram", "whatsapp")
-CONTACT_REQUEST_STATUSES = ("pending", "accepted", "rejected")
-USER_STATUSES = ("active", "suspended", "banned")
+CONTACT_REQUEST_STATUSES = ("pending", "accepted", "rejected", "cancelled", "expired")
+USER_STATUSES = ("active", "suspended", "banned", "deleted")
 RISK_LEVELS = ("low", "medium", "high")
+LISTING_REPORT_REASONS = (
+    "scam_suspicion",
+    "prohibited_item",
+    "misleading_description",
+    "duplicate_listing",
+    "offensive_content",
+    "fake_photos",
+    "unsafe_transaction",
+    "other",
+)
+REPORT_STATUSES = ("pending", "reviewed", "dismissed", "action_taken")
+ADMIN_ACTION_TYPES = (
+    "hide_listing",
+    "restore_listing",
+    "delete_listing",
+    "dismiss_report",
+    "mark_report_action_taken",
+    "suspend_user",
+    "ban_user",
+    "restore_user",
+    "remove_image",
+    "change_category",
+    "change_user_role",
+)
 TRADE_ACTION_TYPES = (
     "list_now",
     "revise_price",
@@ -78,5 +164,19 @@ LEGACY_LISTING_STATUS_ALIASES = {
     "open": "available",
     "closed": "sold",
     "completed": "sold",
-    "deleted": "removed",
+    "removed": "deleted",
+}
+
+LEGACY_PICKUP_AREA_ALIASES = {
+    "kk": "kk1",
+    "kolej_kediaman": "kk1",
+    "fsk": "fsktm",
+    "faculty": "faculty_area",
+    "faculty_pickup": "faculty_area",
+    "library": "main_library",
+    "main_lib": "main_library",
+    "umcentral": "um_sentral",
+    "um_central": "um_sentral",
+    "sentral": "um_sentral",
+    "kkmart": "kk_mart",
 }

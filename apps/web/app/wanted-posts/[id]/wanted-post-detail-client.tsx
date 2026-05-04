@@ -8,6 +8,7 @@ import { TradeShell } from "@/components/trade/trade-shell";
 import {
   formatCategory,
   formatMoney,
+  formatPickupLocation,
   getWantedPost,
   getWantedPostRecommendations,
   type WantedListingRecommendation,
@@ -97,7 +98,7 @@ export function WantedPostDetailClient({
 
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Fact label="Desired item" value={wantedPost.desired_item_name ?? "Not specified"} />
-            <Fact label="Preferred pickup" value={wantedPost.preferred_pickup_area ?? "Any"} />
+            <Fact label="Preferred pickup" value={formatPickupLocation(wantedPost.preferred_pickup_area)} />
             <Fact label="College" value={wantedPost.residential_college ?? "TBD"} />
             <Fact label="Currency" value={wantedPost.currency} />
           </div>
@@ -137,7 +138,7 @@ export function WantedPostDetailClient({
                     <div>
                       <p className="font-semibold text-slate-950">{item.listing.title}</p>
                       <p className="mt-1 text-sm text-slate-600">
-                        {formatMoney(item.listing.price, item.listing.currency)} · {item.listing.pickup_area ?? "Pickup TBD"}
+                        {formatMoney(item.listing.price, item.listing.currency)} · {formatPickupLocation(item.listing.pickup_location ?? item.listing.pickup_area)}
                       </p>
                     </div>
                     <div className="rounded-lg bg-emerald-700 px-3 py-2 text-right text-white">

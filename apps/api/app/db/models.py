@@ -1,5 +1,8 @@
 from app.models.agent_output import AgentOutput  # noqa: F401
 from app.models.agent_run import AgentRun  # noqa: F401
+from app.models.admin_action import AdminAction  # noqa: F401
+from app.models.ai_suggestion import AISuggestion  # noqa: F401
+from app.models.ai_usage_log import AIUsageLog  # noqa: F401
 from app.models.baseline_result import BaselineResult  # noqa: F401
 from app.models.benchmark_case import BenchmarkCase  # noqa: F401
 from app.models.benchmark_result import BenchmarkResult  # noqa: F401
@@ -7,13 +10,16 @@ from app.models.benchmark_run import BenchmarkRun  # noqa: F401
 from app.models.historical_sale import HistoricalSale  # noqa: F401
 from app.models.listing import Listing  # noqa: F401
 from app.models.listing_embedding import ListingEmbedding  # noqa: F401
+from app.models.listing_favorite import ListingFavorite  # noqa: F401
 from app.models.listing_image import ListingImage  # noqa: F401
 from app.models.listing_report import ListingReport  # noqa: F401
+from app.models.listing_view import ListingView  # noqa: F401
 from app.models.media_asset import MediaAsset  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
 from app.models.profile import Profile  # noqa: F401
 from app.models.society import Society  # noqa: F401
 from app.models.trade_contact_request import TradeContactRequest  # noqa: F401
+from app.models.trade_category import TradeCategory  # noqa: F401
 from app.models.trade_decision_feedback import TradeDecisionFeedback  # noqa: F401
 from app.models.trade_match import TradeMatch  # noqa: F401
 from app.models.trade_transaction import TradeTransaction  # noqa: F401

@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { formatMoney, type TradeMatch } from "@/lib/trade/api";
+import { formatMoney, formatPickupLocation, type TradeMatch } from "@/lib/trade/api";
 
 type MatchSuggestionsProps = Readonly<{
   matches: TradeMatch[];
@@ -42,7 +42,7 @@ export function MatchSuggestions({ matches }: MatchSuggestionsProps) {
               </div>
               <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-600">
                 <span>Budget {formatMoney(match.wanted_post.max_budget)}</span>
-                <span>Pickup {match.wanted_post.preferred_pickup_area ?? "any"}</span>
+                <span>Pickup {formatPickupLocation(match.wanted_post.preferred_pickup_area)}</span>
                 <span>Budget fit {Math.round(match.price_fit_score ?? 0)}%</span>
                 <span>Pickup fit {Math.round(match.location_fit_score ?? 0)}%</span>
                 <span>Need fit {Math.round(match.semantic_fit_score ?? 0)}%</span>

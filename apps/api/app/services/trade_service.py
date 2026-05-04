@@ -1,14 +1,18 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
 
-from fastapi import HTTPException, UploadFile, status
+from fastapi import HTTPException, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import (
+    AppRole,
     HistoricalSale,
     Listing,
     ListingImage,
     ListingReport,
+    ListingFavorite,
     TradeContactRequest,
     TradeDecisionFeedback,
     TradeMatch,
@@ -19,15 +23,20 @@ from app.models import (
 )
 from app.repositories.trade import TradeRepository
 from app.schemas.listing import (
+    ListingFavoriteRead,
     ListingCreate,
     ListingImageCreate,
     ListingRead,
     ListingReportCreate,
     ListingReportReview,
+    ListingStatusUpdate,
     ListingUpdate,
 )
 from app.schemas.trade_product import (
+    AISettingsRead,
+    AISettingsUpdate,
     AdminListingUpdate,
+    AdminUserRoleUpdate,
     AdminUserStatusUpdate,
     ContactMatchCreate,
     ContactRequestCreate,
@@ -35,6 +44,8 @@ from app.schemas.trade_product import (
     ContactRequestRead,
     DecisionFeedbackCreate,
     TradeTransactionUpdate,
+    TradeCategoryCreate,
+    TradeCategoryUpdate,
     UserReportCreate,
 )
 from app.schemas.wanted_post import WantedPostCreate
@@ -44,16 +55,34 @@ from app.services.trade_policy import (
     normalize_category,
     normalize_condition,
     normalize_listing_status,
+    normalize_pickup_location,
+    normalize_listing_report_reason,
+    normalize_report_status,
     scan_listing_policy,
 )
+from app.trade.constants import TRADE_CATEGORIES
 
 
-def create_listing(db: Session, payload: ListingCreate, current_user: User | None = None) -> Listing:
+def create_listing(
+    db: Session,
+    payload: ListingCreate,
+    current_user: User | None = None,
+    *,
+    publish: bool = False,
+    require_profile: bool = True,
+) -> Listing:
     owner = current_user or get_or_create_demo_user(db)
+    if publish and require_profile:
+        _ensure_profile_ready(owner)
     repo = TradeRepository(db)
-    values = _prepare_listing_values(payload.model_dump())
+    values = _prepare_listing_values(payload.model_dump(), for_publish=publish and require_profile)
+    if publish:
+        values["status"] = values.get("status") if values.get("status") == "hidden" else "available"
+    else:
+        values["status"] = "draft"
     listing = repo.create_listing(owner.id, values)
-    _refresh_matches_for_listing(db, listing.id)
+    if publish:
+        _refresh_matches_for_listing(db, listing.id)
     return listing
 
 
@@ -65,14 +94,16 @@ def list_listings(
     min_price: float | None = None,
     max_price: float | None = None,
     pickup_area: str | None = None,
+    pickup_location: str | None = None,
     risk_level: str | None = None,
     condition: str | None = None,
-    status: str | None = "available",
-    sort: str = "newest",
+    status: str | None = None,
+    sort: str = "latest",
 ) -> list[Listing]:
     repo = TradeRepository(db)
     normalized_status = normalize_listing_status(status) if status else None
     normalized_condition = normalize_condition(condition) if condition else None
+    normalized_pickup = normalize_pickup_location(pickup_location or pickup_area) if (pickup_location or pickup_area) else None
     return list(
         repo.list_listings(
             status=normalized_status,
@@ -81,18 +112,36 @@ def list_listings(
             search=search,
             min_price=min_price,
             max_price=max_price,
-            pickup_area=pickup_area,
+            pickup_location=normalized_pickup,
             risk_level=risk_level,
             sort=sort,
         )
     )
 
 
-def get_listing(db: Session, listing_id: str) -> Listing:
+def get_listing(
+    db: Session,
+    listing_id: str,
+    *,
+    viewer: User | None = None,
+    request: Request | None = None,
+    increment_view: bool = False,
+) -> Listing:
     repo = TradeRepository(db)
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    if not _can_view_listing(listing, viewer):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    if increment_view and listing.status in {"available", "reserved", "sold"}:
+        repo.record_listing_view(
+            listing=listing,
+            viewer_user_id=viewer.id if viewer else None,
+            viewer_fingerprint=_viewer_fingerprint(request, viewer),
+        )
+        refreshed = repo.get_listing_or_none(listing.id)
+        if refreshed is not None:
+            return refreshed
     return listing
 
 
@@ -106,11 +155,89 @@ def update_listing(db: Session, listing_id: str, payload: ListingUpdate, current
     if current_user is not None and listing.seller_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can update this listing.")
 
-    values = _prepare_listing_values(payload.model_dump(exclude_unset=True), existing=listing)
+    values = _prepare_listing_values(payload.model_dump(exclude_unset=True), existing=listing, for_publish=False)
+    if listing.status == "sold" and _contains_locked_sold_fields(values):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Sold listings can only change status or moderation metadata.",
+        )
+    if values.get("status"):
+        _apply_listing_status_transition(listing, values["status"], current_user)
     updated = repo.update_listing(listing, values)
-    if {"title", "description", "category", "item_name", "brand", "model", "condition_label", "price", "pickup_area", "residential_college"} & set(values):
+    if updated.status in {"sold", "hidden", "deleted"}:
+        repo.expire_pending_contact_requests(updated.id)
+    if {"title", "description", "category", "item_name", "brand", "model", "condition_label", "price", "pickup_area", "pickup_location", "residential_college"} & set(values):
         _refresh_matches_for_listing(db, updated.id)
     return updated
+
+
+def publish_listing(db: Session, listing_id: str, current_user: User) -> Listing:
+    _ensure_profile_ready(current_user)
+    repo = TradeRepository(db)
+    listing = repo.get_listing_or_none(listing_id)
+    if listing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    if listing.seller_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can publish this listing.")
+    values = _prepare_listing_values(_listing_payload_for_validation(listing), existing=listing, for_publish=True)
+    values["status"] = values.get("status") if values.get("status") == "hidden" else "available"
+    updated = repo.update_listing(listing, values)
+    _refresh_matches_for_listing(db, updated.id)
+    return updated
+
+
+def update_listing_status(
+    db: Session,
+    listing_id: str,
+    payload: ListingStatusUpdate,
+    current_user: User,
+) -> Listing:
+    repo = TradeRepository(db)
+    listing = repo.get_listing_or_none(listing_id)
+    if listing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    if listing.seller_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can change this listing status.")
+    if payload.status not in {"available", "reserved", "sold", "hidden", "deleted"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid seller listing status.")
+    values = {"status": payload.status}
+    _apply_listing_status_transition(listing, payload.status, current_user, reason=payload.reason)
+    updated = repo.update_listing(listing, values)
+    if updated.status in {"sold", "hidden", "deleted"}:
+        repo.expire_pending_contact_requests(updated.id)
+    return updated
+
+
+def delete_listing(db: Session, listing_id: str, current_user: User) -> Listing:
+    return update_listing_status(
+        db,
+        listing_id,
+        ListingStatusUpdate(status="deleted", reason="Seller deleted listing."),
+        current_user,
+    )
+
+
+def list_favorites(db: Session, current_user: User) -> list[ListingFavorite]:
+    return [
+        favorite
+        for favorite in TradeRepository(db).list_favorites_for_user(current_user.id)
+        if favorite.listing and favorite.listing.status not in {"draft", "hidden", "deleted"}
+    ]
+
+
+def add_favorite(db: Session, listing_id: str, current_user: User) -> ListingFavorite:
+    repo = TradeRepository(db)
+    listing = repo.get_listing_or_none(listing_id)
+    if listing is None or listing.status in {"draft", "deleted", "hidden"}:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    return repo.create_favorite(current_user.id, listing.id)
+
+
+def remove_favorite(db: Session, listing_id: str, current_user: User) -> None:
+    repo = TradeRepository(db)
+    favorite = repo.get_favorite_or_none(current_user.id, listing_id)
+    if favorite is not None:
+        repo.delete_favorite(favorite)
 
 
 def add_listing_image(db: Session, listing_id: str, payload: ListingImageCreate, current_user: User | None = None) -> ListingImage:
@@ -122,6 +249,10 @@ def add_listing_image(db: Session, listing_id: str, payload: ListingImageCreate,
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
     if current_user is not None and listing.seller_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can add listing images.")
+    if listing.status == "sold":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Sold listings cannot be edited.")
+    if len(listing.images) >= 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A listing can have at most 5 images.")
 
     return repo.add_listing_image(listing.id, payload.model_dump())
 
@@ -141,6 +272,10 @@ async def add_uploaded_listing_image(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
     if current_user is not None and listing.seller_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can upload listing images.")
+    if listing.status == "sold":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Sold listings cannot be edited.")
+    if len(listing.images) >= 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A listing can have at most 5 images.")
 
     stored_file = await store_listing_image_upload(listing.id, upload_file)
     repo.create_media_asset(
@@ -165,6 +300,21 @@ async def add_uploaded_listing_image(
             "content_hash": stored_file.content_hash,
         },
     )
+
+
+def remove_listing_image(db: Session, listing_id: str, image_id: str, current_user: User) -> None:
+    repo = TradeRepository(db)
+    listing = repo.get_listing_or_none(listing_id)
+    if listing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    if listing.seller_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can remove listing images.")
+    if listing.status == "sold":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Sold listings cannot be edited.")
+    image = repo.get_listing_image_or_none(image_id)
+    if image is None or image.listing_id != listing.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing image not found")
+    repo.remove_listing_image(image)
 
 
 def create_wanted_post(db: Session, payload: WantedPostCreate, current_user: User | None = None) -> WantedPost:
@@ -198,17 +348,45 @@ def create_listing_report(
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    reason = normalize_listing_report_reason(payload.report_type)
+    if reason is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid listing report reason.")
+    if repo.get_pending_listing_report_by_user(listing.id, current_user.id) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already reported this listing.")
     report = repo.create_listing_report(
         {
             "listing_id": listing.id,
             "reporter_user_id": current_user.id,
-            "report_type": payload.report_type,
+            "report_type": reason,
             "reason": payload.reason,
-            "status": "open",
+            "status": "pending",
         }
     )
-    if listing.moderation_status == "approved":
+    pending_reports = repo.count_pending_listing_reports_from_distinct_users(listing.id)
+    if pending_reports >= 3 or reason == "prohibited_item" or listing.risk_level == "high":
+        repo.update_listing(
+            listing,
+            {
+                "status": "hidden",
+                "moderation_status": "review_required",
+                "hidden_at": datetime.now(UTC),
+                "hidden_reason": "Auto-hidden after safety reports.",
+            },
+        )
+        repo.expire_pending_contact_requests(listing.id)
+    elif listing.moderation_status == "approved":
         repo.update_listing(listing, {"moderation_status": "review_required"})
+    repo.create_notification(
+        {
+            "user_id": listing.seller_id,
+            "type": "listing_reported",
+            "title": "A listing was reported",
+            "body": "Your listing has been sent for UM Nexus safety review.",
+            "action_url": f"/trade/{listing.id}",
+            "entity_type": "listing",
+            "entity_id": listing.id,
+        }
+    )
     return report
 
 
@@ -224,14 +402,14 @@ def create_contact_request(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
     if listing.seller_id == current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot request contact for your own listing.")
-    if listing.status != "available" or listing.moderation_status != "approved":
+    if listing.status not in {"available", "reserved"} or listing.moderation_status != "approved":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This listing is not available for contact requests.")
     if not listing.contact_method or not listing.contact_value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Seller contact setup is incomplete.")
     if repo.get_existing_contact_request(listing.id, current_user.id) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have an open contact request for this listing.")
 
-    return repo.create_contact_request(
+    contact_request = repo.create_contact_request(
         {
             "listing_id": listing.id,
             "buyer_id": current_user.id,
@@ -242,6 +420,18 @@ def create_contact_request(
             "status": "pending",
         }
     )
+    repo.create_notification(
+        {
+            "user_id": listing.seller_id,
+            "type": "contact_request_received",
+            "title": "New buyer interest",
+            "body": f"Someone is interested in {listing.title}.",
+            "action_url": "/trade/dashboard",
+            "entity_type": "contact_request",
+            "entity_id": contact_request.id,
+        }
+    )
+    return contact_request
 
 
 def list_contact_requests_for_user(db: Session, current_user: User) -> dict[str, list[TradeContactRequest]]:
@@ -266,6 +456,12 @@ def decide_contact_request(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can answer this request.")
     if contact_request.status != "pending":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This contact request is already answered.")
+    if contact_request.listing and contact_request.listing.status not in {"available", "reserved"}:
+        repo.update_contact_request(
+            contact_request,
+            {"status": "expired", "expired_at": datetime.now(UTC)},
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This item is no longer available.")
 
     now = datetime.now(UTC)
     values = {
@@ -276,6 +472,8 @@ def decide_contact_request(
     }
     updated = repo.update_contact_request(contact_request, values)
     if updated.status == "accepted":
+        if updated.listing and updated.listing.status == "available":
+            repo.update_listing(updated.listing, {"status": "reserved"})
         repo.create_trade_transaction(
             {
                 "listing_id": updated.listing_id,
@@ -286,7 +484,36 @@ def decide_contact_request(
                 "currency": updated.listing.currency if updated.listing else "MYR",
             }
         )
+    repo.create_notification(
+        {
+            "user_id": updated.buyer_id,
+            "type": f"contact_request_{updated.status}",
+            "title": "Contact request updated",
+            "body": f"Your contact request was {updated.status}.",
+            "action_url": "/trade/dashboard",
+            "entity_type": "contact_request",
+            "entity_id": updated.id,
+        }
+    )
     return updated
+
+
+def cancel_contact_request(db: Session, contact_request_id: str, current_user: User) -> TradeContactRequest:
+    repo = TradeRepository(db)
+    contact_request = repo.get_contact_request_or_none(contact_request_id)
+    if contact_request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact request not found")
+    if contact_request.buyer_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the buyer can cancel this request.")
+    if contact_request.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending contact requests can be cancelled.")
+    return repo.update_contact_request(
+        contact_request,
+        {
+            "status": "cancelled",
+            "cancelled_at": datetime.now(UTC),
+        },
+    )
 
 
 def contact_request_read(contact_request: TradeContactRequest, viewer: User) -> ContactRequestRead:
@@ -307,6 +534,8 @@ def contact_request_read(contact_request: TradeContactRequest, viewer: User) -> 
         seller_response=contact_request.seller_response,
         accepted_at=contact_request.accepted_at,
         rejected_at=contact_request.rejected_at,
+        cancelled_at=contact_request.cancelled_at,
+        expired_at=contact_request.expired_at,
         created_at=contact_request.created_at,
         updated_at=contact_request.updated_at,
         listing=ListingRead.model_validate(listing) if listing else None,
@@ -324,13 +553,15 @@ def create_user_report(
     repo = TradeRepository(db)
     if repo.get_user_or_none(reported_user_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if repo.get_pending_user_report_by_user(reported_user_id, current_user.id) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already reported this user.")
     return repo.create_user_report(
         {
             "reported_user_id": reported_user_id,
             "reporter_user_id": current_user.id,
             "report_type": payload.report_type,
             "reason": payload.reason,
-            "status": "open",
+            "status": "pending",
         }
     )
 
@@ -351,20 +582,35 @@ def review_listing_reports(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
 
     now = datetime.now(UTC)
+    report_status = normalize_report_status(payload.status)
+    if report_status is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid report status.")
     for report in repo.list_reports_for_listing(listing.id):
-        if report.status == "open":
-            report.status = payload.status
+        if report.status == "pending":
+            report.status = report_status
             report.moderator_user_id = moderator.id
             report.resolution = payload.resolution
             report.reviewed_at = now
             db.add(report)
     db.commit()
 
-    moderation_status = payload.moderation_status or ("approved" if payload.status in {"resolved", "dismissed"} else "review_required")
+    moderation_status = payload.moderation_status or ("approved" if report_status in {"reviewed", "dismissed"} else "review_required")
     values = {"moderation_status": moderation_status}
     if moderation_status == "rejected":
-        values["status"] = "removed"
-    return repo.update_listing(listing, values)
+        values["status"] = "deleted"
+    if values.get("status"):
+        _apply_listing_status_transition(listing, values["status"], moderator, reason=payload.resolution)
+    updated = repo.update_listing(listing, values)
+    repo.create_admin_action(
+        {
+            "admin_id": moderator.id,
+            "target_type": "listing",
+            "target_id": listing.id,
+            "action_type": "mark_report_action_taken" if report_status == "action_taken" else "dismiss_report",
+            "reason": payload.resolution,
+        }
+    )
+    return updated
 
 
 def apply_recommended_price(db: Session, listing_id: str, current_user: User) -> Listing:
@@ -509,6 +755,7 @@ def update_trade_transaction(
 def trade_dashboard(db: Session, current_user: User) -> dict:
     repo = TradeRepository(db)
     listings = list(repo.list_listings_by_seller(current_user.id))
+    favorites = list(repo.list_favorites_for_user(current_user.id))
     wanted_posts = list(repo.list_wanted_posts_by_buyer(current_user.id))
     matches = list(repo.list_matches_for_user(current_user.id))
     transactions = list(repo.list_transactions_for_user(current_user.id))
@@ -517,6 +764,7 @@ def trade_dashboard(db: Session, current_user: User) -> dict:
     feedback = list(repo.list_decision_feedback_for_user(current_user.id))
     return {
         "listings": listings,
+        "favorites": favorites,
         "wanted_posts": wanted_posts,
         "matches": matches,
         "transactions": transactions,
@@ -538,9 +786,11 @@ def moderation_summary(db: Session) -> dict:
 
 def admin_dashboard(db: Session) -> dict:
     repo = TradeRepository(db)
+    _ensure_trade_categories(db)
     listings = list(repo.list_all_listings())
     listing_reports = list(repo.list_listing_reports())
     user_reports = list(repo.list_user_reports())
+    settings = get_settings()
     return {
         "statistics": repo.marketplace_statistics(),
         "listings": listings,
@@ -552,6 +802,15 @@ def admin_dashboard(db: Session) -> dict:
             if listing.moderation_status == "review_required" or listing.risk_level == "high"
         ],
         "users": list(repo.list_users()),
+        "categories": list(repo.list_trade_categories()),
+        "ai_usage_logs": list(repo.list_ai_usage_logs()),
+        "admin_actions": list(repo.list_admin_actions()),
+        "ai_settings": {
+            "ai_trade_enabled": settings.ai_trade_enabled,
+            "ai_student_daily_limit": settings.ai_student_daily_limit,
+            "ai_staff_daily_limit": settings.ai_staff_daily_limit,
+            "ai_global_daily_limit": settings.ai_global_daily_limit,
+        },
     }
 
 
@@ -565,20 +824,42 @@ def admin_update_listing(
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
-    values = payload.model_dump(exclude_unset=True, exclude={"resolution"})
-    if values.get("status") == "removed" and "moderation_status" not in values:
+    values = payload.model_dump(exclude_unset=True, exclude={"resolution", "reason"})
+    if not (payload.reason or payload.resolution):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin actions require a reason.")
+    if values.get("status") == "deleted" and "moderation_status" not in values:
         values["moderation_status"] = "rejected"
+    if values.get("status"):
+        _apply_listing_status_transition(listing, values["status"], moderator, reason=payload.reason or payload.resolution)
     updated = repo.update_listing(listing, values)
+    if updated.status in {"hidden", "deleted", "sold"}:
+        repo.expire_pending_contact_requests(updated.id)
     if payload.resolution:
         now = datetime.now(UTC)
         for report in repo.list_reports_for_listing(listing.id):
-            if report.status == "open":
-                report.status = "resolved"
+            if report.status == "pending":
+                report.status = "action_taken" if updated.status in {"hidden", "deleted"} else "reviewed"
                 report.moderator_user_id = moderator.id
                 report.resolution = payload.resolution
                 report.reviewed_at = now
                 db.add(report)
         db.commit()
+    action_type = "change_category"
+    if updated.status == "hidden":
+        action_type = "hide_listing"
+    elif updated.status == "available":
+        action_type = "restore_listing"
+    elif updated.status == "deleted":
+        action_type = "delete_listing"
+    repo.create_admin_action(
+        {
+            "admin_id": moderator.id,
+            "target_type": "listing",
+            "target_id": listing.id,
+            "action_type": action_type,
+            "reason": payload.reason or payload.resolution,
+        }
+    )
     return updated
 
 
@@ -586,22 +867,151 @@ def admin_update_user_status(
     db: Session,
     user_id: str,
     payload: AdminUserStatusUpdate,
+    admin: User | None = None,
 ) -> User:
     repo = TradeRepository(db)
     user = repo.get_user_or_none(user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return repo.update_user(user, {"status": payload.status})
+    updated = repo.update_user(user, {"status": payload.status})
+    if payload.status in {"suspended", "banned"}:
+        for listing in repo.list_listings_by_seller(user.id):
+            if listing.status in {"available", "reserved"}:
+                _apply_listing_status_transition(listing, "hidden", admin, reason=payload.reason or f"User {payload.status}.")
+                repo.update_listing(
+                    listing,
+                    {
+                        "status": "hidden",
+                        "moderation_status": "review_required",
+                    },
+                )
+                repo.expire_pending_contact_requests(listing.id)
+    if admin is not None:
+        repo.create_admin_action(
+            {
+                "admin_id": admin.id,
+                "target_type": "user",
+                "target_id": user.id,
+                "action_type": "ban_user" if payload.status == "banned" else "suspend_user" if payload.status == "suspended" else "restore_user",
+                "reason": payload.reason,
+            }
+        )
+    return updated
 
 
-def _prepare_listing_values(values: dict, existing: Listing | None = None) -> dict:
+def admin_update_user_role(db: Session, user_id: str, payload: AdminUserRoleUpdate, admin: User) -> User:
+    repo = TradeRepository(db)
+    user = repo.get_user_or_none(user_id)
+    if user is None or user.profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    user.profile.app_role = AppRole(payload.app_role)
+    db.add(user.profile)
+    db.commit()
+    db.refresh(user.profile)
+    repo.create_admin_action(
+        {
+            "admin_id": admin.id,
+            "target_type": "user",
+            "target_id": user.id,
+            "action_type": "change_user_role",
+            "reason": payload.reason,
+        }
+    )
+    return repo.get_user_or_none(user.id) or user
+
+
+def list_admin_actions(db: Session):
+    return list(TradeRepository(db).list_admin_actions())
+
+
+def list_ai_usage_logs(db: Session):
+    return list(TradeRepository(db).list_ai_usage_logs())
+
+
+def list_trade_categories(db: Session):
+    _ensure_trade_categories(db)
+    return list(TradeRepository(db).list_trade_categories())
+
+
+def create_trade_category(db: Session, payload: TradeCategoryCreate, admin: User):
+    repo = TradeRepository(db)
+    slug = normalize_category(payload.slug) if payload.slug in TRADE_CATEGORIES else payload.slug.strip().lower().replace(" ", "_")
+    if not slug:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid category slug.")
+    if repo.get_trade_category_by_slug(slug) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Category already exists.")
+    category = repo.create_trade_category({**payload.model_dump(), "slug": slug})
+    repo.create_admin_action(
+        {
+            "admin_id": admin.id,
+            "target_type": "category",
+            "target_id": category.id,
+            "action_type": "change_category",
+            "reason": "Created category.",
+        }
+    )
+    return category
+
+
+def update_trade_category(db: Session, category_id: str, payload: TradeCategoryUpdate, admin: User):
+    repo = TradeRepository(db)
+    categories = list(repo.list_trade_categories())
+    category = next((item for item in categories if item.id == category_id), None)
+    if category is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found")
+    updated = repo.update_trade_category(category, payload.model_dump(exclude_unset=True))
+    repo.create_admin_action(
+        {
+            "admin_id": admin.id,
+            "target_type": "category",
+            "target_id": updated.id,
+            "action_type": "change_category",
+            "reason": "Updated category.",
+        }
+    )
+    return updated
+
+
+def get_ai_settings() -> dict:
+    settings = get_settings()
+    return {
+        "ai_trade_enabled": settings.ai_trade_enabled,
+        "ai_student_daily_limit": settings.ai_student_daily_limit,
+        "ai_staff_daily_limit": settings.ai_staff_daily_limit,
+        "ai_global_daily_limit": settings.ai_global_daily_limit,
+    }
+
+
+def update_ai_settings(payload: AISettingsUpdate) -> dict:
+    settings = get_settings()
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        if value is not None:
+            setattr(settings, key, value)
+    return get_ai_settings()
+
+
+def _prepare_listing_values(values: dict, existing: Listing | None = None, *, for_publish: bool = False) -> dict:
     prepared = dict(values)
+    if "condition" in prepared and "condition_label" not in prepared:
+        prepared["condition_label"] = prepared["condition"]
+    prepared.pop("condition", None)
+    if "pickup_location" in prepared and "pickup_area" not in prepared:
+        prepared["pickup_area"] = prepared["pickup_location"]
+    if "pickup_area" in prepared and "pickup_location" not in prepared:
+        prepared["pickup_location"] = prepared["pickup_area"]
     if "category" in prepared:
         prepared["category"] = normalize_category(prepared.get("category")) or "others"
     if "condition_label" in prepared:
         prepared["condition_label"] = normalize_condition(prepared.get("condition_label"))
+    if "pickup_location" in prepared:
+        prepared["pickup_location"] = normalize_pickup_location(prepared.get("pickup_location"))
+    if "pickup_area" in prepared:
+        prepared["pickup_area"] = normalize_pickup_location(prepared.get("pickup_area"))
     if "status" in prepared and prepared.get("status") is not None:
         prepared["status"] = normalize_listing_status(prepared.get("status")) or prepared.get("status")
+
+    if prepared.get("category", existing.category if existing else None) == "free_items":
+        prepared["price"] = 0
 
     contact_method = prepared.get("contact_method", existing.contact_method if existing else None)
     contact_value = prepared.get("contact_value", existing.contact_value if existing else None)
@@ -611,6 +1021,9 @@ def _prepare_listing_values(values: dict, existing: Listing | None = None) -> di
             detail="Contact method and contact value must be provided together.",
         )
 
+    if for_publish:
+        _validate_publish_ready(prepared, existing)
+
     scan_values = [
         prepared.get("title", existing.title if existing else None),
         prepared.get("description", existing.description if existing else None),
@@ -619,6 +1032,7 @@ def _prepare_listing_values(values: dict, existing: Listing | None = None) -> di
         prepared.get("brand", existing.brand if existing else None),
         prepared.get("model", existing.model if existing else None),
         prepared.get("condition_label", existing.condition_label if existing else None),
+        prepared.get("pickup_location", existing.pickup_location if existing else None),
     ]
     policy_scan = scan_listing_policy(*scan_values)
     if policy_scan.blocked:
@@ -634,8 +1048,164 @@ def _prepare_listing_values(values: dict, existing: Listing | None = None) -> di
         current_score = Decimal(str(prepared.get("risk_score") or (existing.risk_score if existing else 0) or 0))
         prepared["risk_score"] = max(current_score, Decimal("55"))
         prepared["risk_evidence"] = evidence
+        if for_publish and prepared["risk_level"] == "high":
+            prepared["status"] = "hidden"
+            prepared["hidden_at"] = datetime.now(UTC)
+            prepared["hidden_reason"] = "High-risk policy scan."
 
     return prepared
+
+
+def _validate_publish_ready(prepared: dict, existing: Listing | None = None) -> None:
+    title = prepared.get("title", existing.title if existing else None)
+    description = prepared.get("description", existing.description if existing else None)
+    category = prepared.get("category", existing.category if existing else None)
+    condition = prepared.get("condition_label", existing.condition_label if existing else None)
+    price = prepared.get("price", existing.price if existing else None)
+    pickup_location = prepared.get("pickup_location", existing.pickup_location if existing else None)
+    contact_method = prepared.get("contact_method", existing.contact_method if existing else None)
+    contact_value = prepared.get("contact_value", existing.contact_value if existing else None)
+    errors: list[str] = []
+    if not title or len(str(title).strip()) < 5:
+        errors.append("title")
+    if not description or len(str(description).strip()) < 10:
+        errors.append("description")
+    if not category:
+        errors.append("category")
+    if not condition:
+        errors.append("condition")
+    if price is None or Decimal(str(price)) < 0:
+        errors.append("price")
+    if not pickup_location:
+        errors.append("pickup_location")
+    if not contact_method or not contact_value:
+        errors.append("contact_method")
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Listing is missing required publish fields: {', '.join(errors)}.",
+        )
+
+
+def _ensure_profile_ready(user: User) -> None:
+    profile = user.profile
+    display_name = getattr(profile, "display_name", None) or getattr(profile, "full_name", None)
+    faculty = getattr(profile, "faculty", None)
+    location = getattr(profile, "college_or_location", None) or getattr(profile, "residential_college", None)
+    if not (display_name and faculty and location):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Complete your profile display name, faculty, and campus location before publishing a listing.",
+        )
+
+
+def _listing_payload_for_validation(listing: Listing) -> dict:
+    return {
+        "title": listing.title,
+        "description": listing.description,
+        "category": listing.category,
+        "item_name": listing.item_name,
+        "brand": listing.brand,
+        "model": listing.model,
+        "condition_label": listing.condition_label,
+        "price": float(listing.price),
+        "original_price": float(listing.original_price) if listing.original_price is not None else None,
+        "currency": listing.currency,
+        "pickup_location": listing.pickup_location or listing.pickup_area,
+        "pickup_area": listing.pickup_area or listing.pickup_location,
+        "pickup_note": listing.pickup_note,
+        "residential_college": listing.residential_college,
+        "contact_method": listing.contact_method,
+        "contact_value": listing.contact_value,
+    }
+
+
+def _contains_locked_sold_fields(values: dict) -> bool:
+    locked = {
+        "title",
+        "description",
+        "category",
+        "item_name",
+        "brand",
+        "model",
+        "condition_label",
+        "price",
+        "original_price",
+        "pickup_area",
+        "pickup_location",
+        "pickup_note",
+        "residential_college",
+    }
+    return bool(locked & set(values))
+
+
+def _apply_listing_status_transition(
+    listing: Listing,
+    next_status: str,
+    actor: User | None,
+    *,
+    reason: str | None = None,
+) -> None:
+    now = datetime.now(UTC)
+    if next_status == "hidden":
+        listing.hidden_at = now
+        listing.hidden_by = actor.id if actor else None
+        listing.hidden_reason = reason
+    elif next_status == "deleted":
+        listing.deleted_at = now
+        listing.deleted_by = actor.id if actor else None
+        listing.deleted_reason = reason
+    elif next_status in {"available", "reserved"}:
+        listing.hidden_at = None
+        listing.hidden_by = None
+        listing.hidden_reason = None
+
+
+def _can_view_listing(listing: Listing, viewer: User | None) -> bool:
+    if listing.status in {"available", "reserved", "sold"} and listing.moderation_status == "approved":
+        return True
+    if viewer is None:
+        return False
+    if listing.seller_id == viewer.id:
+        return True
+    role = getattr(getattr(viewer, "profile", None), "app_role", AppRole.STUDENT)
+    return role in {AppRole.MODERATOR, AppRole.ADMIN}
+
+
+def _viewer_fingerprint(request: Request | None, viewer: User | None) -> str:
+    if viewer is not None:
+        return f"user:{viewer.id}"
+    client_host = request.client.host if request and request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "") if request else ""
+    raw = f"{client_host}:{user_agent}"
+    return sha256(raw.encode("utf-8")).hexdigest()[:64]
+
+
+def _ensure_trade_categories(db: Session) -> None:
+    repo = TradeRepository(db)
+    if list(repo.list_trade_categories()):
+        return
+    labels = {
+        "textbooks_notes": "Textbooks & Notes",
+        "electronics": "Electronics",
+        "dorm_room": "Dorm & Room",
+        "kitchen_appliances": "Kitchen Appliances",
+        "furniture": "Furniture",
+        "clothing": "Clothing",
+        "sports_hobby": "Sports & Hobby",
+        "tickets_events": "Tickets & Events",
+        "free_items": "Free Items",
+        "others": "Others",
+    }
+    for index, slug in enumerate(TRADE_CATEGORIES, start=1):
+        repo.create_trade_category(
+            {
+                "slug": slug,
+                "label": labels[slug],
+                "sort_order": index * 10,
+                "is_active": True,
+            }
+        )
 
 
 def _refresh_matches_for_listing(db: Session, listing_id: str) -> None:
@@ -705,7 +1275,7 @@ def _record_completed_sale(db: Session, transaction: TradeTransaction) -> None:
             condition_label=listing.condition_label,
             sold_price=transaction.agreed_price,
             currency=transaction.currency,
-            location=listing.pickup_area,
+            location=listing.pickup_location or listing.pickup_area,
             residential_college=listing.residential_college,
             sold_at=transaction.completed_at or datetime.now(UTC),
             notes="Completed UM Nexus trade transaction.",

@@ -1,20 +1,28 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import asc, desc, false, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models import (
+    AdminAction,
     AgentOutput,
     AgentRun,
+    AISuggestion,
+    AIUsageLog,
     HistoricalSale,
     Listing,
     ListingEmbedding,
+    ListingFavorite,
     ListingImage,
     ListingReport,
+    ListingView,
     MediaAsset,
+    Notification,
+    TradeCategory,
     TradeDecisionFeedback,
     TradeContactRequest,
     TradeMatch,
@@ -47,6 +55,7 @@ class TradeRepository:
         min_price: float | None = None,
         max_price: float | None = None,
         pickup_area: str | None = None,
+        pickup_location: str | None = None,
         risk_level: str | None = None,
         sort: str = "newest",
         public_only: bool = True,
@@ -67,8 +76,9 @@ class TradeRepository:
             stmt = stmt.where(Listing.category == category)
         if condition:
             stmt = stmt.where(Listing.condition_label == condition)
-        if pickup_area:
-            stmt = stmt.where(Listing.pickup_area == pickup_area)
+        location = pickup_location or pickup_area
+        if location:
+            stmt = stmt.where(or_(Listing.pickup_location == location, Listing.pickup_area == location))
         if risk_level:
             stmt = stmt.where(Listing.risk_level == risk_level)
         if min_price is not None:
@@ -85,12 +95,14 @@ class TradeRepository:
                     func.lower(Listing.description).like(pattern),
                 )
             )
-        if sort == "price_asc":
+        if sort in {"price_asc", "price_low_high"}:
             stmt = stmt.order_by(asc(Listing.price), desc(Listing.created_at))
-        elif sort == "price_desc":
+        elif sort in {"price_desc", "price_high_low"}:
             stmt = stmt.order_by(desc(Listing.price), desc(Listing.created_at))
         elif sort == "risk":
             stmt = stmt.order_by(desc(Listing.risk_score), desc(Listing.created_at))
+        elif sort == "oldest":
+            stmt = stmt.order_by(asc(Listing.created_at))
         else:
             stmt = stmt.order_by(desc(Listing.created_at))
         return self.db.scalars(stmt).all()
@@ -147,6 +159,76 @@ class TradeRepository:
         self.db.commit()
         self.db.refresh(image)
         return image
+
+    def remove_listing_image(self, image: ListingImage) -> None:
+        self.db.delete(image)
+        self.db.commit()
+
+    def get_listing_image_or_none(self, image_id: str) -> ListingImage | None:
+        return self.db.get(ListingImage, image_id)
+
+    def create_favorite(self, user_id: str, listing_id: str) -> ListingFavorite:
+        favorite = ListingFavorite(user_id=user_id, listing_id=listing_id)
+        self.db.add(favorite)
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            existing = self.get_favorite_or_none(user_id, listing_id)
+            if existing is not None:
+                return existing
+            raise
+        return self.get_favorite_or_none(user_id, listing_id) or favorite
+
+    def get_favorite_or_none(self, user_id: str, listing_id: str) -> ListingFavorite | None:
+        stmt = (
+            select(ListingFavorite)
+            .options(selectinload(ListingFavorite.listing).selectinload(Listing.images))
+            .where(ListingFavorite.user_id == user_id, ListingFavorite.listing_id == listing_id)
+        )
+        return self.db.scalar(stmt)
+
+    def delete_favorite(self, favorite: ListingFavorite) -> None:
+        self.db.delete(favorite)
+        self.db.commit()
+
+    def list_favorites_for_user(self, user_id: str) -> Sequence[ListingFavorite]:
+        stmt = (
+            select(ListingFavorite)
+            .options(
+                selectinload(ListingFavorite.listing).selectinload(Listing.images),
+                selectinload(ListingFavorite.listing)
+                .selectinload(Listing.seller)
+                .selectinload(User.profile),
+            )
+            .where(ListingFavorite.user_id == user_id)
+            .order_by(desc(ListingFavorite.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
+    def record_listing_view(
+        self,
+        *,
+        listing: Listing,
+        viewer_fingerprint: str,
+        viewer_user_id: str | None = None,
+        viewed_on: date | None = None,
+    ) -> bool:
+        view = ListingView(
+            listing_id=listing.id,
+            viewer_user_id=viewer_user_id,
+            viewer_fingerprint=viewer_fingerprint,
+            viewed_on=viewed_on or datetime.now(UTC).date(),
+        )
+        self.db.add(view)
+        try:
+            listing.view_count = int(listing.view_count or 0) + 1
+            self.db.add(listing)
+            self.db.commit()
+            return True
+        except IntegrityError:
+            self.db.rollback()
+            return False
 
     def create_media_asset(self, values: dict) -> MediaAsset:
         media_asset = MediaAsset(**values)
@@ -335,6 +417,14 @@ class TradeRepository:
         stmt = select(func.count()).select_from(ListingReport).where(ListingReport.listing_id == listing_id)
         return int(self.db.scalar(stmt) or 0)
 
+    def count_pending_listing_reports_from_distinct_users(self, listing_id: str) -> int:
+        stmt = (
+            select(func.count(func.distinct(ListingReport.reporter_user_id)))
+            .select_from(ListingReport)
+            .where(ListingReport.listing_id == listing_id, ListingReport.status == "pending")
+        )
+        return int(self.db.scalar(stmt) or 0)
+
     def count_duplicate_image_hashes(self, listing_id: str) -> int:
         hashes_stmt = select(ListingImage.content_hash).where(
             ListingImage.listing_id == listing_id,
@@ -356,6 +446,14 @@ class TradeRepository:
         self.db.commit()
         self.db.refresh(report)
         return report
+
+    def get_pending_listing_report_by_user(self, listing_id: str, reporter_user_id: str) -> ListingReport | None:
+        stmt = select(ListingReport).where(
+            ListingReport.listing_id == listing_id,
+            ListingReport.reporter_user_id == reporter_user_id,
+            ListingReport.status == "pending",
+        )
+        return self.db.scalar(stmt)
 
     def list_listing_reports(self) -> Sequence[ListingReport]:
         stmt = select(ListingReport).order_by(desc(ListingReport.created_at))
@@ -395,6 +493,24 @@ class TradeRepository:
             TradeContactRequest.status.in_(("pending", "accepted")),
         )
         return self.db.scalar(stmt)
+
+    def expire_pending_contact_requests(self, listing_id: str, *, expired_at: datetime | None = None) -> int:
+        now = expired_at or datetime.now(UTC)
+        requests = list(
+            self.db.scalars(
+                select(TradeContactRequest).where(
+                    TradeContactRequest.listing_id == listing_id,
+                    TradeContactRequest.status == "pending",
+                )
+            ).all()
+        )
+        for contact_request in requests:
+            contact_request.status = "expired"
+            contact_request.expired_at = now
+            self.db.add(contact_request)
+        if requests:
+            self.db.commit()
+        return len(requests)
 
     def list_contact_requests_received(self, seller_id: str) -> Sequence[TradeContactRequest]:
         stmt = (
@@ -438,6 +554,14 @@ class TradeRepository:
         self.db.refresh(report)
         return report
 
+    def get_pending_user_report_by_user(self, reported_user_id: str, reporter_user_id: str) -> UserReport | None:
+        stmt = select(UserReport).where(
+            UserReport.reported_user_id == reported_user_id,
+            UserReport.reporter_user_id == reporter_user_id,
+            UserReport.status == "pending",
+        )
+        return self.db.scalar(stmt)
+
     def list_user_reports(self) -> Sequence[UserReport]:
         stmt = select(UserReport).order_by(desc(UserReport.created_at))
         return self.db.scalars(stmt).all()
@@ -462,6 +586,84 @@ class TradeRepository:
         self.db.refresh(user)
         return user
 
+    def create_notification(self, values: dict) -> Notification:
+        notification = Notification(**values)
+        self.db.add(notification)
+        self.db.commit()
+        self.db.refresh(notification)
+        return notification
+
+    def create_admin_action(self, values: dict) -> AdminAction:
+        action = AdminAction(**values)
+        self.db.add(action)
+        self.db.commit()
+        self.db.refresh(action)
+        return action
+
+    def list_admin_actions(self, limit: int = 100) -> Sequence[AdminAction]:
+        stmt = select(AdminAction).order_by(desc(AdminAction.created_at)).limit(limit)
+        return self.db.scalars(stmt).all()
+
+    def create_ai_usage_log(self, values: dict) -> AIUsageLog:
+        log = AIUsageLog(**values)
+        self.db.add(log)
+        self.db.commit()
+        self.db.refresh(log)
+        return log
+
+    def list_ai_usage_logs(self, limit: int = 100) -> Sequence[AIUsageLog]:
+        stmt = select(AIUsageLog).order_by(desc(AIUsageLog.created_at)).limit(limit)
+        return self.db.scalars(stmt).all()
+
+    def count_ai_usage_logs(
+        self,
+        *,
+        feature: str | None = None,
+        user_id: str | None = None,
+        statuses: tuple[str, ...] | None = None,
+        since: datetime | None = None,
+    ) -> int:
+        stmt = select(func.count()).select_from(AIUsageLog)
+        if feature:
+            stmt = stmt.where(AIUsageLog.feature == feature)
+        if user_id:
+            stmt = stmt.where(AIUsageLog.user_id == user_id)
+        if statuses:
+            stmt = stmt.where(AIUsageLog.request_status.in_(statuses))
+        if since:
+            stmt = stmt.where(AIUsageLog.created_at >= since)
+        return int(self.db.scalar(stmt) or 0)
+
+    def create_ai_suggestion(self, values: dict) -> AISuggestion:
+        suggestion = AISuggestion(**values)
+        self.db.add(suggestion)
+        self.db.commit()
+        self.db.refresh(suggestion)
+        return suggestion
+
+    def list_trade_categories(self) -> Sequence[TradeCategory]:
+        stmt = select(TradeCategory).order_by(asc(TradeCategory.sort_order), asc(TradeCategory.label))
+        return self.db.scalars(stmt).all()
+
+    def get_trade_category_by_slug(self, slug: str) -> TradeCategory | None:
+        stmt = select(TradeCategory).where(TradeCategory.slug == slug)
+        return self.db.scalar(stmt)
+
+    def create_trade_category(self, values: dict) -> TradeCategory:
+        category = TradeCategory(**values)
+        self.db.add(category)
+        self.db.commit()
+        self.db.refresh(category)
+        return category
+
+    def update_trade_category(self, category: TradeCategory, values: dict) -> TradeCategory:
+        for field_name, value in values.items():
+            setattr(category, field_name, value)
+        self.db.add(category)
+        self.db.commit()
+        self.db.refresh(category)
+        return category
+
     def list_moderation_listings(self) -> Sequence[Listing]:
         stmt = (
             select(Listing)
@@ -474,7 +676,7 @@ class TradeRepository:
                 or_(
                     Listing.moderation_status != "approved",
                     Listing.risk_level == "high",
-                    Listing.reports.any(ListingReport.status == "open"),
+                    Listing.reports.any(ListingReport.status == "pending"),
                 )
             )
             .order_by(desc(Listing.risk_score), desc(Listing.updated_at))
@@ -526,12 +728,22 @@ class TradeRepository:
         week_start = datetime.now(UTC) - timedelta(days=7)
         categories_stmt = (
             select(Listing.category, func.count(Listing.id))
-            .where(Listing.status == "available", Listing.moderation_status == "approved")
+            .where(Listing.status.in_(("available", "reserved")), Listing.moderation_status == "approved")
             .group_by(Listing.category)
             .order_by(desc(func.count(Listing.id)))
             .limit(6)
         )
         category_rows = self.db.execute(categories_stmt).all()
+        pickup_stmt = (
+            select(Listing.pickup_location, func.count(Listing.id))
+            .where(Listing.pickup_location.is_not(None))
+            .group_by(Listing.pickup_location)
+            .order_by(desc(func.count(Listing.id)))
+            .limit(6)
+        )
+        pickup_rows = self.db.execute(pickup_stmt).all()
+        ai_total = self.count_ai_usage_logs(feature="sell_agent_draft")
+        ai_failed = self.count_ai_usage_logs(feature="sell_agent_draft", statuses=("failed", "denied"))
         return {
             "total_users": int(self.db.scalar(select(func.count()).select_from(User)) or 0),
             "active_listings": int(
@@ -539,6 +751,9 @@ class TradeRepository:
                     select(func.count()).select_from(Listing).where(Listing.status == "available")
                 )
                 or 0
+            ),
+            "reserved_listings": int(
+                self.db.scalar(select(func.count()).select_from(Listing).where(Listing.status == "reserved")) or 0
             ),
             "sold_listings": int(
                 self.db.scalar(select(func.count()).select_from(Listing).where(Listing.status == "sold")) or 0
@@ -553,6 +768,24 @@ class TradeRepository:
                 {"category": str(category), "count": int(count)}
                 for category, count in category_rows
             ],
+            "most_popular_pickup_locations": [
+                {"pickup_location": str(location), "count": int(count)}
+                for location, count in pickup_rows
+                if location
+            ],
+            "contact_requests_sent": int(
+                self.db.scalar(select(func.count()).select_from(TradeContactRequest)) or 0
+            ),
+            "contact_requests_accepted": int(
+                self.db.scalar(
+                    select(func.count()).select_from(TradeContactRequest).where(TradeContactRequest.status == "accepted")
+                )
+                or 0
+            ),
+            "favorite_count": int(self.db.scalar(select(func.count()).select_from(ListingFavorite)) or 0),
+            "report_count": int(self.db.scalar(select(func.count()).select_from(ListingReport)) or 0),
+            "ai_generations_used": ai_total,
+            "ai_failure_rate": round(ai_failed / ai_total, 4) if ai_total else 0,
         }
 
     def upsert_listing_embedding(

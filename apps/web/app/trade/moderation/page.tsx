@@ -68,7 +68,7 @@ export default function TradeModerationPage() {
     setError(null);
     try {
       await reviewModerationListing(id, {
-        status: moderationStatus === "approved" ? "resolved" : "escalated",
+        status: moderationStatus === "approved" ? "reviewed" : "action_taken",
         moderation_status: moderationStatus,
         resolution: moderationStatus === "approved" ? "Listing reviewed and approved." : "Listing rejected by moderator.",
       });
@@ -80,14 +80,15 @@ export default function TradeModerationPage() {
     }
   }
 
-  async function setListingStatus(id: string, status: "available" | "hidden" | "removed") {
+  async function setListingStatus(id: string, status: "available" | "hidden" | "deleted") {
     setReviewingId(id);
     setError(null);
     try {
       await updateAdminListing(id, {
         status,
-        moderation_status: status === "removed" ? "rejected" : status === "available" ? "approved" : undefined,
+        moderation_status: status === "deleted" ? "rejected" : status === "available" ? "approved" : undefined,
         resolution: `Admin changed listing status to ${status}.`,
+        reason: `Admin changed listing status to ${status}.`,
       });
       await loadQueue();
     } catch (nextError) {
@@ -238,7 +239,7 @@ function AdminOverview({
 }: Readonly<{
   dashboard: AdminDashboard;
   disabledId: string | null;
-  onListingStatus: (id: string, status: "available" | "hidden" | "removed") => Promise<void>;
+  onListingStatus: (id: string, status: "available" | "hidden" | "deleted") => Promise<void>;
   onUserStatus: (id: string, status: "active" | "suspended" | "banned") => Promise<void>;
 }>) {
   const stats = dashboard.statistics;
@@ -290,10 +291,10 @@ function AdminOverview({
                     <button
                       className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-800 disabled:cursor-not-allowed disabled:text-slate-400"
                       disabled={disabledId === listing.id}
-                      onClick={() => void onListingStatus(listing.id, "removed")}
+                      onClick={() => void onListingStatus(listing.id, "deleted")}
                       type="button"
                     >
-                      Remove
+                      Delete
                     </button>
                   </div>
                 </div>

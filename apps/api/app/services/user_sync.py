@@ -36,7 +36,7 @@ def ensure_local_user(db: Session, token_claims: TokenClaims) -> User:
             id=str(token_claims.sub),
             email=normalized_email,
         )
-        user.profile = Profile(app_role=AppRole.STUDENT)
+        user.profile = Profile(app_role=AppRole.STUDENT, verified_um_email=True)
         db.add(user)
         db.commit()
         db.refresh(user)
@@ -46,7 +46,9 @@ def ensure_local_user(db: Session, token_claims: TokenClaims) -> User:
         user.email = normalized_email
 
     if user.profile is None:
-        user.profile = Profile(app_role=AppRole.STUDENT)
+        user.profile = Profile(app_role=AppRole.STUDENT, verified_um_email=True)
+    else:
+        user.profile.verified_um_email = True
 
     db.add(user)
     db.commit()
