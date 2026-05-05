@@ -1,82 +1,213 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  Bell,
+  Heart,
+  LayoutDashboard,
+  Megaphone,
+  PlusCircle,
+  Store,
+  User,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 type TradeShellProps = Readonly<{
   children: React.ReactNode;
   eyebrow?: string;
   title: string;
   description?: string;
+  action?: React.ReactNode;
 }>;
+
+type NavItem = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  kind?: "primary" | "secondary" | "normal" | "utility";
+};
+
+const mainNav: NavItem[] = [
+  { label: "Browse", href: "/trade", icon: Store },
+  { label: "Sell", href: "/trade/sell", icon: PlusCircle, kind: "primary" },
+  { label: "Wanted", href: "/trade/want", icon: Megaphone, kind: "secondary" },
+  { label: "Saved", href: "/trade/saved", icon: Heart },
+  { label: "My Trade", href: "/trade/dashboard", icon: LayoutDashboard },
+];
+
+const mobileNav: NavItem[] = [
+  { label: "Browse", href: "/trade", icon: Store },
+  { label: "Sell", href: "/trade/sell", icon: PlusCircle, kind: "primary" },
+  { label: "Wanted", href: "/trade/want", icon: Megaphone },
+  { label: "Saved", href: "/trade/saved", icon: Heart },
+  { label: "Me", href: "/trade/dashboard", icon: User },
+];
 
 export function TradeShell({
   children,
   eyebrow = "UM Nexus Trade",
   title,
   description,
+  action,
 }: TradeShellProps) {
+  const pathname = usePathname();
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-950">
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-5 py-8 sm:px-8">
-        <header className="flex flex-col gap-5 border-b border-slate-200 pb-6 md:flex-row md:items-end md:justify-between">
-          <div className="max-w-3xl">
+    <main className="min-h-screen overflow-x-hidden bg-slate-50 pb-24 text-slate-950 md:pb-0">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex h-16 w-full max-w-7xl min-w-0 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+          <Link className="flex min-w-0 items-center gap-2 font-semibold text-slate-950" href="/trade">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-700 text-white shadow-sm">
+              <Store aria-hidden="true" className="h-4 w-4" />
+            </span>
+            <span className="hidden text-base sm:inline">UM Nexus Trade</span>
+            <span className="truncate text-base sm:hidden">UM Nexus</span>
+          </Link>
+
+          <nav aria-label="Trade navigation" className="hidden items-center gap-2 lg:flex">
+            {mainNav.map((item) => (
+              <DesktopNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} />
+            ))}
+          </nav>
+
+          <div className="hidden items-center gap-2 md:flex">
+            <UtilityLink active={isActiveRoute(pathname, "/trade/notifications")} href="/trade/notifications" icon={Bell} label="Alerts" />
+            <UtilityLink active={isActiveRoute(pathname, "/trade/profile")} href="/trade/profile" icon={User} label="Profile" />
+          </div>
+
+          <div className="flex items-center gap-2 md:hidden">
+            <UtilityLink active={isActiveRoute(pathname, "/trade/notifications")} href="/trade/notifications" icon={Bell} label="Alerts" mobile />
+            <UtilityLink active={isActiveRoute(pathname, "/trade/profile")} href="/trade/profile" icon={User} label="Profile" mobile />
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+        <section className="flex min-w-0 flex-col gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0 max-w-3xl">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
               {eyebrow}
             </p>
-            <h1 className="mt-3 text-3xl font-semibold text-slate-950 sm:text-4xl">
+            <h1 className="mt-2 text-[2rem] font-semibold leading-tight text-slate-950 sm:text-4xl">
               {title}
             </h1>
             {description ? (
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600 sm:text-base">
                 {description}
               </p>
             ) : null}
           </div>
-          <nav className="flex flex-wrap gap-2">
-            <Link
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
-              href="/trade"
-            >
-              Marketplace
-            </Link>
-            <Link
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
-              href="/trade/dashboard"
-            >
-              My Trade
-            </Link>
-            <Link
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
-              href="/trade/saved"
-            >
-              Saved
-            </Link>
-            <Link
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
-              href="/trade/notifications"
-            >
-              Alerts
-            </Link>
-            <Link
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm transition hover:border-slate-500"
-              href="/trade/profile"
-            >
-              Profile
-            </Link>
-            <Link
-              className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
-              href="/trade/sell"
-            >
-              Sell
-            </Link>
-            <Link
-              className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-800"
-              href="/trade/want"
-            >
-              Wanted
-            </Link>
-          </nav>
-        </header>
+          {action ? <div className="shrink-0">{action}</div> : null}
+        </section>
         {children}
       </div>
+
+      <nav
+        aria-label="Mobile trade navigation"
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur md:hidden"
+      >
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+          {mobileNav.map((item) => (
+            <MobileNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} />
+          ))}
+        </div>
+      </nav>
     </main>
   );
+}
+
+function DesktopNavLink({ active, item }: Readonly<{ active: boolean; item: NavItem }>) {
+  const Icon = item.icon;
+  const className =
+    item.kind === "primary"
+      ? "border-emerald-700 bg-emerald-700 text-white shadow-sm hover:bg-emerald-800"
+      : active
+        ? "border-slate-900 bg-slate-900 text-white shadow-sm"
+        : item.kind === "secondary"
+          ? "border-slate-300 bg-white text-slate-800 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
+          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950";
+
+  return (
+    <Link
+      className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition ${className}`}
+      href={item.href}
+    >
+      <Icon aria-hidden="true" className="h-4 w-4" />
+      {item.label}
+    </Link>
+  );
+}
+
+function MobileNavLink({ active, item }: Readonly<{ active: boolean; item: NavItem }>) {
+  const Icon = item.icon;
+  const className =
+    item.kind === "primary"
+      ? "text-emerald-700"
+      : active
+        ? "text-slate-950"
+        : "text-slate-500";
+
+  return (
+    <Link
+      className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl px-2 text-[11px] font-semibold transition hover:bg-slate-50 ${className}`}
+      href={item.href}
+    >
+      <span
+        className={`flex h-8 w-10 items-center justify-center rounded-2xl ${
+          active || item.kind === "primary" ? "bg-emerald-50" : "bg-transparent"
+        }`}
+      >
+        <Icon aria-hidden="true" className="h-5 w-5" />
+      </span>
+      {item.label}
+    </Link>
+  );
+}
+
+function UtilityLink({
+  active,
+  href,
+  icon: Icon,
+  label,
+  mobile = false,
+}: Readonly<{
+  active: boolean;
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  mobile?: boolean;
+}>) {
+  return (
+    <Link
+      aria-label={label}
+      className={`relative inline-flex items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition ${
+        mobile ? "h-10 w-10 p-0" : "h-10 px-3"
+      } ${
+        active
+          ? "border-slate-900 bg-slate-900 text-white"
+          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+      }`}
+      href={href}
+    >
+      <Icon aria-hidden="true" className="h-4 w-4" />
+      {!mobile ? <span>{label}</span> : null}
+      {label === "Alerts" ? (
+        <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+      ) : null}
+    </Link>
+  );
+}
+
+function isActiveRoute(pathname: string, href: string): boolean {
+  if (href === "/trade") {
+    return pathname === "/trade" || /^\/trade\/[^/]+$/.test(pathname);
+  }
+  if (href === "/trade/want") {
+    return pathname.startsWith("/trade/want") || pathname.startsWith("/wanted-posts");
+  }
+  if (href === "/trade/dashboard") {
+    return pathname.startsWith("/trade/dashboard");
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
 }

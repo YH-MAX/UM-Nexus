@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Megaphone, Search } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -59,49 +60,72 @@ export default function WantPage() {
 
   return (
     <TradeShell
-      title="Create a wanted post"
-      description="Describe what you need, your budget, and your pickup preference so the engine can recommend products and help nearby sellers find you."
+      title="Looking for something?"
+      description="Post a wanted request and let UM students know what you need. Wanted is for buyer demand; listings are still the main marketplace."
     >
       {!user ? (
         <RequireAuthCard description="Sign in with your UM account before creating buyer wanted posts." />
       ) : null}
       {user ? (
-      <form
-        className="grid gap-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
-        onSubmit={handleSubmit}
-      >
-        <div className="grid gap-4 md:grid-cols-2">
-          <TextField label="Title" required value={form.title} onChange={(value) => updateField("title", value)} />
-          <TextField label="Desired item or model" value={form.desired_item_name} onChange={(value) => updateField("desired_item_name", value)} />
-          <SelectField label="Category" value={form.category} options={tradeCategories} onChange={(value) => updateField("category", value)} />
-          <TextField label="Maximum budget (MYR)" type="number" value={form.max_budget} onChange={(value) => updateField("max_budget", value)} />
-          <SelectField label="Preferred pickup area" value={form.preferred_pickup_area} options={pickupAreas} onChange={(value) => updateField("preferred_pickup_area", value)} />
-          <TextField label="Residential college / KK" value={form.residential_college} onChange={(value) => updateField("residential_college", value)} />
-        </div>
+        <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <form
+            className="trade-card grid gap-5 p-5"
+            onSubmit={handleSubmit}
+          >
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Wanted request</p>
+              <h2 className="mt-2 text-xl font-semibold text-slate-950">Tell sellers what you need</h2>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <TextField label="Title" required value={form.title} onChange={(value) => updateField("title", value)} />
+              <TextField label="Desired item or model" value={form.desired_item_name} onChange={(value) => updateField("desired_item_name", value)} />
+              <SelectField label="Category" value={form.category} options={tradeCategories} onChange={(value) => updateField("category", value)} />
+              <TextField label="Maximum budget (MYR)" type="number" value={form.max_budget} onChange={(value) => updateField("max_budget", value)} />
+              <SelectField label="Preferred pickup area" value={form.preferred_pickup_area} options={pickupAreas} onChange={(value) => updateField("preferred_pickup_area", value)} />
+              <TextField label="Residential college / KK" value={form.residential_college} onChange={(value) => updateField("residential_college", value)} />
+            </div>
 
-        <label className="grid gap-2">
-          <span className="text-sm font-semibold text-slate-800">Need details, urgency, and acceptable alternatives</span>
-          <textarea
-            className="min-h-28 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-600"
-            value={form.description}
-            onChange={(event) => updateField("description", event.target.value)}
-          />
-        </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-semibold text-slate-800">Need details, urgency, and acceptable alternatives</span>
+              <textarea
+                className="trade-input min-h-32"
+                value={form.description}
+                onChange={(event) => updateField("description", event.target.value)}
+              />
+            </label>
 
-        {error ? (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-            {error}
-          </p>
-        ) : null}
+            {error ? (
+              <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {error}
+              </p>
+            ) : null}
 
-        <button
-          className="w-full rounded-lg bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400 md:w-fit"
-          disabled={isSubmitting}
-          type="submit"
-        >
-          {isSubmitting ? "Creating..." : "Create wanted post"}
-        </button>
-      </form>
+            <button
+              className="trade-button-primary w-full md:w-fit"
+              disabled={isSubmitting}
+              type="submit"
+            >
+              <Megaphone aria-hidden="true" className="h-4 w-4" />
+              {isSubmitting ? "Creating..." : "Create wanted post"}
+            </button>
+          </form>
+
+          <aside className="trade-card h-fit p-5">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+              <Search aria-hidden="true" className="h-5 w-5" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-slate-950">Good examples</h2>
+            <div className="mt-4 grid gap-3 text-sm text-slate-700">
+              {[
+                "Looking for a used monitor under RM200",
+                "Need WIA2005 textbook",
+                "Looking for a rice cooker near KK12",
+              ].map((example) => (
+                <p className="rounded-2xl border border-slate-200 bg-slate-50 p-3" key={example}>{example}</p>
+              ))}
+            </div>
+          </aside>
+        </section>
       ) : null}
     </TradeShell>
   );
@@ -124,7 +148,7 @@ function TextField({
     <label className="grid gap-2">
       <span className="text-sm font-semibold text-slate-800">{label}</span>
       <input
-        className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-600"
+        className="trade-input"
         min={type === "number" ? "1" : undefined}
         required={required}
         step={type === "number" ? "0.01" : undefined}
@@ -151,7 +175,7 @@ function SelectField({
     <label className="grid gap-2">
       <span className="text-sm font-semibold text-slate-800">{label}</span>
       <select
-        className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-600"
+        className="trade-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >

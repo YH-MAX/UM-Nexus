@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { Eye, EyeOff, ShieldCheck } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import {
@@ -36,6 +37,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   const isSignup = mode === "signup";
 
@@ -115,6 +117,10 @@ export function AuthForm({ mode }: AuthFormProps) {
             ? "Use your UM email to access the platform."
             : "Sign in with your University of Malaya account."}
         </p>
+        <div className="mt-4 flex gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+          <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>UM-only access keeps buying, selling, and contact requests inside the campus community.</p>
+        </div>
       </div>
 
       <form className="space-y-4" onSubmit={handleSubmit}>
@@ -128,19 +134,30 @@ export function AuthForm({ mode }: AuthFormProps) {
             placeholder="you@siswa.um.edu.my"
             required
           />
+          <span className="text-xs text-slate-500">Use your @siswa.um.edu.my or @um.edu.my email.</span>
         </label>
 
         <label className="block space-y-2">
           <span className="text-sm font-medium text-slate-700">Password</span>
-          <input
-            className="w-full rounded-2xl border border-slate-300 px-4 py-3 outline-none transition focus:border-slate-500"
-            type="password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="Enter your password"
-            minLength={8}
-            required
-          />
+          <div className="relative">
+            <input
+              className="w-full rounded-2xl border border-slate-300 px-4 py-3 pr-12 outline-none transition focus:border-slate-500"
+              type={isPasswordVisible ? "text" : "password"}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Enter your password"
+              minLength={8}
+              required
+            />
+            <button
+              aria-label={isPasswordVisible ? "Hide password" : "Show password"}
+              className="absolute right-3 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+              onClick={() => setIsPasswordVisible((current) => !current)}
+              type="button"
+            >
+              {isPasswordVisible ? <EyeOff aria-hidden="true" className="h-4 w-4" /> : <Eye aria-hidden="true" className="h-4 w-4" />}
+            </button>
+          </div>
         </label>
 
         {error ? (

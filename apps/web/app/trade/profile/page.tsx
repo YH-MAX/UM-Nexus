@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ShieldCheck, UserRound } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -114,11 +115,17 @@ export default function TradeProfilePage() {
       {!user ? <RequireAuthCard description="Sign in with your UM account to manage your trade profile." /> : null}
 
       {user && isLoading ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">Loading profile...</div>
+        <div className="trade-card p-5 text-sm text-slate-600">Loading profile...</div>
       ) : user ? (
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
-            <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-5">
+            {!isProfileComplete(profile) ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+                Complete your profile to publish listings and contact sellers.
+              </div>
+            ) : null}
+            <div className="trade-card p-5">
+              <div className="grid gap-4 sm:grid-cols-2">
               <TextField
                 label="Display name"
                 value={form.display_name}
@@ -132,7 +139,7 @@ export default function TradeProfilePage() {
               <label className="grid gap-2">
                 <span className="text-sm font-semibold text-slate-800">Campus location</span>
                 <select
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+                  className="trade-input"
                   value={form.college_or_location}
                   onChange={(event) => setForm((current) => ({ ...current, college_or_location: event.target.value }))}
                 >
@@ -147,7 +154,7 @@ export default function TradeProfilePage() {
               <label className="grid gap-2">
                 <span className="text-sm font-semibold text-slate-800">Preferred contact</span>
                 <select
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+                  className="trade-input"
                   value={form.contact_preference}
                   onChange={(event) => setForm((current) => ({ ...current, contact_preference: event.target.value }))}
                 >
@@ -166,23 +173,25 @@ export default function TradeProfilePage() {
               <label className="grid gap-2 sm:col-span-2">
                 <span className="text-sm font-semibold text-slate-800">Bio</span>
                 <textarea
-                  className="min-h-28 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+                  className="trade-input min-h-28"
                   value={form.bio}
                   onChange={(event) => setForm((current) => ({ ...current, bio: event.target.value }))}
                 />
               </label>
             </div>
             <button
-              className="mt-5 rounded-lg bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="trade-button-primary mt-5"
               disabled={isSaving}
               onClick={() => void saveProfile()}
               type="button"
             >
               {isSaving ? "Saving..." : "Save profile"}
             </button>
+            </div>
           </div>
 
-          <aside className="h-fit rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+          <aside className="grid h-fit gap-5">
+          <section className="trade-card p-5">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-slate-950">Launch readiness</h2>
               <StatusPill tone={isProfileComplete(profile) ? "good" : "warn"}>
@@ -195,6 +204,21 @@ export default function TradeProfilePage() {
               <CheckRow label="Faculty" done={Boolean(profile?.faculty?.trim())} />
               <CheckRow label="Campus location" done={Boolean((profile?.college_or_location || profile?.residential_college)?.trim())} />
             </div>
+          </section>
+          <section className="trade-card p-5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+              <UserRound aria-hidden="true" className="h-6 w-6" />
+            </div>
+            <h2 className="mt-4 text-lg font-semibold text-slate-950">Public seller preview</h2>
+            <p className="mt-2 text-sm font-semibold text-slate-900">{form.display_name || "Your display name"}</p>
+            <p className="mt-1 text-sm text-slate-600">{form.faculty || "Faculty"} · {form.college_or_location || "Campus location"}</p>
+            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+              <div className="flex gap-2">
+                <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>Your contact details are only shared after you accept a buyer&apos;s request.</p>
+              </div>
+            </div>
+          </section>
           </aside>
         </section>
       ) : null}
@@ -215,7 +239,7 @@ function TextField({
     <label className="grid gap-2">
       <span className="text-sm font-semibold text-slate-800">{label}</span>
       <input
-        className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
+        className="trade-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />

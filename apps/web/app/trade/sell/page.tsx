@@ -14,13 +14,16 @@ import {
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
+import { SafetyNotice } from "@/components/trade/safety-notice";
 import { StatusPill } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   conditionOptions,
   contactMethods,
   createListing,
+  formatCategory,
   formatMoney,
+  formatPickupLocation,
   generateSellAgentDraft,
   getCurrentUser,
   getTradeResultStatus,
@@ -472,7 +475,7 @@ export default function SellPage() {
   return (
     <TradeShell
       title="Sell an item"
-      description="Create a campus listing manually, then use AI only when you want draft help."
+      description="Create a campus listing manually first. AI is optional help for title, category, description, and fair price guidance."
     >
       {error ? (
         <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
@@ -490,26 +493,14 @@ export default function SellPage() {
       ) : null}
 
       {user ? (
-        <div className="space-y-5">
-          <WorkflowProgress steps={workflowSteps} />
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
+          <div className="grid gap-5">
+            <WorkflowProgress steps={workflowSteps} />
 
-          {!profileReady ? <ProfileRequiredPanel /> : null}
+            {!profileReady ? <ProfileRequiredPanel /> : null}
 
-          <ManualListingPanel
-            disabled={isBusy || !profileReady}
-            draft={editableDraft}
-            imageCount={images.length}
-            isPublishing={isPublishing}
-            isSavingDraft={isSavingDraft}
-            onPublish={handlePublishManual}
-            onSaveDraft={handleSaveManualDraft}
-            onUpdateDraftField={updateDraftField}
-          />
-
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_430px]">
             <PhotoUploadPanel
               cameraInputRef={cameraInputRef}
-              className="order-1 lg:col-start-1 lg:row-start-1"
               disabled={isBusy}
               fileInputRef={fileInputRef}
               images={images}
@@ -517,20 +508,15 @@ export default function SellPage() {
               onRemoveImage={removeImage}
             />
 
-            <DraftReviewPanel
-              className="order-2 lg:col-start-2 lg:row-span-2 lg:row-start-1"
-              draft={draft}
-              editableDraft={editableDraft}
-              isGenerating={isGenerating}
+            <ManualListingPanel
+              disabled={isBusy || !profileReady}
+              draft={editableDraft}
+              imageCount={images.length}
               isPublishing={isPublishing}
-              onApplyPriceOption={applyPriceOption}
-              onGenerateDraft={handleGenerateDraft}
-              onOpenListing={() => (publishedListingId ? router.push(`/trade/${publishedListingId}`) : undefined)}
-              onPublish={handlePublish}
+              isSavingDraft={isSavingDraft}
+              onPublish={handlePublishManual}
+              onSaveDraft={handleSaveManualDraft}
               onUpdateDraftField={updateDraftField}
-              publishPhase={publishPhase}
-              publishedListingId={publishedListingId}
-              selectedPriceType={selectedPriceType}
             />
 
             <AgentConversationPanel
@@ -557,6 +543,25 @@ export default function SellPage() {
               setFreeText={setFreeText}
             />
           </div>
+
+          <aside className="grid gap-5 lg:sticky lg:top-24">
+            <ListingPreviewPanel draft={editableDraft} images={images} />
+            <SafetyNotice />
+            <DraftReviewPanel
+              draft={draft}
+              editableDraft={editableDraft}
+              isGenerating={isGenerating}
+              isPublishing={isPublishing}
+              onApplyPriceOption={applyPriceOption}
+              onGenerateDraft={handleGenerateDraft}
+              onOpenListing={() => (publishedListingId ? router.push(`/trade/${publishedListingId}`) : undefined)}
+              onPublish={handlePublish}
+              onUpdateDraftField={updateDraftField}
+              publishPhase={publishPhase}
+              publishedListingId={publishedListingId}
+              selectedPriceType={selectedPriceType}
+            />
+          </aside>
         </div>
       ) : null}
     </TradeShell>
@@ -584,6 +589,56 @@ function ProfileRequiredPanel() {
   );
 }
 
+function ListingPreviewPanel({
+  draft,
+  images,
+}: Readonly<{
+  draft: ListingPayload;
+  images: PreviewFile[];
+}>) {
+  const cover = images[0];
+  const condition = draft.condition_label ?? draft.condition ?? "good";
+  const pickup = draft.pickup_location ?? draft.pickup_area ?? "kk1";
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="relative flex aspect-[4/3] items-center justify-center bg-slate-100">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img alt="Listing preview" className="h-full w-full object-cover" src={cover.previewUrl} />
+        ) : (
+          <div className="px-6 text-center text-sm font-semibold text-slate-500">
+            Your first photo becomes the cover image.
+          </div>
+        )}
+        <div className="absolute left-3 top-3">
+          <StatusPill tone="available">Preview</StatusPill>
+        </div>
+      </div>
+      <div className="space-y-3 p-5">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Live listing preview</p>
+          <h2 className="mt-2 line-clamp-2 text-lg font-semibold text-slate-950">
+            {draft.title.trim() || "Item title"}
+          </h2>
+          <p className="mt-2 text-2xl font-bold text-emerald-800">
+            {formatMoney(draft.category === "free_items" ? 0 : draft.price, draft.currency)}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600">
+          <p className="font-medium text-slate-800">
+            {formatCategory(draft.category || "others")} · {condition.replaceAll("_", " ")}
+          </p>
+          <p className="mt-1">Pickup: {formatPickupLocation(pickup)}</p>
+        </div>
+        <p className="line-clamp-3 text-sm leading-6 text-slate-600">
+          {draft.description?.trim() || "Write a short, honest description so buyers can decide quickly."}
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function ManualListingPanel({
   disabled,
   draft,
@@ -604,7 +659,7 @@ function ManualListingPanel({
   onUpdateDraftField: (field: keyof ListingPayload, value: string | number | undefined) => void;
 }>) {
   return (
-    <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Manual listing</p>
@@ -699,20 +754,20 @@ function ManualListingPanel({
 
       <div className="mt-5 flex flex-wrap gap-3">
         <button
-          className="rounded-lg border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 transition hover:border-emerald-500 disabled:cursor-not-allowed disabled:text-slate-400"
+          className="trade-button-secondary"
           disabled={disabled || isSavingDraft}
           onClick={onSaveDraft}
           type="button"
         >
-          {isSavingDraft ? "Saving..." : "Save draft"}
+          {isSavingDraft ? "Saving..." : "Save Draft"}
         </button>
         <button
-          className="rounded-lg bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="trade-button-primary"
           disabled={disabled || isPublishing}
           onClick={onPublish}
           type="button"
         >
-          {isPublishing ? "Publishing..." : "Publish manually"}
+          {isPublishing ? "Publishing..." : "Publish Listing"}
         </button>
       </div>
     </section>

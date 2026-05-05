@@ -847,6 +847,41 @@ export function formatMoney(value: number | null | undefined, currency = "MYR") 
   }).format(value);
 }
 
+export function formatRelativeTime(value: string | null | undefined): string {
+  if (!value) {
+    return "Recently";
+  }
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return "Recently";
+  }
+  const seconds = Math.max(1, Math.floor((Date.now() - timestamp) / 1000));
+  const units: Array<[Intl.RelativeTimeFormatUnit, number]> = [
+    ["year", 60 * 60 * 24 * 365],
+    ["month", 60 * 60 * 24 * 30],
+    ["week", 60 * 60 * 24 * 7],
+    ["day", 60 * 60 * 24],
+    ["hour", 60 * 60],
+    ["minute", 60],
+  ];
+  const formatter = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
+  for (const [unit, unitSeconds] of units) {
+    if (seconds >= unitSeconds) {
+      return formatter.format(-Math.floor(seconds / unitSeconds), unit);
+    }
+  }
+  return "Just now";
+}
+
+export function getSellerDisplayName(listing: Pick<Listing, "seller">): string {
+  return (
+    listing.seller?.profile?.display_name ??
+    listing.seller?.profile?.full_name ??
+    listing.seller?.username ??
+    "UM student"
+  );
+}
+
 export function isProfileComplete(profile: CurrentProfile | null | undefined): boolean {
   return Boolean(
     (profile?.display_name || profile?.full_name)?.trim() &&

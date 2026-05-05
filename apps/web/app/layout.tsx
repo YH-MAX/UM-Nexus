@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
 import type { Viewport } from "next";
+import { Geist } from "next/font/google";
 
 import { Providers } from "@/app/providers";
 
 import "./globals.css";
+
+const geistSans = Geist({
+  subsets: ["latin"],
+  variable: "--font-geist-sans",
+});
 
 export const metadata: Metadata = {
   applicationName: "UM Nexus",
@@ -32,7 +38,7 @@ type RootLayoutProps = Readonly<{
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
+    <html className={geistSans.variable} lang="en">
       <body className="min-h-screen antialiased">
         <Providers>{children}</Providers>
       </body>

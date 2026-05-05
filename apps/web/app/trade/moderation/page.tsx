@@ -25,11 +25,21 @@ import {
   type ModerationSummary,
 } from "@/lib/trade/api";
 
+type ModerationTab = "reports" | "high_risk" | "hidden" | "recent_actions";
+
+const moderationTabs: Array<{ id: ModerationTab; label: string }> = [
+  { id: "reports", label: "Reports" },
+  { id: "high_risk", label: "High-risk listings" },
+  { id: "hidden", label: "Hidden listings" },
+  { id: "recent_actions", label: "Recent actions" },
+];
+
 export default function TradeModerationPage() {
   const { isLoading: isAuthLoading, user } = useAuth();
   const [items, setItems] = useState<ModerationListing[]>([]);
   const [summary, setSummary] = useState<ModerationSummary | null>(null);
   const [adminDashboard, setAdminDashboard] = useState<AdminDashboard | null>(null);
+  const [activeTab, setActiveTab] = useState<ModerationTab>("reports");
   const [isLoading, setIsLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -142,6 +152,64 @@ export default function TradeModerationPage() {
         </section>
       ) : user ? (
         <section className="grid gap-5">
+          <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+            {moderationTabs.map((tab) => (
+              <button
+                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === tab.id ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                }`}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          {activeTab === "recent_actions" && adminDashboard ? (
+            <LogPanel
+              title="Recent actions"
+              rows={adminDashboard.admin_actions.slice(0, 12).map((action) => ({
+                id: action.id,
+                primary: `${action.action_type} · ${action.target_type}`,
+                secondary: action.reason ?? action.target_id,
+              }))}
+            />
+          ) : null}
+          {activeTab === "hidden" && adminDashboard ? (
+            <div className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-950">Hidden listings</h2>
+              <div className="mt-4 grid gap-3">
+                {adminDashboard.listings.filter((listing) => listing.status === "hidden").length === 0 ? (
+                  <p className="text-sm text-slate-600">No hidden listings.</p>
+                ) : (
+                  adminDashboard.listings
+                    .filter((listing) => listing.status === "hidden")
+                    .map((listing) => (
+                      <div className="rounded-lg border border-slate-200 p-4" key={listing.id}>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <StatusPill tone="hidden">hidden</StatusPill>
+                            <p className="mt-2 font-semibold text-slate-950">{listing.title}</p>
+                            <p className="mt-1 text-sm text-slate-600">{formatMoney(listing.price, listing.currency)}</p>
+                          </div>
+                          <button
+                            className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                            disabled={reviewingId === listing.id}
+                            onClick={() => void setListingStatus(listing.id, "available")}
+                            type="button"
+                          >
+                            Restore
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                )}
+              </div>
+            </div>
+          ) : null}
+          {activeTab !== "recent_actions" && activeTab !== "hidden" ? (
+          <>
           {adminDashboard ? (
             <AdminOverview
               dashboard={adminDashboard}
@@ -222,6 +290,8 @@ export default function TradeModerationPage() {
               </div>
             </article>
           ))}
+          </>
+          ) : null}
         </section>
       ) : null}
     </TradeShell>

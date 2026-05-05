@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Bell, CheckCheck, ExternalLink } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -85,33 +86,37 @@ export default function TradeNotificationsPage() {
       {!user ? <RequireAuthCard description="Sign in with your UM account to view trade alerts." /> : null}
 
       {user && isLoading ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">Loading alerts...</div>
+        <div className="trade-card p-5 text-sm text-slate-600">Loading alerts...</div>
       ) : user ? (
-        <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+        <section className="trade-card p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                <Bell aria-hidden="true" className="h-5 w-5" />
+              </div>
               <h2 className="text-lg font-semibold text-slate-950">Inbox</h2>
               <StatusPill tone={unreadCount > 0 ? "warn" : "good"}>{unreadCount} unread</StatusPill>
             </div>
             <button
-              className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-emerald-500 disabled:cursor-not-allowed disabled:text-slate-400"
+              className="trade-button-secondary"
               disabled={isUpdating || unreadCount === 0}
               onClick={() => void readAll()}
               type="button"
             >
+              <CheckCheck aria-hidden="true" className="h-4 w-4" />
               Mark all read
             </button>
           </div>
 
           <div className="mt-5 grid gap-3">
             {notifications.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+              <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
                 No alerts yet.
               </p>
             ) : (
               notifications.map((notification) => (
                 <article
-                  className={`rounded-lg border p-4 ${
+                  className={`rounded-2xl border p-4 ${
                     notification.is_read ? "border-slate-200 bg-white" : "border-emerald-200 bg-emerald-50"
                   }`}
                   key={notification.id}
@@ -133,18 +138,20 @@ export default function TradeNotificationsPage() {
                     <div className="flex shrink-0 flex-wrap gap-2">
                       {notification.action_url ? (
                         <Link
-                          className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                          className="trade-button-primary bg-slate-950 hover:bg-slate-800"
                           href={notification.action_url}
                         >
+                          <ExternalLink aria-hidden="true" className="h-4 w-4" />
                           Open
                         </Link>
                       ) : null}
                       <button
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 transition hover:border-emerald-500 disabled:cursor-not-allowed disabled:text-slate-400"
+                        className="trade-button-secondary"
                         disabled={isUpdating || notification.is_read}
                         onClick={() => void readOne(notification)}
                         type="button"
                       >
+                        <CheckCheck aria-hidden="true" className="h-4 w-4" />
                         Mark read
                       </button>
                     </div>

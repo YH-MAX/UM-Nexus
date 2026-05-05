@@ -1,16 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import {
+  BellRing,
+  Flag,
+  Heart,
+  MapPin,
+  MessageCircle,
+  Pencil,
+  ShieldCheck,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
 import { MatchSuggestions } from "@/components/trade/match-suggestions";
-import { StatusPill } from "@/components/trade/status-pill";
+import { PriceText } from "@/components/trade/price-text";
+import { SafetyNotice } from "@/components/trade/safety-notice";
+import { StatusPill, statusTone } from "@/components/trade/status-pill";
 import { TradeResultCard } from "@/components/trade/trade-result-card";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
-  applyRecommendedPrice,
   addFavorite,
+  applyRecommendedPrice,
   contactMatch,
   contactMethods,
   createContactRequest,
@@ -19,9 +32,11 @@ import {
   formatCategory,
   formatMoney,
   formatPickupLocation,
+  formatRelativeTime,
   getFavorites,
   getListing,
   getListingMatches,
+  getSellerDisplayName,
   getTradeResultStatus,
   publishListing,
   removeFavorite,
@@ -29,7 +44,6 @@ import {
   reportUser,
   simulateListingPrice,
   submitDecisionFeedback,
-  tradeSafetyMessage,
   updateListingStatus,
   type Listing,
   type PriceSimulation,
@@ -59,9 +73,6 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   });
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const primaryImage =
-    listing?.images.find((image) => image.is_primary) ?? listing?.images[0] ?? null;
-  const galleryImages = listing?.images.filter((image) => image.id !== primaryImage?.id) ?? [];
 
   const loadData = useCallback(async () => {
     const [nextListing, nextResult, nextMatches] = await Promise.all([
@@ -76,6 +87,8 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     if (user) {
       const favorites = await getFavorites().catch(() => []);
       setIsSaved(favorites.some((favorite) => favorite.listing_id === listingId));
+    } else {
+      setIsSaved(false);
     }
   }, [listingId, user]);
 
@@ -113,6 +126,19 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     return () => window.clearTimeout(timer);
   }, [loadData, resultStatus?.status]);
 
+  async function runAction(action: () => Promise<void>, fallback: string) {
+    setIsActing(true);
+    setError(null);
+    setActionNotice(null);
+    try {
+      await action();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : fallback);
+    } finally {
+      setIsActing(false);
+    }
+  }
+
   async function handleEnrich() {
     setIsEnriching(true);
     setError(null);
@@ -137,67 +163,23 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   }
 
   async function handleApplyPrice() {
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
+    await runAction(async () => {
       const updated = await applyRecommendedPrice(listingId);
       setListing(updated);
       setActionNotice("Recommended price applied to this listing.");
       await loadData();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to apply recommended price.");
-    } finally {
-      setIsActing(false);
-    }
-  }
-
-  async function handleReportListing() {
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
-      await reportListing(listingId, {
-        report_type: "scam_suspicion",
-        reason: "Reported from listing detail for moderator review.",
-      });
-      setActionNotice("Report submitted for moderator review.");
-      await loadData();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to report listing.");
-    } finally {
-      setIsActing(false);
-    }
-  }
-
-  async function handleReportSeller() {
-    if (!listing) {
-      return;
-    }
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
-      await reportUser(listing.seller_id, {
-        report_type: "unsafe_transaction",
-        reason: "Reported from listing detail for admin review.",
-      });
-      setActionNotice("Seller report submitted for admin review.");
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to report this seller.");
-    } finally {
-      setIsActing(false);
-    }
+    }, "Unable to apply recommended price.");
   }
 
   async function handleFavorite() {
     if (!listing) {
       return;
     }
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
+    if (!user) {
+      setActionNotice("Sign in with your UM account to save listings.");
+      return;
+    }
+    await runAction(async () => {
       if (isSaved) {
         await removeFavorite(listing.id);
         setIsSaved(false);
@@ -207,21 +189,38 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
         setIsSaved(true);
         setActionNotice("Listing saved.");
       }
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to update saved listing.");
-    } finally {
-      setIsActing(false);
+    }, "Unable to update saved listing.");
+  }
+
+  async function handleReportListing() {
+    await runAction(async () => {
+      await reportListing(listingId, {
+        report_type: "scam_suspicion",
+        reason: "Reported from listing detail for moderator review.",
+      });
+      setActionNotice("Report submitted for moderator review.");
+      await loadData();
+    }, "Unable to report listing.");
+  }
+
+  async function handleReportSeller() {
+    if (!listing) {
+      return;
     }
+    await runAction(async () => {
+      await reportUser(listing.seller_id, {
+        report_type: "unsafe_transaction",
+        reason: "Reported from listing detail for admin review.",
+      });
+      setActionNotice("Seller report submitted for admin review.");
+    }, "Unable to report this seller.");
   }
 
   async function handleListingStatus(status: "available" | "reserved" | "sold" | "hidden" | "deleted") {
     if (!listing) {
       return;
     }
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
+    await runAction(async () => {
       const updated =
         status === "available" && listing.status === "draft"
           ? await publishListing(listing.id)
@@ -231,11 +230,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       setListing(updated);
       setActionNotice(`Listing marked ${updated.status}.`);
       await loadData();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to update listing status.");
-    } finally {
-      setIsActing(false);
-    }
+    }, "Unable to update listing status.");
   }
 
   async function handleContactRequest() {
@@ -246,21 +241,14 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       setError("Enter your Telegram or WhatsApp contact before sending the request.");
       return;
     }
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
+    await runAction(async () => {
       await createContactRequest(listing.id, {
         message: contactDraft.message.trim() || undefined,
         buyer_contact_method: contactDraft.buyer_contact_method,
         buyer_contact_value: contactDraft.buyer_contact_value.trim(),
       });
-      setActionNotice("Contact request sent. The seller can accept or reject it from their dashboard.");
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to send contact request.");
-    } finally {
-      setIsActing(false);
-    }
+      setActionNotice("Contact request sent. The seller can accept or reject it from My Trade.");
+    }, "Unable to send contact request.");
   }
 
   async function handleContactTopMatch() {
@@ -268,20 +256,13 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     if (!topMatch) {
       return;
     }
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
+    await runAction(async () => {
       await contactMatch(topMatch.id, {
         message: "I am interested in this AI-ranked campus resale match.",
       });
       setActionNotice("Match contacted and transaction intent recorded.");
       await loadData();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to contact this match.");
-    } finally {
-      setIsActing(false);
-    }
+    }, "Unable to contact this match.");
   }
 
   async function handleSimulatePrice() {
@@ -290,26 +271,16 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       setError("Enter a valid proposed price.");
       return;
     }
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
+    await runAction(async () => {
       setSimulation(await simulateListingPrice(listingId, proposedPrice));
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to simulate this price.");
-    } finally {
-      setIsActing(false);
-    }
+    }, "Unable to simulate this price.");
   }
 
   async function handleFeedback(
     feedbackType: "accepted_price" | "rejected_price" | "changed_price" | "ignored_recommendation",
   ) {
     const proposedPrice = Number(simulationPrice);
-    setIsActing(true);
-    setError(null);
-    setActionNotice(null);
-    try {
+    await runAction(async () => {
       await submitDecisionFeedback(listingId, {
         feedback_type: feedbackType,
         applied_price: feedbackType === "changed_price" && Number.isFinite(proposedPrice) ? proposedPrice : undefined,
@@ -320,444 +291,465 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       });
       setActionNotice("Decision feedback recorded for the outcome dashboard.");
       await loadData();
-    } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to submit decision feedback.");
-    } finally {
-      setIsActing(false);
-    }
+    }, "Unable to submit decision feedback.");
   }
+
+  const isSeller = Boolean(user && listing && user.id === listing.seller_id);
 
   return (
     <TradeShell
       title={listing?.title ?? "Listing detail"}
-      description="Run the Trade Intelligence pipeline to combine historical comparables, risk signals, demand context, and match suggestions."
+      description="Review the item, seller, pickup location, and safety details before requesting contact."
     >
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           {error}
         </div>
       ) : null}
       {actionNotice ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
           {actionNotice}
         </div>
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
-          Loading listing...
-        </div>
+        <div className="trade-card p-5 text-sm text-slate-600">Loading listing...</div>
       ) : listing ? (
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-5">
-            <section className="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
-              <div className="grid md:grid-cols-[minmax(0,1fr)_260px]">
-                <div className="p-5">
-                  <div className="flex flex-wrap gap-2">
-                    <StatusPill>{formatCategory(listing.category)}</StatusPill>
-                    <StatusPill tone={listing.is_ai_enriched ? "good" : "warn"}>
-                      {listing.is_ai_enriched ? "AI enriched" : "Not enriched"}
-                    </StatusPill>
-                    <StatusPill tone={resultStatus?.status === "completed" ? "good" : "neutral"}>
-                      {resultStatus?.status?.replaceAll("_", " ") ?? "not started"}
-                    </StatusPill>
-                  </div>
-                  <h2 className="mt-4 text-3xl font-semibold text-slate-950">
-                    {listing.title}
-                  </h2>
-                  <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-                    {listing.description ?? "No description provided."}
-                  </p>
-                </div>
-                <div className="border-t border-slate-200 bg-slate-950 p-5 text-white md:border-l md:border-t-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-cyan-200">
-                    Listed price
-                  </p>
-                  <p className="mt-2 text-3xl font-semibold">
-                    {formatMoney(listing.price, listing.currency)}
-                  </p>
-                  {resultStatus?.result ? (
-                    <p className="mt-3 text-sm leading-6 text-slate-300">
-                      Engine suggests{" "}
-                      <span className="font-semibold text-white">
-                        {formatMoney(
-                          resultStatus.result.recommendation.suggested_listing_price,
-                          listing.currency,
-                        )}
-                      </span>
-                    </p>
-                  ) : (
-                    <p className="mt-3 text-sm leading-6 text-slate-300">
-                      Enrich this listing to compare it against campus resale patterns.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid border-t border-slate-200 sm:grid-cols-2 lg:grid-cols-4">
-                <Fact label="Item" value={listing.item_name ?? "Not specified"} />
-                <Fact label="Condition" value={(listing.condition ?? listing.condition_label ?? "Unknown").replaceAll("_", " ")} />
-                <Fact label="Pickup" value={formatPickupLocation(listing.pickup_location ?? listing.pickup_area)} />
-                <Fact label="College" value={listing.residential_college ?? "TBD"} />
-              </div>
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid gap-5">
+            <ImageGallery listing={listing} />
+            <section className="trade-card p-5">
+              <h2 className="text-xl font-semibold text-slate-950">Description</h2>
+              <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-600">
+                {listing.description ?? "No description provided."}
+              </p>
             </section>
-
-            {listing.risk_level && listing.risk_level !== "low" ? (
-              <RiskWarning listing={listing} />
-            ) : null}
-
-            <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
-              {tradeSafetyMessage}
-            </section>
-
-            <TradeResultCard
-              result={resultStatus?.result ?? null}
-              status={resultStatus?.status}
-              errorMessage={resultStatus?.error_message}
-              currency={listing.currency}
-            />
-
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-lg font-semibold text-slate-950">Listing images</h2>
-              {listing.images.length === 0 ? (
-                <p className="mt-2 text-sm text-slate-600">
-                  No image metadata has been uploaded for this listing.
-                </p>
-              ) : (
-                <div className="mt-4 space-y-4">
-                  {primaryImage ? (
-                    <div
-                      className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                      key={primaryImage.id}
-                    >
-                      <div className="flex aspect-video items-center justify-center bg-slate-100">
-                        {primaryImage.public_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            alt={listing.title}
-                            className="h-full w-full object-cover"
-                            src={primaryImage.public_url}
-                          />
-                        ) : (
-                          <span className="px-4 text-center text-sm text-slate-500">
-                            {primaryImage.storage_path}
-                          </span>
-                        )}
-                      </div>
-                      <div className="p-3 text-xs text-slate-600">
-                        Primary image
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {galleryImages.length > 0 ? (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {galleryImages.map((image) => (
-                        <div
-                          className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50"
-                          key={image.id}
-                        >
-                          <div className="flex aspect-video items-center justify-center bg-slate-100">
-                            {image.public_url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img
-                                alt={listing.title}
-                                className="h-full w-full object-cover"
-                                src={image.public_url}
-                              />
-                            ) : (
-                              <span className="px-4 text-center text-sm text-slate-500">
-                                {image.storage_path}
-                              </span>
-                            )}
-                          </div>
-                          <div className="p-3 text-xs text-slate-600">Gallery image</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              )}
-            </section>
-
-            <MatchSuggestions matches={matches} />
+            {listing.risk_level && listing.risk_level !== "low" ? <RiskWarning listing={listing} /> : null}
+            <SellerCard listing={listing} />
+            <SafetyNotice />
+            {isSeller ? (
+              <SellerIntelligencePanel
+                isActing={isActing}
+                isEnriching={isEnriching}
+                listing={listing}
+                matches={matches}
+                resultStatus={resultStatus}
+                simulation={simulation}
+                simulationPrice={simulationPrice}
+                onApplyPrice={handleApplyPrice}
+                onContactTopMatch={handleContactTopMatch}
+                onEnrich={handleEnrich}
+                onFeedback={handleFeedback}
+                onSimulate={handleSimulatePrice}
+                onSimulationPriceChange={setSimulationPrice}
+              />
+            ) : (
+              <MatchSuggestions matches={matches} />
+            )}
           </div>
 
-          <aside className="h-fit rounded-lg border border-slate-300 bg-white shadow-sm lg:sticky lg:top-6">
-            <div className="border-b border-slate-200 bg-slate-950 p-5 text-white">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">
-                Control Center
-              </p>
-              <h2 className="mt-2 text-xl font-semibold">Buyer request</h2>
-            </div>
-            <div className="p-5">
-              {user ? (
-                user.id === listing.seller_id ? (
-                  <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    <p>This is your listing. Buyer contact requests will appear in your dashboard.</p>
-                    <div className="flex flex-wrap gap-2">
-                      {(["available", "reserved", "sold", "hidden"] as const).map((status) => (
-                        <button
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:text-slate-400"
-                          disabled={isActing || listing.status === status}
-                          key={status}
-                          onClick={() => void handleListingStatus(status)}
-                          type="button"
-                        >
-                          {status.replaceAll("_", " ")}
-                        </button>
-                      ))}
-                      <button
-                        className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-semibold text-rose-800 disabled:cursor-not-allowed disabled:text-slate-400"
-                        disabled={isActing || listing.status === "deleted"}
-                        onClick={() => void handleListingStatus("deleted")}
-                        type="button"
-                      >
-                        delete
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid gap-3">
-                    <p className="text-sm leading-6 text-slate-600">
-                      Send an interest request. Contact details stay hidden until the seller accepts.
-                    </p>
-                    <label className="grid gap-2">
-                      <span className="text-sm font-semibold text-slate-800">Message</span>
-                      <textarea
-                        className="min-h-24 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm leading-6 outline-none focus:border-emerald-600"
-                        value={contactDraft.message}
-                        onChange={(event) =>
-                          setContactDraft((current) => ({ ...current, message: event.target.value }))
-                        }
-                      />
-                    </label>
-                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-slate-800">Your contact method</span>
-                        <select
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
-                          value={contactDraft.buyer_contact_method}
-                          onChange={(event) =>
-                            setContactDraft((current) => ({
-                              ...current,
-                              buyer_contact_method: event.target.value as "telegram" | "whatsapp",
-                            }))
-                          }
-                        >
-                          {contactMethods.map((method) => (
-                            <option key={method.value} value={method.value}>
-                              {method.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-slate-800">Your contact</span>
-                        <input
-                          className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-600"
-                          placeholder={contactDraft.buyer_contact_method === "telegram" ? "@username" : "+60..."}
-                          value={contactDraft.buyer_contact_value}
-                          onChange={(event) =>
-                            setContactDraft((current) => ({ ...current, buyer_contact_value: event.target.value }))
-                          }
-                        />
-                      </label>
-                    </div>
-                    <button
-                      className="rounded-lg bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                      disabled={isActing || !["available", "reserved"].includes(listing.status)}
-                      onClick={() => void handleContactRequest()}
-                      type="button"
-                    >
-                      I&apos;m interested
-                    </button>
-                    <button
-                      className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                      disabled={isActing}
-                      onClick={() => void handleFavorite()}
-                      type="button"
-                    >
-                      {isSaved ? "Saved" : "Save listing"}
-                    </button>
-                    <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
-                      {tradeSafetyMessage}
-                    </p>
-                  </div>
-                )
-              ) : (
-                <RequireAuthCard description="Sign in with your UM account to request seller contact details." />
-              )}
+          <ListingSummaryCard
+            contactDraft={contactDraft}
+            isActing={isActing}
+            isSaved={isSaved}
+            isSeller={isSeller}
+            listing={listing}
+            user={user}
+            onContactDraftChange={setContactDraft}
+            onContactRequest={handleContactRequest}
+            onFavorite={handleFavorite}
+            onReportListing={handleReportListing}
+            onReportSeller={handleReportSeller}
+            onStatus={handleListingStatus}
+          />
 
-              <div className="my-5 border-t border-slate-200" />
-              <h3 className="text-sm font-semibold text-slate-950">Seller tools</h3>
-              <p className="text-sm leading-6 text-slate-600">
-                Queue the decision engine to refresh pricing, risk, demand, and
-                buyer-match recommendations.
-              </p>
+          {!isSeller && user && ["available", "reserved"].includes(listing.status) ? (
+            <div className="fixed inset-x-0 bottom-[74px] z-40 px-4 md:hidden">
               <button
-                className="mt-4 w-full rounded-lg bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                disabled={user?.id !== listing.seller_id || isEnriching || resultStatus?.status === "pending" || resultStatus?.status === "running"}
-                onClick={() => void handleEnrich()}
+                className="trade-button-primary w-full py-3 shadow-lg"
+                disabled={isActing}
+                onClick={() => void handleContactRequest()}
                 type="button"
               >
-                {isEnriching ? "Enqueueing..." : "Enrich Listing"}
+                <MessageCircle aria-hidden="true" className="h-4 w-4" />
+                I&apos;m interested
               </button>
-              <div className="mt-3 grid gap-2">
-                <button
-                  className="w-full rounded-lg border border-emerald-700 bg-white px-4 py-3 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
-                  disabled={user?.id !== listing.seller_id || isActing || !resultStatus?.result}
-                  onClick={() => void handleApplyPrice()}
-                  type="button"
-                >
-                  Apply suggested price
-                </button>
-                <button
-                  className="w-full rounded-lg border border-cyan-700 bg-white px-4 py-3 text-sm font-semibold text-cyan-900 transition hover:bg-cyan-50 disabled:cursor-not-allowed disabled:border-slate-300 disabled:text-slate-400"
-                  disabled={user?.id !== listing.seller_id || isActing || matches.length === 0}
-                  onClick={() => void handleContactTopMatch()}
-                  type="button"
-                >
-                  Contact top wanted match
-                </button>
-                <button
-                  className="w-full rounded-lg border border-rose-300 bg-white px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={!user || isActing}
-                  onClick={() => void handleReportListing()}
-                  type="button"
-                >
-                  Report listing
-                </button>
-                <button
-                  className="w-full rounded-lg border border-rose-300 bg-white px-4 py-3 text-sm font-semibold text-rose-800 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={!user || isActing}
-                  onClick={() => void handleReportSeller()}
-                  type="button"
-                >
-                  Report seller
-                </button>
-              </div>
-              <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <h3 className="text-sm font-semibold text-slate-950">Price what-if</h3>
-                <div className="mt-3 flex gap-2">
-                  <input
-                    className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    min="1"
-                    onChange={(event) => setSimulationPrice(event.target.value)}
-                    type="number"
-                    value={simulationPrice}
-                  />
-                  <button
-                    className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-                    disabled={isActing}
-                    onClick={() => void handleSimulatePrice()}
-                    type="button"
-                  >
-                    Test
-                  </button>
-                </div>
-                {simulation ? (
-                  <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-sm">
-                    <p className="font-semibold text-slate-950">
-                      {formatMoney(simulation.proposed_price, listing.currency)} · {simulation.action_type.replaceAll("_", " ")}
-                    </p>
-                    <p className="mt-1 leading-5 text-slate-600">{simulation.price_competitiveness}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500">
-                      {simulation.expected_time_to_sell} · {simulation.expected_buyer_interest} interest
-                    </p>
-                  </div>
-                ) : null}
-              </div>
-              <div className="mt-5 grid gap-2">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Decision feedback
-                </p>
-                <button
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={user?.id !== listing.seller_id || isActing || !resultStatus?.result}
-                  onClick={() => void handleFeedback("accepted_price")}
-                  type="button"
-                >
-                  Recommendation useful
-                </button>
-                <button
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={user?.id !== listing.seller_id || isActing || !resultStatus?.result}
-                  onClick={() => void handleFeedback("changed_price")}
-                  type="button"
-                >
-                  I changed the price
-                </button>
-                <button
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                  disabled={user?.id !== listing.seller_id || isActing || !resultStatus?.result}
-                  onClick={() => void handleFeedback("rejected_price")}
-                  type="button"
-                >
-                  Not useful
-                </button>
-              </div>
-              <div className="mt-5 grid gap-3">
-                <SideMetric label="AI status" value={resultStatus?.status?.replaceAll("_", " ") ?? "not started"} />
-                <SideMetric
-                  label="Last analyzed"
-                  value={
-                    resultStatus?.updated_at
-                      ? new Date(resultStatus.updated_at).toLocaleString()
-                      : "Not analyzed"
-                  }
-                />
-                <SideMetric label="Risk score" value={String(Math.round(listing.risk_score))} />
-                <SideMetric label="Analysis mode" value={resultStatus?.result?.metadata.analysis_mode?.replaceAll("_", " ") ?? "Not analyzed"} />
-                <SideMetric label="Data source" value={resultStatus?.result?.metadata.data_source?.replaceAll("_", " ") ?? "Not analyzed"} />
-                <SideMetric label="Image analysis" value={resultStatus?.result?.metadata.image_analysis_skipped ? "Text only" : "Image ready"} />
-                <SideMetric label="Moderation" value={listing.moderation_status.replaceAll("_", " ")} />
-                <SideMetric label="Listing status" value={listing.status} />
-                <SideMetric label="Views" value={String(listing.view_count)} />
-                <SideMetric label="Brand" value={listing.brand ?? "Not specified"} />
-                <SideMetric label="Model" value={listing.model ?? "Not specified"} />
-                <SideMetric label="Pickup note" value={listing.pickup_note ?? "Not specified"} />
-              </div>
             </div>
-          </aside>
+          ) : null}
         </div>
       ) : null}
     </TradeShell>
   );
 }
 
-function Fact({ label, value }: Readonly<{ label: string; value: string }>) {
+function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
+  const primaryImage = listing.images.find((image) => image.is_primary) ?? listing.images[0] ?? null;
+  const galleryImages = listing.images.filter((image) => image.id !== primaryImage?.id);
+
   return (
-    <div className="border-b border-slate-200 bg-slate-50 p-4 last:border-b-0 sm:border-r sm:last:border-r-0 lg:border-b-0">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-        {label}
+    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">
+        {primaryImage?.public_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img alt={listing.title} className="h-full w-full object-cover" src={primaryImage.public_url} />
+        ) : (
+          <span className="px-5 text-center text-sm font-semibold text-slate-500">
+            {primaryImage?.storage_path ?? "Photo coming soon"}
+          </span>
+        )}
+      </div>
+      {galleryImages.length > 0 ? (
+        <div className="grid gap-3 border-t border-slate-100 p-3 sm:grid-cols-4">
+          {galleryImages.map((image) => (
+            <div className="overflow-hidden rounded-xl bg-slate-100" key={image.id}>
+              {image.public_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img alt={listing.title} className="aspect-square w-full object-cover" src={image.public_url} />
+              ) : (
+                <div className="flex aspect-square items-center justify-center px-3 text-center text-xs text-slate-500">
+                  {image.storage_path}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ListingSummaryCard({
+  contactDraft,
+  isActing,
+  isSaved,
+  isSeller,
+  listing,
+  user,
+  onContactDraftChange,
+  onContactRequest,
+  onFavorite,
+  onReportListing,
+  onReportSeller,
+  onStatus,
+}: Readonly<{
+  contactDraft: {
+    message: string;
+    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_value: string;
+  };
+  isActing: boolean;
+  isSaved: boolean;
+  isSeller: boolean;
+  listing: Listing;
+  user: ReturnType<typeof useAuth>["user"];
+  onContactDraftChange: React.Dispatch<React.SetStateAction<{
+    message: string;
+    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_value: string;
+  }>>;
+  onContactRequest: () => Promise<void>;
+  onFavorite: () => Promise<void>;
+  onReportListing: () => Promise<void>;
+  onReportSeller: () => Promise<void>;
+  onStatus: (status: "available" | "reserved" | "sold" | "hidden" | "deleted") => Promise<void>;
+}>) {
+  const condition = listing.condition ?? listing.condition_label ?? "Unknown";
+
+  return (
+    <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-24">
+      <div className="flex flex-wrap gap-2">
+        <StatusPill tone={statusTone(listing.status)}>{listing.status.replaceAll("_", " ")}</StatusPill>
+        <StatusPill>{formatCategory(listing.category)}</StatusPill>
+      </div>
+      <h2 className="mt-4 text-2xl font-semibold leading-tight text-slate-950">{listing.title}</h2>
+      <div className="mt-4">
+        <PriceText currency={listing.currency} size="lg" value={listing.price} />
+      </div>
+      <div className="mt-5 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
+        <p>{formatCategory(listing.category)} · {condition.replaceAll("_", " ")}</p>
+        <p className="flex items-center gap-2">
+          <MapPin aria-hidden="true" className="h-4 w-4 text-emerald-700" />
+          {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}
+        </p>
+        <p>Posted {formatRelativeTime(listing.created_at)}</p>
+      </div>
+
+      <div className="mt-5 rounded-2xl border border-slate-100 p-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Seller</p>
+        <p className="mt-1 text-sm font-semibold text-slate-950">{getSellerDisplayName(listing)}</p>
+        <p className="mt-1 text-xs text-slate-500">
+          {listing.seller?.profile?.faculty ?? "UM student"} · {listing.seller?.status ?? "active"}
+        </p>
+      </div>
+
+      <div className="mt-5 grid gap-3">
+        {user ? (
+          isSeller ? (
+            <SellerActions isActing={isActing} listing={listing} onStatus={onStatus} />
+          ) : (
+            <BuyerRequestForm
+              contactDraft={contactDraft}
+              disabled={isActing || !["available", "reserved"].includes(listing.status)}
+              onContactDraftChange={onContactDraftChange}
+              onContactRequest={onContactRequest}
+            />
+          )
+        ) : (
+          <RequireAuthCard description="Sign in with your UM account to request seller contact details." />
+        )}
+
+        <button className="trade-button-secondary w-full" disabled={isActing} onClick={() => void onFavorite()} type="button">
+          <Heart aria-hidden="true" className={`h-4 w-4 ${isSaved ? "fill-current text-rose-600" : ""}`} />
+          {isSaved ? "Saved" : "Save listing"}
+        </button>
+        <button className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50" disabled={!user || isActing} onClick={() => void onReportListing()} type="button">
+          <Flag aria-hidden="true" className="h-4 w-4" />
+          Report listing
+        </button>
+        <button className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50" disabled={!user || isActing} onClick={() => void onReportSeller()} type="button">
+          <Flag aria-hidden="true" className="h-4 w-4" />
+          Report seller
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function BuyerRequestForm({
+  contactDraft,
+  disabled,
+  onContactDraftChange,
+  onContactRequest,
+}: Readonly<{
+  contactDraft: {
+    message: string;
+    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_value: string;
+  };
+  disabled: boolean;
+  onContactDraftChange: React.Dispatch<React.SetStateAction<{
+    message: string;
+    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_value: string;
+  }>>;
+  onContactRequest: () => Promise<void>;
+}>) {
+  return (
+    <div className="grid gap-3">
+      <p className="text-sm leading-6 text-slate-600">
+        Send an interest request. Contact details stay hidden until the seller accepts.
       </p>
-      <p className="mt-1 text-sm font-semibold text-slate-900">{value}</p>
+      <textarea
+        className="trade-input min-h-24 resize-none"
+        value={contactDraft.message}
+        onChange={(event) => onContactDraftChange((current) => ({ ...current, message: event.target.value }))}
+      />
+      <select
+        className="trade-input"
+        value={contactDraft.buyer_contact_method}
+        onChange={(event) =>
+          onContactDraftChange((current) => ({
+            ...current,
+            buyer_contact_method: event.target.value as "telegram" | "whatsapp",
+          }))
+        }
+      >
+        {contactMethods.map((method) => (
+          <option key={method.value} value={method.value}>
+            {method.label}
+          </option>
+        ))}
+      </select>
+      <input
+        className="trade-input"
+        placeholder={contactDraft.buyer_contact_method === "telegram" ? "@username" : "+60..."}
+        value={contactDraft.buyer_contact_value}
+        onChange={(event) => onContactDraftChange((current) => ({ ...current, buyer_contact_value: event.target.value }))}
+      />
+      <button className="trade-button-primary w-full" disabled={disabled} onClick={() => void onContactRequest()} type="button">
+        <MessageCircle aria-hidden="true" className="h-4 w-4" />
+        I&apos;m interested
+      </button>
     </div>
+  );
+}
+
+function SellerActions({
+  isActing,
+  listing,
+  onStatus,
+}: Readonly<{
+  isActing: boolean;
+  listing: Listing;
+  onStatus: (status: "available" | "reserved" | "sold" | "hidden" | "deleted") => Promise<void>;
+}>) {
+  return (
+    <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
+      <p>This is your listing. Manage status or review buyer requests from My Trade.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <button className="trade-button-secondary" disabled={isActing || listing.status === "available"} onClick={() => void onStatus("available")} type="button">
+          <Pencil aria-hidden="true" className="h-4 w-4" />
+          Available
+        </button>
+        <button className="trade-button-secondary" disabled={isActing || listing.status === "reserved"} onClick={() => void onStatus("reserved")} type="button">
+          <BellRing aria-hidden="true" className="h-4 w-4" />
+          Reserved
+        </button>
+        <button className="trade-button-secondary" disabled={isActing || listing.status === "sold"} onClick={() => void onStatus("sold")} type="button">
+          <ShieldCheck aria-hidden="true" className="h-4 w-4" />
+          Sold
+        </button>
+        <button className="trade-button-secondary" disabled={isActing || listing.status === "hidden"} onClick={() => void onStatus("hidden")} type="button">
+          Hide
+        </button>
+      </div>
+      <button className="trade-button-secondary border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isActing || listing.status === "deleted"} onClick={() => void onStatus("deleted")} type="button">
+        <Trash2 aria-hidden="true" className="h-4 w-4" />
+        Delete
+      </button>
+    </div>
+  );
+}
+
+function SellerCard({ listing }: Readonly<{ listing: Listing }>) {
+  return (
+    <section className="trade-card p-5">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Seller</p>
+      <h2 className="mt-2 text-lg font-semibold text-slate-950">{getSellerDisplayName(listing)}</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-600">
+        {listing.seller?.profile?.faculty ?? "University of Malaya student"} ·{" "}
+        {listing.seller?.profile?.college_or_location ?? listing.seller?.profile?.residential_college ?? "Campus pickup"}
+      </p>
+      <p className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+        Contact details are shared only after the seller accepts a buyer request.
+      </p>
+    </section>
+  );
+}
+
+function SellerIntelligencePanel({
+  isActing,
+  isEnriching,
+  listing,
+  matches,
+  resultStatus,
+  simulation,
+  simulationPrice,
+  onApplyPrice,
+  onContactTopMatch,
+  onEnrich,
+  onFeedback,
+  onSimulate,
+  onSimulationPriceChange,
+}: Readonly<{
+  isActing: boolean;
+  isEnriching: boolean;
+  listing: Listing;
+  matches: TradeMatch[];
+  resultStatus: TradeResultStatus | null;
+  simulation: PriceSimulation | null;
+  simulationPrice: string;
+  onApplyPrice: () => Promise<void>;
+  onContactTopMatch: () => Promise<void>;
+  onEnrich: () => Promise<void>;
+  onFeedback: (feedbackType: "accepted_price" | "rejected_price" | "changed_price" | "ignored_recommendation") => Promise<void>;
+  onSimulate: () => Promise<void>;
+  onSimulationPriceChange: (value: string) => void;
+}>) {
+  return (
+    <section className="grid gap-5">
+      <div className="trade-card p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Seller tools</p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-950">Optional AI assistant</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Refresh pricing, demand, and risk guidance after the listing is published. Manual selling still works without AI.
+            </p>
+          </div>
+          <StatusPill tone={resultStatus?.status === "completed" ? "good" : "pending"}>
+            {resultStatus?.status?.replaceAll("_", " ") ?? "not started"}
+          </StatusPill>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button className="trade-button-primary" disabled={isEnriching || resultStatus?.status === "pending" || resultStatus?.status === "running"} onClick={() => void onEnrich()} type="button">
+            <Sparkles aria-hidden="true" className="h-4 w-4" />
+            {isEnriching ? "Enqueueing..." : "Enrich Listing"}
+          </button>
+          <button className="trade-button-secondary" disabled={isActing || !resultStatus?.result} onClick={() => void onApplyPrice()} type="button">
+            Apply suggested price
+          </button>
+          <button className="trade-button-secondary" disabled={isActing || matches.length === 0} onClick={() => void onContactTopMatch()} type="button">
+            Contact top wanted match
+          </button>
+        </div>
+      </div>
+
+      <TradeResultCard
+        currency={listing.currency}
+        errorMessage={resultStatus?.error_message}
+        result={resultStatus?.result ?? null}
+        status={resultStatus?.status}
+      />
+
+      <section className="trade-card p-5">
+        <h2 className="text-lg font-semibold text-slate-950">Price what-if</h2>
+        <div className="mt-3 flex gap-2">
+          <input
+            className="trade-input min-w-0 flex-1"
+            min="1"
+            onChange={(event) => onSimulationPriceChange(event.target.value)}
+            type="number"
+            value={simulationPrice}
+          />
+          <button className="trade-button-primary" disabled={isActing} onClick={() => void onSimulate()} type="button">
+            Test
+          </button>
+        </div>
+        {simulation ? (
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
+            <p className="font-semibold text-slate-950">
+              {formatMoney(simulation.proposed_price, listing.currency)} · {simulation.action_type.replaceAll("_", " ")}
+            </p>
+            <p className="mt-1 leading-5 text-slate-600">{simulation.price_competitiveness}</p>
+          </div>
+        ) : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <button className="trade-button-secondary" disabled={isActing || !resultStatus?.result} onClick={() => void onFeedback("accepted_price")} type="button">
+            Recommendation useful
+          </button>
+          <button className="trade-button-secondary" disabled={isActing || !resultStatus?.result} onClick={() => void onFeedback("changed_price")} type="button">
+            I changed the price
+          </button>
+          <button className="trade-button-secondary" disabled={isActing || !resultStatus?.result} onClick={() => void onFeedback("rejected_price")} type="button">
+            Not useful
+          </button>
+        </div>
+      </section>
+      <MatchSuggestions matches={matches} />
+    </section>
   );
 }
 
 function RiskWarning({ listing }: Readonly<{ listing: Listing }>) {
   const items = riskEvidenceItems(listing);
   return (
-    <section className="rounded-lg border border-amber-200 bg-amber-50 p-5">
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-amber-950">
-            {listing.risk_level} risk listing
-          </h2>
+          <h2 className="text-lg font-semibold text-amber-950">{listing.risk_level} risk listing</h2>
           <p className="mt-2 text-sm leading-6 text-amber-900">
-            The decision engine found trust signals that should be checked before a fast transaction.
+            Trust signals should be checked before a fast transaction.
           </p>
         </div>
-        <StatusPill tone={listing.risk_level === "high" ? "danger" : "warn"}>
+        <StatusPill tone={listing.risk_level === "high" ? "danger" : "warning"}>
           {listing.moderation_status.replaceAll("_", " ")}
         </StatusPill>
       </div>
       {items.length > 0 ? (
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {items.map((item) => (
-            <div className="rounded-lg border border-amber-200 bg-white p-3 text-sm text-amber-950" key={item}>
+            <div className="rounded-xl border border-amber-200 bg-white p-3 text-sm text-amber-950" key={item}>
               {item}
             </div>
           ))}
@@ -782,15 +774,4 @@ function riskEvidenceItems(listing: Listing): string[] {
     items.push("Image analysis was skipped; only text and structured context were used.");
   }
   return items;
-}
-
-function SideMetric({ label, value }: Readonly<{ label: string; value: string }>) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-1 text-sm font-semibold text-slate-950">{value}</p>
-    </div>
-  );
 }

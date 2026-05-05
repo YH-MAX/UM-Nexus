@@ -1,19 +1,29 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import { Heart } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
+import { EmptyState } from "@/components/trade/empty-state";
 import { ListingCard } from "@/components/trade/listing-card";
+import { LoadingSkeleton } from "@/components/trade/loading-skeleton";
 import { TradeShell } from "@/components/trade/trade-shell";
-import { getFavorites, type ListingFavorite } from "@/lib/trade/api";
+import {
+  getFavorites,
+  removeFavorite,
+  type ListingFavorite,
+} from "@/lib/trade/api";
 
 export default function SavedListingsPage() {
   const { isLoading: isAuthLoading, user } = useAuth();
   const [favorites, setFavorites] = useState<ListingFavorite[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  async function loadFavorites() {
+    setFavorites(await getFavorites());
+  }
 
   useEffect(() => {
     if (isAuthLoading || !user) {
@@ -22,12 +32,7 @@ export default function SavedListingsPage() {
     }
 
     let isMounted = true;
-    void getFavorites()
-      .then((items) => {
-        if (isMounted) {
-          setFavorites(items);
-        }
-      })
+    void loadFavorites()
       .catch((nextError) => {
         if (isMounted) {
           setError(nextError instanceof Error ? nextError.message : "Unable to load saved listings.");
@@ -44,15 +49,27 @@ export default function SavedListingsPage() {
     };
   }, [isAuthLoading, user]);
 
+  async function toggleFavorite(listingId: string, nextSaved: boolean) {
+    if (nextSaved) {
+      return;
+    }
+    try {
+      await removeFavorite(listingId);
+      await loadFavorites();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update saved listing.");
+    }
+  }
+
   const availableFavorites = favorites.filter((favorite) => favorite.listing !== null);
 
   return (
     <TradeShell
       title="Saved listings"
-      description="Keep interesting UM marketplace items in one place while you compare price, condition, pickup fit, and seller response."
+      description="Compare items you are interested in by price, condition, pickup location, and seller response."
     >
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           {error}
         </div>
       ) : null}
@@ -62,26 +79,26 @@ export default function SavedListingsPage() {
       ) : null}
 
       {user && isLoading ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
-          Loading saved listings...
-        </div>
+        <LoadingSkeleton label="Loading saved listings" rows={4} />
       ) : user && availableFavorites.length === 0 ? (
-        <section className="rounded-lg border border-dashed border-slate-300 bg-white p-6">
-          <h2 className="text-lg font-semibold text-slate-950">No saved listings yet</h2>
-          <p className="mt-2 text-sm text-slate-600">
-            Save items from listing detail pages when you want to compare them later.
-          </p>
-          <Link
-            className="mt-4 inline-flex rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
-            href="/trade"
-          >
-            Browse marketplace
-          </Link>
-        </section>
+        <EmptyState
+          actionHref="/trade"
+          actionLabel="Browse Listings"
+          description="You have not saved any listings yet. Browse listings and tap the heart icon to save items here."
+          icon={Heart}
+          title="No saved listings yet"
+        />
       ) : user ? (
-        <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {availableFavorites.map((favorite) => (
-            favorite.listing ? <ListingCard key={favorite.id} listing={favorite.listing} /> : null
+            favorite.listing ? (
+              <ListingCard
+                isSaved
+                key={favorite.id}
+                listing={favorite.listing}
+                onToggleFavorite={toggleFavorite}
+              />
+            ) : null
           ))}
         </section>
       ) : null}

@@ -1,27 +1,44 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Heart, Inbox, PackageCheck, PlusCircle, Store } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
-import { StatusPill } from "@/components/trade/status-pill";
+import { DashboardStatCard } from "@/components/trade/dashboard-stat-card";
+import { EmptyState } from "@/components/trade/empty-state";
+import { StatusPill, statusTone } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
+  cancelContactRequest,
   formatMoney,
   formatPickupLocation,
-  cancelContactRequest,
+  formatRelativeTime,
   getTradeDashboard,
   updateContactRequest,
   updateTradeTransaction,
   type ContactRequest,
+  type Listing,
   type TradeDashboard,
   type TradeTransaction,
 } from "@/lib/trade/api";
 
+type DashboardTab = "overview" | "listings" | "received" | "sent" | "drafts" | "sold";
+
+const tabs: Array<{ id: DashboardTab; label: string }> = [
+  { id: "overview", label: "Overview" },
+  { id: "listings", label: "My Listings" },
+  { id: "received", label: "Received Requests" },
+  { id: "sent", label: "Sent Requests" },
+  { id: "drafts", label: "Drafts" },
+  { id: "sold", label: "Sold" },
+];
+
 export default function TradeDashboardPage() {
   const { isLoading: isAuthLoading, user } = useAuth();
   const [dashboard, setDashboard] = useState<TradeDashboard | null>(null);
+  const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, { agreedPrice: string; followedAi: boolean }>>({});
@@ -64,6 +81,19 @@ export default function TradeDashboardPage() {
       isMounted = false;
     };
   }, [isAuthLoading, user]);
+
+  const stats = useMemo(() => {
+    const listings = dashboard?.listings ?? [];
+    return {
+      activeListings: listings.filter((listing) => ["available", "reserved"].includes(listing.status)).length,
+      pendingRequests: [
+        ...(dashboard?.contact_requests_received ?? []),
+        ...(dashboard?.contact_requests_sent ?? []),
+      ].filter((request) => request.status === "pending").length,
+      savedItems: dashboard?.favorites.length ?? 0,
+      soldItems: listings.filter((listing) => listing.status === "sold").length,
+    };
+  }, [dashboard]);
 
   async function markCompleted(transaction: TradeTransaction) {
     const draft = transactionDrafts[transaction.id];
@@ -119,354 +149,336 @@ export default function TradeDashboardPage() {
 
   return (
     <TradeShell
-      title="My trade dashboard"
-      description="Track seller recommendations, buyer demand, match contact state, and completed transaction evidence."
+      title="My Trade"
+      description="Manage your listings, drafts, saved items, buyer requests, and completed campus trades."
+      action={
+        <Link className="trade-button-primary" href="/trade/sell">
+          <PlusCircle aria-hidden="true" className="h-4 w-4" />
+          Sell an Item
+        </Link>
+      }
     >
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           {error}
         </div>
       ) : null}
 
       {!user ? (
-        <RequireAuthCard description="Sign in with your UM account to see your listings, wanted posts, match contacts, and transaction evidence." />
+        <RequireAuthCard description="Sign in with your UM account to see your listings, saved items, contact requests, and transaction evidence." />
       ) : null}
 
       {user && isLoading ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
-          Loading dashboard...
-        </div>
+        <div className="trade-card p-5 text-sm text-slate-600">Loading dashboard...</div>
       ) : user && dashboard ? (
         <div className="grid gap-5">
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric label="My listings" value={dashboard.listings.length} />
-            <Metric label="Saved listings" value={dashboard.favorites.length} />
-            <Metric label="Wanted posts" value={dashboard.wanted_posts.length} />
-            <Metric label="Suggested matches" value={dashboard.matches.length} />
-            <Metric label="Contact requests" value={dashboard.contact_requests_received.length} />
+            <DashboardStatCard detail="Available or reserved" icon={Store} label="Active listings" value={stats.activeListings} />
+            <DashboardStatCard detail="Awaiting response" icon={Inbox} label="Pending requests" value={stats.pendingRequests} />
+            <DashboardStatCard detail="Saved for later" icon={Heart} label="Saved items" value={stats.savedItems} />
+            <DashboardStatCard detail="Marked sold" icon={PackageCheck} label="Sold items" value={stats.soldItems} />
           </section>
-          <section className="grid gap-4 sm:grid-cols-3">
-            <SmallMetric label="Recommendations accepted" value={dashboard.metrics.recommendations_accepted} />
-            <SmallMetric label="Decision feedback" value={dashboard.metrics.decision_feedback_count} />
-            <SmallMetric
-              label="Avg price adjustment"
-              value={dashboard.metrics.average_price_adjustment === null ? "No data" : formatMoney(dashboard.metrics.average_price_adjustment)}
+
+          <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+            {tabs.map((tab) => (
+              <button
+                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                  activeTab === tab.id ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                }`}
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                type="button"
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "overview" ? (
+            <Overview dashboard={dashboard} />
+          ) : activeTab === "listings" ? (
+            <ListingList listings={dashboard.listings.filter((listing) => listing.status !== "draft" && listing.status !== "sold")} />
+          ) : activeTab === "drafts" ? (
+            <ListingList emptyLabel="No drafts yet." listings={dashboard.listings.filter((listing) => listing.status === "draft")} />
+          ) : activeTab === "sold" ? (
+            <SoldTab
+              dashboard={dashboard}
+              isUpdating={isUpdating}
+              markCompleted={markCompleted}
+              setTransactionDrafts={setTransactionDrafts}
+              transactionDrafts={transactionDrafts}
             />
-          </section>
-
-          <section className="grid gap-5 lg:grid-cols-2">
-            <Panel title="Seller listings">
-              {dashboard.listings.length === 0 ? (
-                <EmptyState text="No listings yet." href="/trade/sell" label="Create listing" />
-              ) : (
-                dashboard.listings.map((listing) => (
-                  <Link className="block rounded-lg border border-slate-200 p-4 transition hover:border-emerald-300" href={`/trade/${listing.id}`} key={listing.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-950">{listing.title}</p>
-                        <p className="mt-1 text-sm text-slate-600">{formatMoney(listing.price, listing.currency)}</p>
-                      </div>
-                      <StatusPill tone={listing.risk_level === "high" ? "danger" : listing.is_ai_enriched ? "good" : "warn"}>
-                        {listing.risk_level ? `${listing.risk_level} risk` : "not enriched"}
-                      </StatusPill>
-                    </div>
-                    {listing.suggested_listing_price ? (
-                      <p className="mt-2 text-sm text-emerald-800">
-                        Suggested {formatMoney(listing.suggested_listing_price, listing.currency)}
-                      </p>
-                    ) : null}
-                  </Link>
-                ))
-              )}
-            </Panel>
-
-            <Panel title="Saved listings">
-              {dashboard.favorites.length === 0 ? (
-                <EmptyState text="No saved listings yet." href="/trade" label="Browse marketplace" />
-              ) : (
-                dashboard.favorites.slice(0, 6).map((favorite) => (
-                  favorite.listing ? (
-                    <Link className="block rounded-lg border border-slate-200 p-4 transition hover:border-emerald-300" href={`/trade/${favorite.listing.id}`} key={favorite.id}>
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-slate-950">{favorite.listing.title}</p>
-                          <p className="mt-1 text-sm text-slate-600">{formatMoney(favorite.listing.price, favorite.listing.currency)}</p>
-                        </div>
-                        <StatusPill>{favorite.listing.status}</StatusPill>
-                      </div>
-                    </Link>
-                  ) : null
-                ))
-              )}
-            </Panel>
-          </section>
-
-          <section className="grid gap-5 lg:grid-cols-2">
-            <Panel title="Buyer wanted posts">
-              {dashboard.wanted_posts.length === 0 ? (
-                <EmptyState text="No wanted posts yet." href="/trade/want" label="Create wanted post" />
-              ) : (
-                dashboard.wanted_posts.map((post) => (
-                  <Link className="block rounded-lg border border-slate-200 p-4 transition hover:border-emerald-300" href={`/wanted-posts/${post.id}`} key={post.id}>
-                    <p className="font-semibold text-slate-950">{post.title}</p>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Budget {formatMoney(post.max_budget, post.currency)} · {formatPickupLocation(post.preferred_pickup_area)}
-                    </p>
-                  </Link>
-                ))
-              )}
-            </Panel>
-          </section>
-
-          <section className="grid gap-5 lg:grid-cols-2">
-            <Panel title="Contact requests received">
-              {dashboard.contact_requests_received.length === 0 ? (
-                <p className="text-sm text-slate-600">No buyer requests yet.</p>
-              ) : (
-                dashboard.contact_requests_received.map((request) => (
-                  <ContactRequestCard
-                    isUpdating={isUpdating === request.id}
-                    key={request.id}
-                    request={request}
-                    role="seller"
-                    onAnswer={answerContactRequest}
-                  />
-                ))
-              )}
-            </Panel>
-
-            <Panel title="Contact requests sent">
-              {dashboard.contact_requests_sent.length === 0 ? (
-                <p className="text-sm text-slate-600">No sent requests yet.</p>
-              ) : (
-                dashboard.contact_requests_sent.map((request) => (
-                  <ContactRequestCard
-                    isUpdating={false}
-                    key={request.id}
-                    request={request}
-                    role="buyer"
-                    onAnswer={answerContactRequest}
-                    onCancel={cancelSentRequest}
-                  />
-                ))
-              )}
-            </Panel>
-          </section>
-
-          <section className="grid gap-5 lg:grid-cols-2">
-            <Panel title="Match activity">
-              {dashboard.matches.length === 0 ? (
-                <p className="text-sm text-slate-600">No match activity yet.</p>
-              ) : (
-                dashboard.matches.slice(0, 6).map((match) => (
-                  <Link className="block rounded-lg border border-slate-200 p-4 transition hover:border-cyan-300" href={`/wanted-posts/${match.wanted_post_id}`} key={match.id}>
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-slate-950">{match.wanted_post.title}</p>
-                      <p className="text-lg font-semibold text-emerald-800">{Math.round(match.match_score)}%</p>
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">{match.status.replaceAll("_", " ")}</p>
-                  </Link>
-                ))
-              )}
-            </Panel>
-
-            <Panel title="Transaction loop">
-              {dashboard.transactions.length === 0 ? (
-                <p className="text-sm text-slate-600">Contact a recommended match to start a transaction record.</p>
-              ) : (
-                dashboard.transactions.map((transaction) => (
-                  <div className="rounded-lg border border-slate-200 p-4" key={transaction.id}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-950">{transaction.status.replaceAll("_", " ")}</p>
-                        <p className="mt-1 text-sm text-slate-600">
-                          {formatMoney(transaction.agreed_price, transaction.currency)}
-                        </p>
-                      </div>
-                      {transaction.completed_at ? <StatusPill tone="good">completed</StatusPill> : <StatusPill tone="warn">open</StatusPill>}
-                    </div>
-                    {!transaction.completed_at ? (
-                      <div className="mt-3 grid gap-3">
-                        <label className="text-sm font-semibold text-slate-700">
-                          Agreed price
-                          <input
-                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                            min="1"
-                            onChange={(event) =>
-                              setTransactionDrafts((current) => ({
-                                ...current,
-                                [transaction.id]: {
-                                  agreedPrice: event.target.value,
-                                  followedAi: current[transaction.id]?.followedAi ?? true,
-                                },
-                              }))
-                            }
-                            type="number"
-                            value={transactionDrafts[transaction.id]?.agreedPrice ?? ""}
-                          />
-                        </label>
-                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                          <input
-                            checked={transactionDrafts[transaction.id]?.followedAi ?? true}
-                            onChange={(event) =>
-                              setTransactionDrafts((current) => ({
-                                ...current,
-                                [transaction.id]: {
-                                  agreedPrice: current[transaction.id]?.agreedPrice ?? "",
-                                  followedAi: event.target.checked,
-                                },
-                              }))
-                            }
-                            type="checkbox"
-                          />
-                          Followed AI recommendation
-                        </label>
-                        <RevenueDelta dashboard={dashboard} transaction={transaction} draft={transactionDrafts[transaction.id]} />
-                        <button
-                          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                          disabled={isUpdating === transaction.id}
-                          onClick={() => void markCompleted(transaction)}
-                          type="button"
-                        >
-                          {isUpdating === transaction.id ? "Updating..." : "Mark completed"}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </Panel>
-          </section>
+          ) : activeTab === "received" ? (
+            <RequestList
+              emptyText="No buyer requests yet."
+              isUpdating={isUpdating}
+              requests={dashboard.contact_requests_received}
+              role="seller"
+              onAnswer={answerContactRequest}
+            />
+          ) : (
+            <RequestList
+              emptyText="No sent requests yet."
+              isUpdating={isUpdating}
+              requests={dashboard.contact_requests_sent}
+              role="buyer"
+              onAnswer={answerContactRequest}
+              onCancel={cancelSentRequest}
+            />
+          )}
         </div>
       ) : null}
     </TradeShell>
   );
 }
 
-function Metric({ label, value }: Readonly<{ label: string; value: number }>) {
+function Overview({ dashboard }: Readonly<{ dashboard: TradeDashboard }>) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className="mt-2 text-3xl font-semibold text-slate-950">{value}</p>
-    </div>
+    <section className="grid gap-5 lg:grid-cols-2">
+      <Panel title="Recent listings">
+        {dashboard.listings.length === 0 ? (
+          <EmptyState actionHref="/trade/sell" actionLabel="Create listing" description="Create your first listing to start receiving buyer requests." title="No listings yet" />
+        ) : (
+          dashboard.listings.slice(0, 4).map((listing) => <ListingRow key={listing.id} listing={listing} />)
+        )}
+      </Panel>
+      <Panel title="Recent requests">
+        {[...dashboard.contact_requests_received, ...dashboard.contact_requests_sent].length === 0 ? (
+          <p className="text-sm text-slate-600">No contact requests yet.</p>
+        ) : (
+          [...dashboard.contact_requests_received, ...dashboard.contact_requests_sent]
+            .slice(0, 4)
+            .map((request) => <RequestCard key={request.id} request={request} role="buyer" />)
+        )}
+      </Panel>
+      <Panel title="Wanted posts">
+        {dashboard.wanted_posts.length === 0 ? (
+          <EmptyState actionHref="/trade/want" actionLabel="Post wanted request" description="Tell UM sellers what you are looking for." title="No wanted posts" />
+        ) : (
+          dashboard.wanted_posts.slice(0, 4).map((post) => (
+            <Link className="block rounded-2xl border border-slate-200 p-4 transition hover:border-emerald-200 hover:bg-emerald-50" href={`/wanted-posts/${post.id}`} key={post.id}>
+              <p className="font-semibold text-slate-950">{post.title}</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Budget {formatMoney(post.max_budget, post.currency)} · {formatPickupLocation(post.preferred_pickup_area)}
+              </p>
+            </Link>
+          ))
+        )}
+      </Panel>
+      <Panel title="Saved listings">
+        {dashboard.favorites.length === 0 ? (
+          <EmptyState actionHref="/trade" actionLabel="Browse listings" description="Tap the heart on listings you want to compare later." title="No saved listings" />
+        ) : (
+          dashboard.favorites.slice(0, 4).map((favorite) => (
+            favorite.listing ? <ListingRow key={favorite.id} listing={favorite.listing} /> : null
+          ))
+        )}
+      </Panel>
+    </section>
   );
 }
 
-function SmallMetric({ label, value }: Readonly<{ label: string; value: number | string }>) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{label}</p>
-      <p className="mt-2 text-lg font-semibold text-slate-950">{value}</p>
-    </div>
-  );
-}
-
-function RevenueDelta({
-  dashboard,
-  transaction,
-  draft,
-}: Readonly<{
-  dashboard: TradeDashboard;
-  transaction: TradeTransaction;
-  draft?: { agreedPrice: string; followedAi: boolean };
-}>) {
-  const listing = dashboard.listings.find((item) => item.id === transaction.listing_id);
-  const suggestedPrice = listing?.suggested_listing_price;
-  const agreedPrice = Number(draft?.agreedPrice);
-  if (!suggestedPrice || !Number.isFinite(agreedPrice) || agreedPrice <= 0) {
-    return null;
+function ListingList({ listings, emptyLabel = "No listings in this tab." }: Readonly<{ listings: Listing[]; emptyLabel?: string }>) {
+  if (listings.length === 0) {
+    return <EmptyState actionHref="/trade/sell" actionLabel="Create listing" description={emptyLabel} title="Nothing here yet" />;
   }
-  const delta = agreedPrice - suggestedPrice;
   return (
-    <p className={`text-sm font-semibold ${delta >= 0 ? "text-emerald-800" : "text-amber-800"}`}>
-      {delta >= 0 ? "+" : ""}
-      {formatMoney(delta, listing.currency)} versus AI suggested price
-    </p>
+    <section className="grid gap-3">
+      {listings.map((listing) => <ListingRow key={listing.id} listing={listing} />)}
+    </section>
   );
 }
 
-function ContactRequestCard({
+function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
+  return (
+    <Link className="trade-card trade-card-hover block p-4" href={`/trade/${listing.id}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-semibold text-slate-950">{listing.title}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            {formatMoney(listing.price, listing.currency)} · {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Posted {formatRelativeTime(listing.created_at)}</p>
+        </div>
+        <StatusPill tone={statusTone(listing.status)}>{listing.status}</StatusPill>
+      </div>
+    </Link>
+  );
+}
+
+function RequestList({
+  emptyText,
   isUpdating,
+  requests,
+  role,
+  onAnswer,
+  onCancel,
+}: Readonly<{
+  emptyText: string;
+  isUpdating: string | null;
+  requests: ContactRequest[];
+  role: "seller" | "buyer";
+  onAnswer: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
+  onCancel?: (request: ContactRequest) => Promise<void>;
+}>) {
+  if (requests.length === 0) {
+    return <EmptyState actionHref="/trade" actionLabel="Browse listings" description={emptyText} title="No requests" />;
+  }
+  return (
+    <section className="grid gap-3">
+      {requests.map((request) => (
+        <RequestCard
+          isUpdating={isUpdating === request.id}
+          key={request.id}
+          request={request}
+          role={role}
+          onAnswer={onAnswer}
+          onCancel={onCancel}
+        />
+      ))}
+    </section>
+  );
+}
+
+function RequestCard({
+  isUpdating = false,
   request,
   role,
   onAnswer,
   onCancel,
 }: Readonly<{
-  isUpdating: boolean;
+  isUpdating?: boolean;
   request: ContactRequest;
   role: "seller" | "buyer";
-  onAnswer: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
+  onAnswer?: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
   onCancel?: (request: ContactRequest) => Promise<void>;
 }>) {
-  const listingTitle = request.listing?.title ?? "Listing";
-  const canAnswer = role === "seller" && request.status === "pending";
+  const canAnswer = role === "seller" && request.status === "pending" && onAnswer;
   return (
-    <div className="rounded-lg border border-slate-200 p-4">
-      <div className="flex items-start justify-between gap-3">
+    <article className="trade-card p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="font-semibold text-slate-950">{listingTitle}</p>
-          <p className="mt-1 text-sm text-slate-600">{request.message ?? "No message provided."}</p>
+          <p className="font-semibold text-slate-950">{request.listing?.title ?? "Listing"}</p>
+          <p className="mt-1 text-sm leading-6 text-slate-600">{request.message ?? "No message provided."}</p>
+          <p className="mt-2 text-xs text-slate-500">{formatRelativeTime(request.created_at)}</p>
         </div>
-        <StatusPill tone={request.status === "accepted" ? "good" : request.status === "rejected" ? "danger" : "warn"}>
-          {request.status}
-        </StatusPill>
+        <StatusPill tone={statusTone(request.status)}>{request.status}</StatusPill>
       </div>
       {request.status === "accepted" ? (
-        <div className="mt-3 grid gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+        <div className="mt-3 grid gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
           <p>Buyer: {request.buyer_contact_method} {request.buyer_contact_value ?? "Hidden"}</p>
           <p>Seller: {request.seller_contact_method ?? "contact"} {request.seller_contact_value ?? "Hidden"}</p>
         </div>
       ) : null}
       {canAnswer ? (
-        <div className="mt-3 flex gap-2">
-          <button
-            className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-            disabled={isUpdating}
-            onClick={() => void onAnswer(request, "accepted")}
-            type="button"
-          >
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="trade-button-primary" disabled={isUpdating} onClick={() => void onAnswer(request, "accepted")} type="button">
             Accept
           </button>
-          <button
-            className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-            disabled={isUpdating}
-            onClick={() => void onAnswer(request, "rejected")}
-            type="button"
-          >
+          <button className="trade-button-secondary border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isUpdating} onClick={() => void onAnswer(request, "rejected")} type="button">
             Reject
           </button>
         </div>
       ) : null}
       {role === "buyer" && request.status === "pending" && onCancel ? (
-        <button
-          className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 disabled:cursor-not-allowed disabled:text-slate-400"
-          disabled={isUpdating}
-          onClick={() => void onCancel(request)}
-          type="button"
-        >
+        <button className="trade-button-secondary mt-3" disabled={isUpdating} onClick={() => void onCancel(request)} type="button">
           Cancel request
         </button>
       ) : null}
-    </div>
+    </article>
+  );
+}
+
+function SoldTab({
+  dashboard,
+  isUpdating,
+  markCompleted,
+  setTransactionDrafts,
+  transactionDrafts,
+}: Readonly<{
+  dashboard: TradeDashboard;
+  isUpdating: string | null;
+  markCompleted: (transaction: TradeTransaction) => Promise<void>;
+  setTransactionDrafts: React.Dispatch<React.SetStateAction<Record<string, { agreedPrice: string; followedAi: boolean }>>>;
+  transactionDrafts: Record<string, { agreedPrice: string; followedAi: boolean }>;
+}>) {
+  const soldListings = dashboard.listings.filter((listing) => listing.status === "sold");
+  return (
+    <section className="grid gap-5 lg:grid-cols-2">
+      <Panel title="Sold listings">
+        {soldListings.length === 0 ? (
+          <p className="text-sm text-slate-600">No sold listings yet.</p>
+        ) : (
+          soldListings.map((listing) => <ListingRow key={listing.id} listing={listing} />)
+        )}
+      </Panel>
+      <Panel title="Transaction records">
+        {dashboard.transactions.length === 0 ? (
+          <p className="text-sm text-slate-600">Accepted requests and completed trades will appear here.</p>
+        ) : (
+          dashboard.transactions.map((transaction) => (
+            <div className="rounded-2xl border border-slate-200 p-4" key={transaction.id}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-slate-950">{transaction.status.replaceAll("_", " ")}</p>
+                  <p className="mt-1 text-sm text-slate-600">{formatMoney(transaction.agreed_price, transaction.currency)}</p>
+                </div>
+                <StatusPill tone={transaction.completed_at ? "accepted" : "pending"}>
+                  {transaction.completed_at ? "completed" : "open"}
+                </StatusPill>
+              </div>
+              {!transaction.completed_at ? (
+                <div className="mt-3 grid gap-3">
+                  <input
+                    className="trade-input"
+                    min="1"
+                    onChange={(event) =>
+                      setTransactionDrafts((current) => ({
+                        ...current,
+                        [transaction.id]: {
+                          agreedPrice: event.target.value,
+                          followedAi: current[transaction.id]?.followedAi ?? true,
+                        },
+                      }))
+                    }
+                    placeholder="Agreed price"
+                    type="number"
+                    value={transactionDrafts[transaction.id]?.agreedPrice ?? ""}
+                  />
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <input
+                      checked={transactionDrafts[transaction.id]?.followedAi ?? true}
+                      onChange={(event) =>
+                        setTransactionDrafts((current) => ({
+                          ...current,
+                          [transaction.id]: {
+                            agreedPrice: current[transaction.id]?.agreedPrice ?? "",
+                            followedAi: event.target.checked,
+                          },
+                        }))
+                      }
+                      type="checkbox"
+                    />
+                    Followed AI recommendation
+                  </label>
+                  <button className="trade-button-primary" disabled={isUpdating === transaction.id} onClick={() => void markCompleted(transaction)} type="button">
+                    {isUpdating === transaction.id ? "Updating..." : "Mark completed"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ))
+        )}
+      </Panel>
+    </section>
   );
 }
 
 function Panel({ title, children }: Readonly<{ title: string; children: React.ReactNode }>) {
   return (
-    <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+    <section className="trade-card p-5">
       <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
       <div className="mt-4 grid gap-3">{children}</div>
     </section>
-  );
-}
-
-function EmptyState({ text, href, label }: Readonly<{ text: string; href: string; label: string }>) {
-  return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4">
-      <p className="text-sm text-slate-600">{text}</p>
-      <Link className="mt-3 inline-flex rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white" href={href}>
-        {label}
-      </Link>
-    </div>
   );
 }
