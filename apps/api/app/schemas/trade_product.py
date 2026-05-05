@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.ai_trade import TradeMatchRead
 from app.schemas.listing import ListingFavoriteRead, ListingRead, ListingReportRead
@@ -267,6 +267,25 @@ class NotificationRead(BaseModel):
     entity_id: str | None
     is_read: bool
     read_at: datetime | None
+    created_at: datetime
+
+
+class ProductEventCreate(BaseModel):
+    event_type: str = Field(..., min_length=2, max_length=100)
+    entity_type: str | None = Field(default=None, max_length=64)
+    entity_id: str | None = Field(default=None, max_length=64)
+    metadata: dict[str, object] | None = Field(default=None, validation_alias=AliasChoices("metadata", "event_metadata"))
+
+
+class ProductEventRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: str
+    user_id: str | None
+    event_type: str
+    entity_type: str | None
+    entity_id: str | None
+    metadata: dict[str, object] | None = Field(default=None, validation_alias=AliasChoices("metadata", "event_metadata"))
     created_at: datetime
 
 

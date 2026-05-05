@@ -42,6 +42,9 @@ Or with make:
 make api-seed-trade
 ```
 
+The seed creates realistic launch QA data: demo listings, listing images, a buyer account, a moderator account,
+favorites, contact requests, reports, notifications, wanted posts, and historical sale evidence.
+
 Seed the labelled quality scenarios separately if you want them before opening the internal evaluation pages:
 
 ```bash
@@ -63,9 +66,16 @@ Frontend product pages:
 - `/trade/sell`
 - `/trade/want`
 - `/trade/[id]`
+- `/trade/[id]/edit`
 - `/wanted-posts/[id]`
 - `/trade/dashboard`
+- `/trade/saved`
+- `/trade/notifications`
+- `/trade/profile`
 - `/trade/moderation`
+- `/safety`
+- `/terms`
+- `/privacy`
 
 Internal quality pages remain available for release checks:
 
@@ -207,6 +217,19 @@ http://localhost:3000/trade/moderation
 ```
 
 The moderation page shows summary counts and human-readable risk cards instead of raw JSON.
+
+For production bootstrap, sign in once with the first admin UM account, then run:
+
+```bash
+cd apps/api
+python scripts/bootstrap_admin.py your.name@um.edu.my --role admin --reason "Initial launch admin."
+```
+
+Or with make:
+
+```bash
+make api-bootstrap-admin EMAIL=your.name@um.edu.my
+```
 
 ### Supabase Storage Listing Images
 
@@ -456,13 +479,33 @@ Run these before releases or deployment:
 cd apps/web
 npm run lint
 npm run build
+npm run test:smoke
+npm run test:e2e
 npm audit --audit-level=moderate
 
 cd ../api
 .venv\Scripts\python.exe -m pytest
+alembic upgrade head
 ```
 
 The web container now builds a production Next.js app with `npm ci`, build-time public environment args, and `next start`. Keep public frontend values in `.env` or your deployment environment; do not bake local `.env.local` into the image.
+
+Production startup validates required public web environment variables and required API production variables. Use
+`SKIP_ENV_VALIDATION=true` only for intentional local experiments.
+
+The Playwright suite enables `NEXT_PUBLIC_E2E_AUTH=true` only in its local dev server so it can exercise buyer,
+seller, and moderator workflows without real Supabase accounts. The override is ignored in production builds; keep
+this value `false` outside automated tests.
+
+### Supabase Production Checklist
+
+- Set `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_URL` to the same active Supabase project URL.
+- Set `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` to the public anon or publishable key only.
+- Set `SUPABASE_SERVICE_ROLE_KEY` only in the backend/API environment.
+- Add auth redirect URLs for your production web domain and `http://localhost:3000` for local testing.
+- Enable email/password auth and keep UM email domains in `ALLOWED_EMAIL_DOMAINS`.
+- Create a public `listing-images` Storage bucket or set `SUPABASE_STORAGE_BUCKET` to your chosen bucket.
+- Run `alembic upgrade head` before opening the production marketplace.
 
 ## Useful Commands
 
@@ -471,3 +514,6 @@ The web container now builds a production Next.js app with `npm ci`, build-time 
 - `make logs` to tail compose logs
 - `make api-dev` to run FastAPI locally
 - `make web-dev` to run Next.js locally
+- `make web-smoke` to run the browser smoke suite
+- `make web-e2e` to run the full Playwright suite
+- `make api-bootstrap-admin EMAIL=<um-email>` to promote the first admin after sign-in

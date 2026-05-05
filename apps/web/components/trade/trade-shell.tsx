@@ -207,7 +207,7 @@ function isActiveRoute(pathname: string, href: string): boolean {
     return pathname.startsWith("/trade/want") || pathname.startsWith("/wanted-posts");
   }
   if (href === "/trade/dashboard") {
-    return pathname.startsWith("/trade/dashboard");
+    return pathname.startsWith("/trade/dashboard") || /^\/trade\/[^/]+\/edit$/.test(pathname);
   }
   return pathname === href || pathname.startsWith(`${href}/`);
 }

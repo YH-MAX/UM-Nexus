@@ -33,6 +33,7 @@ import {
   tradeSafetyMessage,
   tradeCategories,
   uploadListingImage,
+  trackProductEvent,
   type CurrentProfile,
   type ListingPayload,
   type SellAgentDraft,
@@ -374,6 +375,12 @@ export default function SellPage() {
         uploaded_images: draft.uploaded_images,
       });
       setPublishedListingId(response.listing.id);
+      void trackProductEvent({
+        event_type: "listing_published",
+        entity_type: "listing",
+        entity_id: response.listing.id,
+        metadata: { source: "ai_seller_assistant" },
+      });
       setPublishPhase("images");
       await sleep(250);
       setPublishPhase("enrichment");
@@ -435,6 +442,12 @@ export default function SellPage() {
     try {
       const listing = await createListing(prepareListingPayload(editableDraft), { publish: true });
       setPublishedListingId(listing.id);
+      void trackProductEvent({
+        event_type: "listing_published",
+        entity_type: "listing",
+        entity_id: listing.id,
+        metadata: { source: "manual_sell_page" },
+      });
       setPublishPhase("images");
       await uploadSelectedImages(listing.id);
       setPublishPhase("risk");

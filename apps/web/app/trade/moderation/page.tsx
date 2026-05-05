@@ -79,13 +79,21 @@ export default function TradeModerationPage() {
   }, [isAuthLoading, user]);
 
   async function review(id: string, moderationStatus: "approved" | "rejected") {
+    const reason = window.prompt(
+      moderationStatus === "approved"
+        ? "Reason for approving this listing?"
+        : "Reason for rejecting or actioning this listing?",
+    );
+    if (!reason?.trim()) {
+      return;
+    }
     setReviewingId(id);
     setError(null);
     try {
       await reviewModerationListing(id, {
         status: moderationStatus === "approved" ? "reviewed" : "action_taken",
         moderation_status: moderationStatus,
-        resolution: moderationStatus === "approved" ? "Listing reviewed and approved." : "Listing rejected by moderator.",
+        resolution: reason.trim(),
       });
       await loadQueue();
     } catch (nextError) {
@@ -96,14 +104,18 @@ export default function TradeModerationPage() {
   }
 
   async function setListingStatus(id: string, status: "available" | "hidden" | "deleted") {
+    const reason = window.prompt(`Reason for changing this listing to ${status}?`);
+    if (!reason?.trim()) {
+      return;
+    }
     setReviewingId(id);
     setError(null);
     try {
       await updateAdminListing(id, {
         status,
         moderation_status: status === "deleted" ? "rejected" : status === "available" ? "approved" : undefined,
-        resolution: `Admin changed listing status to ${status}.`,
-        reason: `Admin changed listing status to ${status}.`,
+        resolution: reason.trim(),
+        reason: reason.trim(),
       });
       await loadQueue();
     } catch (nextError) {
@@ -114,10 +126,14 @@ export default function TradeModerationPage() {
   }
 
   async function setUserStatus(id: string, status: "active" | "suspended" | "banned") {
+    const reason = window.prompt(`Reason for changing this user to ${status}?`);
+    if (!reason?.trim()) {
+      return;
+    }
     setReviewingId(id);
     setError(null);
     try {
-      await updateAdminUserStatus(id, { status, reason: `Admin changed user status to ${status}.` });
+      await updateAdminUserStatus(id, { status, reason: reason.trim() });
       await loadQueue();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update user status.");
@@ -519,12 +535,16 @@ function AdminLaunchOps({
   }
 
   async function setUserRole(id: string, appRole: "student" | "organizer" | "moderator" | "admin") {
+    const reason = window.prompt(`Reason for changing this user role to ${appRole}?`);
+    if (!reason?.trim()) {
+      return;
+    }
     setBusyKey(`${id}-${appRole}`);
     setLocalError(null);
     try {
       await updateAdminUserRole(id, {
         app_role: appRole,
-        reason: `Admin changed user role to ${appRole}.`,
+        reason: reason.trim(),
       });
       await onReload();
     } catch (nextError) {

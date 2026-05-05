@@ -11,11 +11,75 @@ if str(ROOT) not in sys.path:
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
-from app.models import HistoricalSale, Listing, ListingImage, ListingReport, WantedPost
+from app.models import (
+    AppRole,
+    HistoricalSale,
+    Listing,
+    ListingFavorite,
+    ListingImage,
+    ListingReport,
+    Notification,
+    Profile,
+    TradeContactRequest,
+    User,
+    WantedPost,
+)
 from app.services.demo_user import get_or_create_demo_user
 
 
 now = datetime.now(UTC)
+
+SEED_USERS = [
+    {
+        "id": "00000000-0000-4000-8000-000000000010",
+        "email": "buyer.seed@siswa.um.edu.my",
+        "username": "buyer_seed",
+        "display_name": "Aina",
+        "faculty": "Faculty of Computer Science and Information Technology",
+        "college_or_location": "kk12",
+        "contact_preference": "telegram",
+        "contact_value": "@aina_um",
+    },
+    {
+        "id": "00000000-0000-4000-8000-000000000020",
+        "email": "moderator.seed@um.edu.my",
+        "username": "moderator_seed",
+        "display_name": "UM Trade Moderator",
+        "faculty": "Student Affairs",
+        "college_or_location": "um_sentral",
+        "contact_preference": "telegram",
+        "contact_value": "@um_trade_mod",
+        "app_role": AppRole.MODERATOR,
+    },
+]
+
+CATEGORY_ALIASES = {
+    "textbooks": "textbooks_notes",
+    "small_appliances": "kitchen_appliances",
+    "dorm_essentials": "dorm_room",
+}
+
+PICKUP_ALIASES = {
+    "FSKTM": "fsktm",
+    "KK": "kk1",
+    "library": "main_library",
+    "faculty_pickup": "faculty_area",
+}
+
+CONDITION_ALIASES = {
+    "like new": "like_new",
+    "used": "fair",
+    "unknown": "poor",
+    "locked": "poor",
+}
+
+REPORT_ALIASES = {
+    "suspicious_payment": "unsafe_transaction",
+    "suspicious_price": "scam_suspicion",
+    "counterfeit": "prohibited_item",
+    "prohibited": "prohibited_item",
+    "locked_device": "scam_suspicion",
+}
 
 LISTINGS = [
     {
@@ -350,22 +414,34 @@ def main() -> None:
     db = SessionLocal()
     try:
         demo_user = get_or_create_demo_user(db)
+        ensure_demo_profile(demo_user)
+        seed_users = [get_or_create_seed_user(db, values) for values in SEED_USERS]
+        buyer_user = seed_users[0]
         created_listings = 0
         created_images = 0
         created_wanted_posts = 0
         created_historical_sales = 0
         created_reports = 0
+        created_contact_requests = 0
+        created_favorites = 0
+        created_notifications = 0
 
         for item in LISTINGS:
             image = item.get("image")
             reports = item.get("reports", [])
-            values = {key: value for key, value in item.items() if key not in {"image", "reports"}}
+            values = normalize_listing_values({key: value for key, value in item.items() if key not in {"image", "reports"}})
             listing = db.scalar(select(Listing).where(Listing.title == item["title"]))
             if listing is None:
-                listing = Listing(seller_id=demo_user.id, currency="MYR", status="active", **values)
+                listing = Listing(seller_id=demo_user.id, currency="MYR", status="available", **values)
                 db.add(listing)
                 db.flush()
                 created_listings += 1
+            else:
+                for key, value in values.items():
+                    setattr(listing, key, value)
+                if listing.status in {"active", "open", "closed", "removed"}:
+                    listing.status = "available" if listing.status in {"active", "open"} else "sold"
+                db.add(listing)
 
             if image:
                 existing_image = db.scalar(
@@ -379,18 +455,21 @@ def main() -> None:
                     created_images += 1
 
             for report_type in reports:
+                normalized_report_type = REPORT_ALIASES.get(report_type, report_type)
                 existing_report = db.scalar(
                     select(ListingReport).where(
                         ListingReport.listing_id == listing.id,
-                        ListingReport.report_type == report_type,
+                        ListingReport.report_type == normalized_report_type,
                     )
                 )
                 if existing_report is None:
                     db.add(
                         ListingReport(
                             listing_id=listing.id,
-                            report_type=report_type,
+                            reporter_user_id=buyer_user.id,
+                            report_type=normalized_report_type,
                             reason="Seeded suspicious demo scenario.",
+                            status="pending",
                         )
                     )
                     created_reports += 1
@@ -398,14 +477,17 @@ def main() -> None:
         for item in WANTED_POSTS:
             exists = db.scalar(select(WantedPost).where(WantedPost.title == item["title"]))
             if exists is None:
-                db.add(WantedPost(buyer_id=demo_user.id, currency="MYR", status="active", **item))
+                db.add(WantedPost(buyer_id=buyer_user.id, currency="MYR", status="active", **normalize_wanted_values(item)))
                 created_wanted_posts += 1
 
         for index, (item_name, category, condition, price, location, college, notes) in enumerate(HISTORICAL_SALES):
+            normalized_category = normalize_category(category)
+            normalized_condition = normalize_condition(condition)
+            normalized_location = normalize_pickup(location)
             exists = db.scalar(
                 select(HistoricalSale).where(
                     HistoricalSale.item_name == item_name,
-                    HistoricalSale.category == category,
+                    HistoricalSale.category == normalized_category,
                     HistoricalSale.sold_price == price,
                     HistoricalSale.notes == notes,
                 )
@@ -414,11 +496,11 @@ def main() -> None:
                 db.add(
                     HistoricalSale(
                         item_name=item_name,
-                        category=category,
-                        condition_label=condition,
+                        category=normalized_category,
+                        condition_label=normalized_condition,
                         sold_price=price,
                         currency="MYR",
-                        location=location,
+                        location=normalized_location,
                         residential_college=college,
                         sold_at=now - timedelta(days=index + 2),
                         notes=notes,
@@ -427,15 +509,157 @@ def main() -> None:
                 )
                 created_historical_sales += 1
 
+        sample_listings = db.scalars(select(Listing).order_by(Listing.created_at).limit(3)).all()
+        for listing in sample_listings[:2]:
+            favorite_exists = db.scalar(
+                select(ListingFavorite).where(
+                    ListingFavorite.user_id == buyer_user.id,
+                    ListingFavorite.listing_id == listing.id,
+                )
+            )
+            if favorite_exists is None:
+                db.add(ListingFavorite(user_id=buyer_user.id, listing_id=listing.id))
+                created_favorites += 1
+
+        for listing in sample_listings[:2]:
+            request_exists = db.scalar(
+                select(TradeContactRequest).where(
+                    TradeContactRequest.buyer_id == buyer_user.id,
+                    TradeContactRequest.listing_id == listing.id,
+                )
+            )
+            if request_exists is None:
+                db.add(
+                    TradeContactRequest(
+                        listing_id=listing.id,
+                        buyer_id=buyer_user.id,
+                        seller_id=listing.seller_id,
+                        message="Hi, I am interested in this item. Can meet on campus this week?",
+                        buyer_contact_method="telegram",
+                        buyer_contact_value="@aina_um",
+                        status="pending",
+                    )
+                )
+                created_contact_requests += 1
+
+        notification_exists = db.scalar(
+            select(Notification).where(
+                Notification.user_id == demo_user.id,
+                Notification.type == "seed_demo_ready",
+            )
+        )
+        if notification_exists is None:
+            db.add(
+                Notification(
+                    user_id=demo_user.id,
+                    type="seed_demo_ready",
+                    title="Demo marketplace is ready",
+                    body="Seed listings, favorites, contact requests, and reports are available for product QA.",
+                    action_url="/trade/dashboard",
+                    entity_type="listing",
+                    entity_id=sample_listings[0].id if sample_listings else None,
+                )
+            )
+            created_notifications += 1
+
         db.commit()
         print(f"Seeded demo user {demo_user.id}")
+        print(f"Seeded {len(seed_users)} extra user(s)")
         print(f"Created {created_listings} listing(s)")
         print(f"Created {created_images} listing image(s)")
         print(f"Created {created_wanted_posts} wanted post(s)")
         print(f"Created {created_historical_sales} historical sale(s)")
         print(f"Created {created_reports} listing report(s)")
+        print(f"Created {created_contact_requests} contact request(s)")
+        print(f"Created {created_favorites} favorite(s)")
+        print(f"Created {created_notifications} notification(s)")
     finally:
         db.close()
+
+
+def get_or_create_seed_user(db, values: dict) -> User:
+    user = db.scalar(select(User).where(User.id == values["id"]))
+    if user is None:
+        user = User(id=values["id"], email=values["email"], username=values["username"], status="active")
+        user.profile = Profile(
+            full_name=values["display_name"],
+            display_name=values["display_name"],
+            faculty=values["faculty"],
+            residential_college=values["college_or_location"],
+            college_or_location=values["college_or_location"],
+            contact_preference=values["contact_preference"],
+            contact_value=values["contact_value"],
+            verified_um_email=True,
+            app_role=values.get("app_role", AppRole.STUDENT),
+        )
+        db.add(user)
+        db.flush()
+        return user
+
+    if user.profile is None:
+        user.profile = Profile(app_role=values.get("app_role", AppRole.STUDENT))
+    user.email = values["email"]
+    user.username = values["username"]
+    user.status = "active"
+    user.profile.full_name = values["display_name"]
+    user.profile.display_name = values["display_name"]
+    user.profile.faculty = values["faculty"]
+    user.profile.residential_college = values["college_or_location"]
+    user.profile.college_or_location = values["college_or_location"]
+    user.profile.contact_preference = values["contact_preference"]
+    user.profile.contact_value = values["contact_value"]
+    user.profile.verified_um_email = True
+    user.profile.app_role = values.get("app_role", user.profile.app_role)
+    db.add(user)
+    db.flush()
+    return user
+
+
+def ensure_demo_profile(user: User) -> None:
+    if user.profile is None:
+        user.profile = Profile(app_role=AppRole.STUDENT)
+    user.profile.full_name = "Demo Seller"
+    user.profile.display_name = "Demo Seller"
+    user.profile.faculty = "Faculty of Business and Economics"
+    user.profile.residential_college = "kk12"
+    user.profile.college_or_location = "kk12"
+    user.profile.contact_preference = "telegram"
+    user.profile.contact_value = "@demo_seller_um"
+    user.profile.verified_um_email = True
+
+
+def normalize_listing_values(values: dict) -> dict:
+    values["category"] = normalize_category(values["category"])
+    values["condition_label"] = normalize_condition(values.get("condition_label"))
+    pickup = normalize_pickup(values.get("pickup_area"))
+    values["pickup_area"] = pickup
+    values["pickup_location"] = pickup
+    return values
+
+
+def normalize_wanted_values(values: dict) -> dict:
+    next_values = dict(values)
+    next_values["category"] = normalize_category(next_values["category"])
+    next_values["preferred_pickup_area"] = normalize_pickup(next_values.get("preferred_pickup_area"))
+    return next_values
+
+
+def normalize_category(value: str | None) -> str:
+    if value is None:
+        return "others"
+    return CATEGORY_ALIASES.get(value, value)
+
+
+def normalize_pickup(value: str | None) -> str:
+    if value is None:
+        return "other"
+    return PICKUP_ALIASES.get(value, value)
+
+
+def normalize_condition(value: str | None) -> str:
+    if value is None:
+        return "good"
+    return CONDITION_ALIASES.get(value, value)
 
 
 if __name__ == "__main__":

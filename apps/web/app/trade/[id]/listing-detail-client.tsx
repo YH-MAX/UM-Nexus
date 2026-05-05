@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   BellRing,
@@ -44,6 +45,7 @@ import {
   reportUser,
   simulateListingPrice,
   submitDecisionFeedback,
+  trackProductEvent,
   updateListingStatus,
   type Listing,
   type PriceSimulation,
@@ -111,6 +113,14 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       isMounted = false;
     };
   }, [loadData]);
+
+  useEffect(() => {
+    void trackProductEvent({
+      event_type: "listing_viewed",
+      entity_type: "listing",
+      entity_id: listingId,
+    });
+  }, [listingId]);
 
   useEffect(() => {
     if (resultStatus?.status !== "pending" && resultStatus?.status !== "running") {
@@ -189,6 +199,12 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
         setIsSaved(true);
         setActionNotice("Listing saved.");
       }
+      void trackProductEvent({
+        event_type: "favorite_toggled",
+        entity_type: "listing",
+        entity_id: listing.id,
+        metadata: { saved: !isSaved },
+      });
     }, "Unable to update saved listing.");
   }
 
@@ -197,6 +213,12 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       await reportListing(listingId, {
         report_type: "scam_suspicion",
         reason: "Reported from listing detail for moderator review.",
+      });
+      void trackProductEvent({
+        event_type: "report_submitted",
+        entity_type: "listing",
+        entity_id: listingId,
+        metadata: { report_type: "scam_suspicion" },
       });
       setActionNotice("Report submitted for moderator review.");
       await loadData();
@@ -229,6 +251,13 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
             : await updateListingStatus(listing.id, { status, reason: `Seller marked listing ${status}.` });
       setListing(updated);
       setActionNotice(`Listing marked ${updated.status}.`);
+      if (updated.status === "sold") {
+        void trackProductEvent({
+          event_type: "listing_sold",
+          entity_type: "listing",
+          entity_id: updated.id,
+        });
+      }
       await loadData();
     }, "Unable to update listing status.");
   }
@@ -246,6 +275,11 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
         message: contactDraft.message.trim() || undefined,
         buyer_contact_method: contactDraft.buyer_contact_method,
         buyer_contact_value: contactDraft.buyer_contact_value.trim(),
+      });
+      void trackProductEvent({
+        event_type: "contact_request_sent",
+        entity_type: "listing",
+        entity_id: listing.id,
       });
       setActionNotice("Contact request sent. The seller can accept or reject it from My Trade.");
     }, "Unable to send contact request.");
@@ -490,6 +524,7 @@ function ListingSummaryCard({
             <BuyerRequestForm
               contactDraft={contactDraft}
               disabled={isActing || !["available", "reserved"].includes(listing.status)}
+              listingStatus={listing.status}
               onContactDraftChange={onContactDraftChange}
               onContactRequest={onContactRequest}
             />
@@ -518,6 +553,7 @@ function ListingSummaryCard({
 function BuyerRequestForm({
   contactDraft,
   disabled,
+  listingStatus,
   onContactDraftChange,
   onContactRequest,
 }: Readonly<{
@@ -527,6 +563,7 @@ function BuyerRequestForm({
     buyer_contact_value: string;
   };
   disabled: boolean;
+  listingStatus: string;
   onContactDraftChange: React.Dispatch<React.SetStateAction<{
     message: string;
     buyer_contact_method: "telegram" | "whatsapp";
@@ -539,6 +576,12 @@ function BuyerRequestForm({
       <p className="text-sm leading-6 text-slate-600">
         Send an interest request. Contact details stay hidden until the seller accepts.
       </p>
+      {listingStatus === "reserved" ? (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+          This item is currently reserved. You can still request backup interest, but the seller may already be
+          discussing it with another buyer.
+        </p>
+      ) : null}
       <textarea
         className="trade-input min-h-24 resize-none"
         value={contactDraft.message}
@@ -586,6 +629,10 @@ function SellerActions({
   return (
     <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
       <p>This is your listing. Manage status or review buyer requests from My Trade.</p>
+      <Link className="trade-button-primary w-full" href={`/trade/${listing.id}/edit`}>
+        <Pencil aria-hidden="true" className="h-4 w-4" />
+        Edit Listing
+      </Link>
       <div className="grid grid-cols-2 gap-2">
         <button className="trade-button-secondary" disabled={isActing || listing.status === "available"} onClick={() => void onStatus("available")} type="button">
           <Pencil aria-hidden="true" className="h-4 w-4" />

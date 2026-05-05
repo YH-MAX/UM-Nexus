@@ -351,6 +351,20 @@ export type ListingPayload = {
   contact_value?: string;
 };
 
+export type ProductEventPayload = {
+  event_type:
+    | "listing_viewed"
+    | "favorite_toggled"
+    | "contact_request_sent"
+    | "listing_published"
+    | "listing_sold"
+    | "report_submitted"
+    | string;
+  entity_type?: "listing" | "user" | "contact_request" | "report" | string;
+  entity_id?: string;
+  metadata?: Record<string, unknown>;
+};
+
 export type SellAgentSellerContext = {
   product_name?: string;
   free_text?: string;
@@ -935,10 +949,28 @@ export async function createListing(payload: ListingPayload, options: { publish?
   });
 }
 
+export async function updateListing(id: string, payload: Partial<ListingPayload> & { status?: string }): Promise<Listing> {
+  return fetchJson<Listing>(`/listings/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function publishListing(id: string): Promise<Listing> {
   return fetchJson<Listing>(`/listings/${id}/publish`, {
     method: "POST",
   });
+}
+
+export async function trackProductEvent(payload: ProductEventPayload): Promise<void> {
+  try {
+    await fetchJson<{ id: string }>("/analytics/events", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Analytics must never break the marketplace workflow.
+  }
 }
 
 export async function updateListingStatus(

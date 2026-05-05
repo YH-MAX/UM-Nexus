@@ -22,6 +22,7 @@ from app.models import (
     ListingView,
     MediaAsset,
     Notification,
+    ProductEvent,
     TradeCategory,
     TradeDecisionFeedback,
     TradeContactRequest,
@@ -649,6 +650,13 @@ class TradeRepository:
     def list_ai_usage_logs(self, limit: int = 100) -> Sequence[AIUsageLog]:
         stmt = select(AIUsageLog).order_by(desc(AIUsageLog.created_at)).limit(limit)
         return self.db.scalars(stmt).all()
+
+    def create_product_event(self, values: dict) -> ProductEvent:
+        event = ProductEvent(**values)
+        self.db.add(event)
+        self.db.commit()
+        self.db.refresh(event)
+        return event
 
     def count_ai_usage_logs(
         self,

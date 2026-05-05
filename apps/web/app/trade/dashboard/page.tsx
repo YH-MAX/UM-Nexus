@@ -370,6 +370,7 @@ function RequestCard({
           <p>Seller: {request.seller_contact_method ?? "contact"} {request.seller_contact_value ?? "Hidden"}</p>
         </div>
       ) : null}
+      <RequestTimeline request={request} />
       {canAnswer ? (
         <div className="mt-3 flex flex-wrap gap-2">
           <button className="trade-button-primary" disabled={isUpdating} onClick={() => void onAnswer(request, "accepted")} type="button">
@@ -386,6 +387,32 @@ function RequestCard({
         </button>
       ) : null}
     </article>
+  );
+}
+
+function RequestTimeline({ request }: Readonly<{ request: ContactRequest }>) {
+  const steps = [
+    { id: "pending", label: "Sent", active: true },
+    { id: "accepted", label: "Accepted", active: request.status === "accepted" },
+    { id: "rejected", label: "Rejected", active: request.status === "rejected" },
+    { id: "cancelled", label: "Cancelled", active: request.status === "cancelled" },
+    { id: "expired", label: "Expired", active: request.status === "expired" },
+  ];
+  return (
+    <div className="mt-4 flex flex-wrap gap-2">
+      {steps.map((step) => (
+        <span
+          className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+            step.active
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-slate-200 bg-slate-50 text-slate-400"
+          }`}
+          key={step.id}
+        >
+          {step.label}
+        </span>
+      ))}
+    </div>
   );
 }
 

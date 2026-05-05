@@ -1,7 +1,7 @@
 COMPOSE_FILE=infra/docker/docker-compose.yml
 ENV_FILE=.env
 
-.PHONY: up down logs api-dev web-dev api-migrate api-seed-trade api-seed-benchmarks api-worker
+.PHONY: up down logs api-dev web-dev web-smoke web-e2e api-migrate api-seed-trade api-seed-benchmarks api-bootstrap-admin api-worker
 
 up:
 	docker compose --env-file $(ENV_FILE) -f $(COMPOSE_FILE) up --build
@@ -18,6 +18,12 @@ api-dev:
 web-dev:
 	cd apps/web && npm run dev
 
+web-smoke:
+	cd apps/web && npm run test:smoke
+
+web-e2e:
+	cd apps/web && npm run test:e2e
+
 api-migrate:
 	cd apps/api && alembic upgrade head
 
@@ -26,6 +32,9 @@ api-seed-trade:
 
 api-seed-benchmarks:
 	cd apps/api && python scripts/seed_trade_benchmarks.py
+
+api-bootstrap-admin:
+	cd apps/api && python scripts/bootstrap_admin.py $(EMAIL)
 
 api-worker:
 	cd apps/api && celery -A app.tasks.celery_app.celery_app worker --loglevel=info -P solo

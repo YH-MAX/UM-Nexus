@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import require_app_role, require_authenticated_user
+from app.auth.dependencies import get_optional_authenticated_user, require_app_role, require_authenticated_user
 from app.db.session import get_db
 from app.models import AppRole
 from app.schemas.ai_trade import TradeMatchRead
@@ -28,6 +28,8 @@ from app.schemas.trade_product import (
     ModerationListingRead,
     ModerationSummary,
     NotificationRead,
+    ProductEventCreate,
+    ProductEventRead,
     TradeCategoryCreate,
     TradeCategoryRead,
     TradeCategoryUpdate,
@@ -44,6 +46,7 @@ from app.services.trade_service import (
     cancel_contact_request,
     contact_match,
     contact_request_read,
+    create_product_event,
     create_trade_category,
     decide_contact_request,
     get_ai_settings,
@@ -66,6 +69,24 @@ from app.services.trade_service import (
 
 
 router = APIRouter()
+
+
+@router.post("/analytics/events", response_model=ProductEventRead, status_code=201)
+def create_product_event_endpoint(
+    payload: ProductEventCreate,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_optional_authenticated_user),
+):
+    event = create_product_event(db, payload, current_user)
+    return {
+        "id": event.id,
+        "user_id": event.user_id,
+        "event_type": event.event_type,
+        "entity_type": event.entity_type,
+        "entity_id": event.entity_id,
+        "metadata": event.event_metadata,
+        "created_at": event.created_at,
+    }
 
 
 @router.post("/matches/{match_id}/contact", response_model=TradeTransactionRead)

@@ -162,6 +162,20 @@ class Settings(BaseSettings):
         return [name for name, value in required.items() if not value or not str(value).strip()]
 
     def validate_runtime_settings(self) -> None:
+        if self.app_env.lower() == "production":
+            missing = []
+            if not self.database_url.strip():
+                missing.append("DATABASE_URL")
+            if not self.supabase_url.strip() or "your-project-ref" in self.supabase_url:
+                missing.append("SUPABASE_URL")
+            if not self.supabase_anon_key.strip():
+                missing.append("SUPABASE_ANON_KEY or SUPABASE_PUBLISHABLE_KEY")
+            if not self.supabase_service_role_key.strip():
+                missing.append("SUPABASE_SERVICE_ROLE_KEY")
+            if missing:
+                joined = ", ".join(missing)
+                raise ConfigurationError(f"Missing required production settings: {joined}.")
+
         if not self.is_zai_provider_selected:
             return
 

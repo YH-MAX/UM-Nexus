@@ -43,6 +43,7 @@ from app.schemas.trade_product import (
     ContactRequestDecision,
     ContactRequestRead,
     DecisionFeedbackCreate,
+    ProductEventCreate,
     TradeTransactionUpdate,
     TradeCategoryCreate,
     TradeCategoryUpdate,
@@ -959,6 +960,18 @@ def list_admin_actions(db: Session):
 
 def list_ai_usage_logs(db: Session):
     return list(TradeRepository(db).list_ai_usage_logs())
+
+
+def create_product_event(db: Session, payload: ProductEventCreate, current_user: User | None = None):
+    return TradeRepository(db).create_product_event(
+        {
+            "user_id": current_user.id if current_user else None,
+            "event_type": payload.event_type,
+            "entity_type": payload.entity_type,
+            "entity_id": payload.entity_id,
+            "event_metadata": payload.metadata,
+        }
+    )
 
 
 def list_trade_categories(db: Session):

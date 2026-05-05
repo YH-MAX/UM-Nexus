@@ -47,7 +47,7 @@ export default function HomePage() {
               <NavLink href="/trade">Browse</NavLink>
               <NavLink href="/trade/sell">Sell</NavLink>
               <NavLink href="/trade/want">Wanted</NavLink>
-              <NavLink href="#safety">Safety</NavLink>
+              <NavLink href="/safety">Safety</NavLink>
               <NavLink href="/login">Sign in</NavLink>
             </div>
           </nav>
@@ -126,7 +126,11 @@ export default function HomePage() {
       <footer className="border-t border-slate-200 bg-white px-6 py-6 text-sm text-slate-500">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p>UM Nexus Trade</p>
-          <p>Safe second-hand trading for University of Malaya students.</p>
+          <div className="flex flex-wrap gap-3">
+            <Link className="hover:text-slate-950" href="/safety">Safety</Link>
+            <Link className="hover:text-slate-950" href="/terms">Terms</Link>
+            <Link className="hover:text-slate-950" href="/privacy">Privacy</Link>
+          </div>
         </div>
       </footer>
     </main>

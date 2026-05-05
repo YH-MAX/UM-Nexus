@@ -18,6 +18,7 @@ from app.models.listing_view import ListingView
 from app.models.media_asset import MediaAsset
 from app.models.notification import Notification
 from app.models.profile import Profile
+from app.models.product_event import ProductEvent
 from app.models.society import Society
 from app.models.trade_decision_feedback import TradeDecisionFeedback
 from app.models.trade_contact_request import TradeContactRequest
@@ -50,6 +51,7 @@ __all__ = [
     "MediaAsset",
     "Notification",
     "Profile",
+    "ProductEvent",
     "Society",
     "TradeCategory",
     "TradeContactRequest",
