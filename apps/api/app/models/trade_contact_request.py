@@ -37,7 +37,7 @@ class TradeContactRequest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     buyer_contact_method: Mapped[str] = mapped_column(String(32), nullable=False)
-    buyer_contact_value: Mapped[str] = mapped_column(String(255), nullable=False)
+    buyer_contact_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", server_default="pending")
     seller_response: Mapped[str | None] = mapped_column(Text, nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -45,6 +45,6 @@ class TradeContactRequest(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    listing: Mapped["Listing"] = relationship(back_populates="contact_requests")
+    listing: Mapped["Listing"] = relationship(back_populates="contact_requests", foreign_keys=[listing_id])
     buyer: Mapped["User"] = relationship(foreign_keys=[buyer_id])
     seller: Mapped["User"] = relationship(foreign_keys=[seller_id])

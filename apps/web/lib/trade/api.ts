@@ -30,6 +30,9 @@ export type Listing = {
   pickup_note: string | null;
   residential_college: string | null;
   contact_method: string | null;
+  source_wanted_post_id: string | null;
+  sold_source: string | null;
+  sold_contact_request_id: string | null;
   status: string;
   view_count: number;
   hidden_at: string | null;
@@ -314,6 +317,7 @@ export type CurrentProfile = {
   contact_preference: string | null;
   contact_value: string | null;
   verified_um_email: boolean;
+  trade_safety_acknowledged_at: string | null;
   app_role: string;
   created_at: string;
   updated_at: string;
@@ -347,8 +351,9 @@ export type ListingPayload = {
   pickup_area?: string;
   pickup_note?: string;
   residential_college?: string;
-  contact_method?: "telegram" | "whatsapp";
+  contact_method?: "in_app" | "telegram" | "whatsapp" | "email";
   contact_value?: string;
+  source_wanted_post_id?: string;
 };
 
 export type ProductEventPayload = {
@@ -478,6 +483,7 @@ export type ContactRequest = {
   buyer_contact_value: string | null;
   seller_contact_method: string | null;
   seller_contact_value: string | null;
+  contact_reveal_blocked_reason: string | null;
   status: "pending" | "accepted" | "rejected" | "cancelled" | "expired" | string;
   seller_response: string | null;
   accepted_at: string | null;
@@ -502,9 +508,11 @@ export type TradeTransaction = {
   id: string;
   listing_id: string;
   trade_match_id: string | null;
+  contact_request_id: string | null;
   seller_id: string;
   buyer_id: string;
   status: string;
+  sale_source: string | null;
   agreed_price: number | null;
   currency: string;
   seller_feedback: string | null;
@@ -716,8 +724,10 @@ export const listingStatusOptions = [
 ] as const;
 
 export const contactMethods = [
+  { value: "in_app", label: "In-app request only" },
   { value: "telegram", label: "Telegram" },
   { value: "whatsapp", label: "WhatsApp" },
+  { value: "email", label: "Email" },
 ] as const;
 
 export const tradeSafetyMessage =
@@ -975,7 +985,13 @@ export async function trackProductEvent(payload: ProductEventPayload): Promise<v
 
 export async function updateListingStatus(
   id: string,
-  payload: { status: "available" | "reserved" | "sold" | "hidden" | "deleted"; reason?: string },
+  payload: {
+    status: "available" | "reserved" | "sold" | "hidden" | "deleted";
+    reason?: string;
+    sold_source?: "accepted_request" | "outside_um_nexus" | "prefer_not_to_say";
+    sold_contact_request_id?: string;
+    agreed_price?: number;
+  },
 ): Promise<Listing> {
   return fetchJson<Listing>(`/listings/${id}/status`, {
     method: "PATCH",
@@ -1133,8 +1149,9 @@ export async function createContactRequest(
   listingId: string,
   payload: {
     message?: string;
-    buyer_contact_method: "telegram" | "whatsapp";
-    buyer_contact_value: string;
+    buyer_contact_method: "in_app" | "telegram" | "whatsapp" | "email";
+    buyer_contact_value?: string;
+    safety_acknowledged?: boolean;
   },
 ): Promise<ContactRequest> {
   return fetchJson<ContactRequest>(`/listings/${listingId}/contact-requests`, {
@@ -1231,7 +1248,7 @@ export async function getContactRequests(): Promise<ContactRequestsResponse> {
 
 export async function updateContactRequest(
   id: string,
-  payload: { status: "accepted" | "rejected"; seller_response?: string },
+  payload: { status: "accepted" | "rejected"; seller_response?: string; mark_listing_reserved?: boolean },
 ): Promise<ContactRequest> {
   return fetchJson<ContactRequest>(`/contact-requests/${id}`, {
     method: "PATCH",
@@ -1242,6 +1259,20 @@ export async function updateContactRequest(
 export async function cancelContactRequest(id: string): Promise<ContactRequest> {
   return fetchJson<ContactRequest>(`/contact-requests/${id}/cancel`, {
     method: "PATCH",
+  });
+}
+
+export async function resolveContactRequest(
+  id: string,
+  payload: {
+    action: "mark_completed" | "cancel_accepted" | "buyer_no_response";
+    agreed_price?: number;
+    sold_source?: "accepted_request" | "outside_um_nexus" | "prefer_not_to_say";
+  },
+): Promise<ContactRequest> {
+  return fetchJson<ContactRequest>(`/contact-requests/${id}/seller-resolution`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
   });
 }
 

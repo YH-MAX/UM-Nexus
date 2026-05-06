@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Eye, EyeOff, ShieldCheck } from "lucide-react";
 
@@ -10,6 +10,7 @@ import {
   getAllowedEmailDomainError,
   getAllowedEmailDomainsFromEnv,
 } from "@/lib/auth/allowed-email-domains";
+import { applyIntentToReturnTo, sanitizeIntent, sanitizeReturnTo } from "@/lib/auth/return-intent";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -31,6 +32,7 @@ function formatAuthErrorMessage(message: string | undefined): string {
 
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { supabase } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,6 +42,19 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   const isSignup = mode === "signup";
+  const returnTo = sanitizeReturnTo(searchParams.get("returnTo"));
+  const intent = sanitizeIntent(searchParams.get("intent"));
+  const listingId = searchParams.get("listingId");
+  const nextPath = applyIntentToReturnTo(returnTo, intent, listingId);
+  const oppositeParams = new URLSearchParams();
+  oppositeParams.set("returnTo", returnTo);
+  if (intent) {
+    oppositeParams.set("intent", intent);
+  }
+  if (listingId) {
+    oppositeParams.set("listingId", listingId);
+  }
+  const oppositeHref = `/${isSignup ? "login" : "signup"}?${oppositeParams.toString()}`;
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -73,7 +88,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             "Account created. Check your email if confirmation is enabled in Supabase Auth.",
           );
         } else {
-          router.push("/");
+          router.push(nextPath);
           router.refresh();
         }
 
@@ -90,7 +105,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         return;
       }
 
-      router.push("/");
+      router.push(nextPath);
       router.refresh();
     } catch (authError) {
       setError(
@@ -189,7 +204,7 @@ export function AuthForm({ mode }: AuthFormProps) {
         {isSignup ? "Already have an account?" : "Need an account?"}{" "}
         <Link
           className="font-semibold text-slate-900 underline underline-offset-4"
-          href={isSignup ? "/login" : "/signup"}
+          href={oppositeHref}
         >
           {isSignup ? "Sign in" : "Sign up"}
         </Link>

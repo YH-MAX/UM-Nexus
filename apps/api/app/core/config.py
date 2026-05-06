@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     ai_student_daily_limit: int = 3
     ai_staff_daily_limit: int = 50
     ai_global_daily_limit: int = 200
+    contact_request_expiry_days: int = 7
+    trade_listing_daily_limit: int = 10
+    trade_contact_request_daily_limit: int = 20
+    trade_report_daily_limit: int = 10
+    trade_wanted_post_daily_limit: int = 5
 
     model_config = SettingsConfigDict(
         env_file=find_env_file(),

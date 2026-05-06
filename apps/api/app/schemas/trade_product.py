@@ -8,8 +8,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from app.schemas.ai_trade import TradeMatchRead
 from app.schemas.listing import ListingFavoriteRead, ListingRead, ListingReportRead
 from app.schemas.wanted_post import WantedPostRead
-from app.services.trade_policy import normalize_contact_method, normalize_listing_status
-from app.trade.constants import ContactMethod, ListingStatus, UserStatus
+from app.services.trade_policy import normalize_contact_method, normalize_listing_status, normalize_user_report_reason
+from app.trade.constants import ContactMethod, ListingStatus, UserReportReason, UserStatus
 
 
 class ContactMatchCreate(BaseModel):
@@ -19,7 +19,8 @@ class ContactMatchCreate(BaseModel):
 class ContactRequestCreate(BaseModel):
     message: str | None = Field(default=None, max_length=2000)
     buyer_contact_method: ContactMethod
-    buyer_contact_value: str = Field(..., min_length=1, max_length=255)
+    buyer_contact_value: str | None = Field(default=None, max_length=255)
+    safety_acknowledged: bool = False
 
     @field_validator("buyer_contact_method", mode="before")
     @classmethod
@@ -30,6 +31,13 @@ class ContactRequestCreate(BaseModel):
 class ContactRequestDecision(BaseModel):
     status: Literal["accepted", "rejected"]
     seller_response: str | None = Field(default=None, max_length=2000)
+    mark_listing_reserved: bool = False
+
+
+class ContactRequestSellerResolution(BaseModel):
+    action: Literal["mark_completed", "cancel_accepted", "buyer_no_response"]
+    agreed_price: float | None = Field(default=None, ge=0)
+    sold_source: Literal["accepted_request", "outside_um_nexus", "prefer_not_to_say"] | None = None
 
 
 class ContactRequestRead(BaseModel):
@@ -42,6 +50,7 @@ class ContactRequestRead(BaseModel):
     buyer_contact_value: str | None = None
     seller_contact_method: str | None = None
     seller_contact_value: str | None = None
+    contact_reveal_blocked_reason: str | None = None
     status: str
     seller_response: str | None
     accepted_at: datetime | None
@@ -64,9 +73,11 @@ class TradeTransactionRead(BaseModel):
     id: str
     listing_id: str
     trade_match_id: str | None
+    contact_request_id: str | None = None
     seller_id: str
     buyer_id: str
     status: str
+    sale_source: str | None = None
     agreed_price: float | None
     currency: str
     seller_feedback: str | None
@@ -116,8 +127,13 @@ class ModerationSummary(BaseModel):
 
 
 class UserReportCreate(BaseModel):
-    report_type: str = Field(..., min_length=1, max_length=100)
+    report_type: UserReportReason = Field(..., min_length=1, max_length=100)
     reason: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("report_type", mode="before")
+    @classmethod
+    def normalize_report_type_value(cls, value: object) -> object:
+        return normalize_user_report_reason(value) or value
 
 
 class UserReportRead(BaseModel):

@@ -53,6 +53,19 @@ class Listing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     residential_college: Mapped[str | None] = mapped_column(String(255), nullable=True)
     contact_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     contact_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_wanted_post_id: Mapped[str | None] = mapped_column(
+        Uuid(as_uuid=False),
+        ForeignKey("wanted_posts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    sold_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    sold_contact_request_id: Mapped[str | None] = mapped_column(
+        Uuid(as_uuid=False),
+        ForeignKey("trade_contact_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="available", server_default="available")
     view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     hidden_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -102,6 +115,7 @@ class Listing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     contact_requests: Mapped[list["TradeContactRequest"]] = relationship(
         back_populates="listing",
         cascade="all, delete-orphan",
+        foreign_keys="TradeContactRequest.listing_id",
     )
     favorites: Mapped[list["ListingFavorite"]] = relationship(
         back_populates="listing",

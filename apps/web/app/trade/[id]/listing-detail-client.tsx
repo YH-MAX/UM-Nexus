@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   BellRing,
   Flag,
@@ -16,6 +17,7 @@ import {
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
+import { buildAuthHref } from "@/lib/auth/return-intent";
 import { MatchSuggestions } from "@/components/trade/match-suggestions";
 import { PriceText } from "@/components/trade/price-text";
 import { SafetyNotice } from "@/components/trade/safety-notice";
@@ -35,6 +37,7 @@ import {
   formatPickupLocation,
   formatRelativeTime,
   getFavorites,
+  getCurrentUser,
   getListing,
   getListingMatches,
   getSellerDisplayName,
@@ -48,6 +51,8 @@ import {
   trackProductEvent,
   updateListingStatus,
   type Listing,
+  type CurrentProfile,
+  type ListingPayload,
   type PriceSimulation,
   type TradeMatch,
   type TradeResultStatus,
@@ -58,8 +63,12 @@ type ListingDetailPageProps = Readonly<{
 }>;
 
 export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
+  const processedIntentRef = useRef<string | null>(null);
   const [listing, setListing] = useState<Listing | null>(null);
+  const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(null);
   const [resultStatus, setResultStatus] = useState<TradeResultStatus | null>(null);
   const [matches, setMatches] = useState<TradeMatch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -70,8 +79,9 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   const [simulation, setSimulation] = useState<PriceSimulation | null>(null);
   const [contactDraft, setContactDraft] = useState({
     message: "I am interested in this item. Is it still available?",
-    buyer_contact_method: "telegram" as "telegram" | "whatsapp",
+    buyer_contact_method: "in_app" as NonNullable<ListingPayload["contact_method"]>,
     buyer_contact_value: "",
+    safety_acknowledged: false,
   });
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +133,38 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   }, [listingId]);
 
   useEffect(() => {
+    if (!user) {
+      setCurrentProfile(null);
+      return;
+    }
+    let isMounted = true;
+    void getCurrentUser()
+      .then((current) => {
+        if (!isMounted) {
+          return;
+        }
+        setCurrentProfile(current.profile);
+        const preferred = contactMethods.some((method) => method.value === current.profile.contact_preference)
+          ? current.profile.contact_preference
+          : "in_app";
+        setContactDraft((draft) => ({
+          ...draft,
+          buyer_contact_method: preferred as NonNullable<ListingPayload["contact_method"]>,
+          buyer_contact_value: current.profile.contact_value ?? draft.buyer_contact_value,
+          safety_acknowledged: Boolean(current.profile.trade_safety_acknowledged_at),
+        }));
+      })
+      .catch(() => {
+        if (isMounted) {
+          setCurrentProfile(null);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
+  useEffect(() => {
     if (resultStatus?.status !== "pending" && resultStatus?.status !== "running") {
       return;
     }
@@ -135,6 +177,31 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
 
     return () => window.clearTimeout(timer);
   }, [loadData, resultStatus?.status]);
+
+  useEffect(() => {
+    if (!user || !listing || processedIntentRef.current === searchParams.toString()) {
+      return;
+    }
+    const intent = searchParams.get("intent");
+    const listingIntentId = searchParams.get("listingId");
+    if (listingIntentId && listingIntentId !== listing.id) {
+      return;
+    }
+    processedIntentRef.current = searchParams.toString();
+    if (intent === "save_listing" && !isSaved) {
+      void handleFavorite().then(() => {
+        setActionNotice("Listing saved.");
+        router.replace(`/trade/${listing.id}`);
+      });
+    } else if (intent === "contact_listing") {
+      setActionNotice("You are back on this listing. Review the safety reminder and send the contact request when ready.");
+      router.replace(`/trade/${listing.id}`);
+    } else if (intent === "report_listing") {
+      setActionNotice("You are back on this listing. Use Report listing when you are ready to submit the report.");
+      router.replace(`/trade/${listing.id}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSaved, listing, router, searchParams, user]);
 
   async function runAction(action: () => Promise<void>, fallback: string) {
     setIsActing(true);
@@ -186,7 +253,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       return;
     }
     if (!user) {
-      setActionNotice("Sign in with your UM account to save listings.");
+      router.push(buildAuthHref("login", { returnTo: `/trade/${listing.id}`, intent: "save_listing", listingId: listing.id }));
       return;
     }
     await runAction(async () => {
@@ -209,6 +276,10 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   }
 
   async function handleReportListing() {
+    if (!user) {
+      router.push(buildAuthHref("login", { returnTo: `/trade/${listingId}`, intent: "report_listing", listingId }));
+      return;
+    }
     await runAction(async () => {
       await reportListing(listingId, {
         report_type: "scam_suspicion",
@@ -229,9 +300,13 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     if (!listing) {
       return;
     }
+    if (!user) {
+      router.push(buildAuthHref("login", { returnTo: `/trade/${listing.id}`, intent: "report_listing", listingId: listing.id }));
+      return;
+    }
     await runAction(async () => {
       await reportUser(listing.seller_id, {
-        report_type: "unsafe_transaction",
+        report_type: "suspicious_payment_behavior",
         reason: "Reported from listing detail for admin review.",
       });
       setActionNotice("Seller report submitted for admin review.");
@@ -242,15 +317,33 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     if (!listing) {
       return;
     }
+    const soldSource =
+      status === "sold"
+        ? window.prompt(
+            "Who did you sell it to? Type accepted_request, outside_um_nexus, or prefer_not_to_say.",
+            "prefer_not_to_say",
+          )
+        : null;
     await runAction(async () => {
       const updated =
         status === "available" && listing.status === "draft"
           ? await publishListing(listing.id)
           : status === "deleted"
             ? await deleteListing(listing.id)
-            : await updateListingStatus(listing.id, { status, reason: `Seller marked listing ${status}.` });
+            : await updateListingStatus(listing.id, {
+                status,
+                reason: `Seller marked listing ${status}.`,
+                sold_source:
+                  status === "sold" && ["accepted_request", "outside_um_nexus", "prefer_not_to_say"].includes(soldSource || "")
+                    ? (soldSource as "accepted_request" | "outside_um_nexus" | "prefer_not_to_say")
+                    : undefined,
+              });
       setListing(updated);
-      setActionNotice(`Listing marked ${updated.status}.`);
+      setActionNotice(
+        updated.status === "sold"
+          ? "Listing marked as sold. Pending requests have been closed."
+          : `Listing marked ${updated.status}.`,
+      );
       if (updated.status === "sold") {
         void trackProductEvent({
           event_type: "listing_sold",
@@ -266,7 +359,19 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     if (!listing) {
       return;
     }
-    if (!contactDraft.buyer_contact_value.trim()) {
+    if (!user) {
+      router.push(buildAuthHref("login", { returnTo: `/trade/${listing.id}`, intent: "contact_listing", listingId: listing.id }));
+      return;
+    }
+    if (!isProfileComplete(currentProfile)) {
+      setError("Complete your trade profile before contacting sellers.");
+      return;
+    }
+    if (!currentProfile?.trade_safety_acknowledged_at && !contactDraft.safety_acknowledged) {
+      setError("Confirm the safety reminder before sending your first contact request.");
+      return;
+    }
+    if ((contactDraft.buyer_contact_method === "telegram" || contactDraft.buyer_contact_method === "whatsapp") && !contactDraft.buyer_contact_value.trim()) {
       setError("Enter your Telegram or WhatsApp contact before sending the request.");
       return;
     }
@@ -274,14 +379,18 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       await createContactRequest(listing.id, {
         message: contactDraft.message.trim() || undefined,
         buyer_contact_method: contactDraft.buyer_contact_method,
-        buyer_contact_value: contactDraft.buyer_contact_value.trim(),
+        buyer_contact_value:
+          contactDraft.buyer_contact_method === "telegram" || contactDraft.buyer_contact_method === "whatsapp"
+            ? contactDraft.buyer_contact_value.trim()
+            : undefined,
+        safety_acknowledged: contactDraft.safety_acknowledged,
       });
       void trackProductEvent({
         event_type: "contact_request_sent",
         entity_type: "listing",
         entity_id: listing.id,
       });
-      setActionNotice("Contact request sent. The seller can accept or reject it from My Trade.");
+      setActionNotice("Request sent. The seller can accept or reject your request. You'll be notified when they respond.");
     }, "Unable to send contact request.");
   }
 
@@ -388,6 +497,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
             isSaved={isSaved}
             isSeller={isSeller}
             listing={listing}
+            profile={currentProfile}
             user={user}
             onContactDraftChange={setContactDraft}
             onContactRequest={handleContactRequest}
@@ -458,6 +568,7 @@ function ListingSummaryCard({
   isSaved,
   isSeller,
   listing,
+  profile,
   user,
   onContactDraftChange,
   onContactRequest,
@@ -468,18 +579,21 @@ function ListingSummaryCard({
 }: Readonly<{
   contactDraft: {
     message: string;
-    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_method: NonNullable<ListingPayload["contact_method"]>;
     buyer_contact_value: string;
+    safety_acknowledged: boolean;
   };
   isActing: boolean;
   isSaved: boolean;
   isSeller: boolean;
   listing: Listing;
+  profile: CurrentProfile | null;
   user: ReturnType<typeof useAuth>["user"];
   onContactDraftChange: React.Dispatch<React.SetStateAction<{
     message: string;
-    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_method: NonNullable<ListingPayload["contact_method"]>;
     buyer_contact_value: string;
+    safety_acknowledged: boolean;
   }>>;
   onContactRequest: () => Promise<void>;
   onFavorite: () => Promise<void>;
@@ -525,23 +639,29 @@ function ListingSummaryCard({
               contactDraft={contactDraft}
               disabled={isActing || !["available", "reserved"].includes(listing.status)}
               listingStatus={listing.status}
+              profile={profile}
               onContactDraftChange={onContactDraftChange}
               onContactRequest={onContactRequest}
             />
           )
         ) : (
-          <RequireAuthCard description="Sign in with your UM account to request seller contact details." />
+          <RequireAuthCard
+            description="Sign in with your UM account to request seller contact details."
+            intent="contact_listing"
+            listingId={listing.id}
+            returnTo={`/trade/${listing.id}`}
+          />
         )}
 
         <button className="trade-button-secondary w-full" disabled={isActing} onClick={() => void onFavorite()} type="button">
           <Heart aria-hidden="true" className={`h-4 w-4 ${isSaved ? "fill-current text-rose-600" : ""}`} />
           {isSaved ? "Saved" : "Save listing"}
         </button>
-        <button className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50" disabled={!user || isActing} onClick={() => void onReportListing()} type="button">
+        <button className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isActing} onClick={() => void onReportListing()} type="button">
           <Flag aria-hidden="true" className="h-4 w-4" />
           Report listing
         </button>
-        <button className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50" disabled={!user || isActing} onClick={() => void onReportSeller()} type="button">
+        <button className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isActing} onClick={() => void onReportSeller()} type="button">
           <Flag aria-hidden="true" className="h-4 w-4" />
           Report seller
         </button>
@@ -554,28 +674,39 @@ function BuyerRequestForm({
   contactDraft,
   disabled,
   listingStatus,
+  profile,
   onContactDraftChange,
   onContactRequest,
 }: Readonly<{
   contactDraft: {
     message: string;
-    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_method: NonNullable<ListingPayload["contact_method"]>;
     buyer_contact_value: string;
+    safety_acknowledged: boolean;
   };
   disabled: boolean;
   listingStatus: string;
+  profile: CurrentProfile | null;
   onContactDraftChange: React.Dispatch<React.SetStateAction<{
     message: string;
-    buyer_contact_method: "telegram" | "whatsapp";
+    buyer_contact_method: NonNullable<ListingPayload["contact_method"]>;
     buyer_contact_value: string;
+    safety_acknowledged: boolean;
   }>>;
   onContactRequest: () => Promise<void>;
 }>) {
+  const needsContactValue = contactDraft.buyer_contact_method === "telegram" || contactDraft.buyer_contact_method === "whatsapp";
+  const needsSafetyAck = !profile?.trade_safety_acknowledged_at;
   return (
     <div className="grid gap-3">
       <p className="text-sm leading-6 text-slate-600">
-        Send an interest request. Contact details stay hidden until the seller accepts.
+        Your message and selected contact method will be shown to the seller. The seller&apos;s contact details are shown only if they accept.
       </p>
+      {!isProfileComplete(profile) ? (
+        <Link className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-950" href="/trade/profile">
+          Complete your profile before contacting sellers.
+        </Link>
+      ) : null}
       {listingStatus === "reserved" ? (
         <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
           This item is currently reserved. You can still request backup interest, but the seller may already be
@@ -593,7 +724,8 @@ function BuyerRequestForm({
         onChange={(event) =>
           onContactDraftChange((current) => ({
             ...current,
-            buyer_contact_method: event.target.value as "telegram" | "whatsapp",
+            buyer_contact_method: event.target.value as NonNullable<ListingPayload["contact_method"]>,
+            buyer_contact_value: event.target.value === "email" || event.target.value === "in_app" ? "" : current.buyer_contact_value,
           }))
         }
       >
@@ -603,12 +735,27 @@ function BuyerRequestForm({
           </option>
         ))}
       </select>
-      <input
-        className="trade-input"
-        placeholder={contactDraft.buyer_contact_method === "telegram" ? "@username" : "+60..."}
-        value={contactDraft.buyer_contact_value}
-        onChange={(event) => onContactDraftChange((current) => ({ ...current, buyer_contact_value: event.target.value }))}
-      />
+      {needsContactValue ? (
+        <input
+          className="trade-input"
+          placeholder={contactDraft.buyer_contact_method === "telegram" ? "@username" : "+60..."}
+          value={contactDraft.buyer_contact_value}
+          onChange={(event) => onContactDraftChange((current) => ({ ...current, buyer_contact_value: event.target.value }))}
+        />
+      ) : null}
+      {needsSafetyAck ? (
+        <label className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+          <input
+            checked={contactDraft.safety_acknowledged}
+            className="mt-1"
+            onChange={(event) =>
+              onContactDraftChange((current) => ({ ...current, safety_acknowledged: event.target.checked }))
+            }
+            type="checkbox"
+          />
+          <span>I understand UM Nexus does not hold payment and I should check the item before paying.</span>
+        </label>
+      ) : null}
       <button className="trade-button-primary w-full" disabled={disabled} onClick={() => void onContactRequest()} type="button">
         <MessageCircle aria-hidden="true" className="h-4 w-4" />
         I&apos;m interested
@@ -822,3 +969,4 @@ function riskEvidenceItems(listing: Listing): string[] {
   }
   return items;
 }
+  isProfileComplete,

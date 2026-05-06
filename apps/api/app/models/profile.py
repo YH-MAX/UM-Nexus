@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Enum, ForeignKey, SmallInteger, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, SmallInteger, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -40,6 +41,7 @@ class Profile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     contact_preference: Mapped[str | None] = mapped_column(String(32), nullable=True)
     contact_value: Mapped[str | None] = mapped_column(String(255), nullable=True)
     verified_um_email: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
+    trade_safety_acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     app_role: Mapped[AppRole] = mapped_column(
         app_role_enum,
         nullable=False,

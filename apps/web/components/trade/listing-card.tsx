@@ -11,6 +11,7 @@ import {
   getSellerDisplayName,
   type Listing,
 } from "@/lib/trade/api";
+import { buildAuthHref } from "@/lib/auth/return-intent";
 
 import { StatusPill, statusTone } from "./status-pill";
 
@@ -30,6 +31,11 @@ export function ListingCard({
   const primaryImage = listing.images.find((image) => image.is_primary) ?? listing.images[0];
   const condition = listing.condition ?? listing.condition_label;
   const href = `/trade/${listing.id}`;
+  const favoriteSignInHref = buildAuthHref("login", {
+    returnTo: href,
+    intent: "save_listing",
+    listingId: listing.id,
+  });
   const sellerName = getSellerDisplayName(listing);
 
   async function handleFavorite(event: React.MouseEvent<HTMLButtonElement>) {
@@ -116,7 +122,7 @@ export function ListingCard({
           <Link
             aria-label="Sign in to save listing"
             className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-white/80 bg-white/95 text-slate-700 shadow-sm transition hover:scale-105"
-            href="/login"
+            href={favoriteSignInHref}
           >
             <Heart aria-hidden="true" className="h-4 w-4" />
           </Link>

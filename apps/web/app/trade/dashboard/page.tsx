@@ -16,6 +16,7 @@ import {
   formatPickupLocation,
   formatRelativeTime,
   getTradeDashboard,
+  resolveContactRequest,
   updateContactRequest,
   updateTradeTransaction,
   type ContactRequest,
@@ -42,6 +43,7 @@ export default function TradeDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, { agreedPrice: string; followedAi: boolean }>>({});
+  const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function loadDashboard() {
@@ -121,14 +123,49 @@ export default function TradeDashboardPage() {
   async function answerContactRequest(request: ContactRequest, status: "accepted" | "rejected") {
     setIsUpdating(request.id);
     setError(null);
+    setNotice(null);
     try {
       await updateContactRequest(request.id, {
         status,
         seller_response: status === "accepted" ? "Accepted. Contact details are now visible." : "Rejected by seller.",
+        mark_listing_reserved: status === "accepted" ? window.confirm("Do you want to mark this listing as reserved?") : false,
       });
+      setNotice(
+        status === "accepted"
+          ? "Request accepted. Your approved contact details are now visible to the buyer."
+          : "Request rejected. Contact details remain hidden.",
+      );
       await loadDashboard();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update contact request.");
+    } finally {
+      setIsUpdating(null);
+    }
+  }
+
+  async function resolveSellerRequest(
+    request: ContactRequest,
+    action: "mark_completed" | "cancel_accepted" | "buyer_no_response",
+  ) {
+    setIsUpdating(request.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const agreedPrice =
+        action === "mark_completed" ? Number(window.prompt("Optional agreed price in RM", String(request.listing?.price ?? ""))) : undefined;
+      await resolveContactRequest(request.id, {
+        action,
+        agreed_price: Number.isFinite(agreedPrice) && agreedPrice ? agreedPrice : undefined,
+        sold_source: action === "mark_completed" ? "accepted_request" : undefined,
+      });
+      setNotice(
+        action === "mark_completed"
+          ? "Listing marked as sold. Pending requests have been closed."
+          : "Request updated and the listing can receive interest again.",
+      );
+      await loadDashboard();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to resolve contact request.");
     } finally {
       setIsUpdating(null);
     }
@@ -163,9 +200,14 @@ export default function TradeDashboardPage() {
           {error}
         </div>
       ) : null}
+      {notice ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+          {notice}
+        </div>
+      ) : null}
 
       {!user ? (
-        <RequireAuthCard description="Sign in with your UM account to see your listings, saved items, contact requests, and transaction evidence." />
+        <RequireAuthCard description="Sign in with your UM account to see your listings, saved items, contact requests, and transaction evidence." intent="dashboard" returnTo="/trade/dashboard" />
       ) : null}
 
       {user && isLoading ? (
@@ -215,6 +257,7 @@ export default function TradeDashboardPage() {
               requests={dashboard.contact_requests_received}
               role="seller"
               onAnswer={answerContactRequest}
+              onResolve={resolveSellerRequest}
             />
           ) : (
             <RequestList
@@ -313,6 +356,7 @@ function RequestList({
   role,
   onAnswer,
   onCancel,
+  onResolve,
 }: Readonly<{
   emptyText: string;
   isUpdating: string | null;
@@ -320,9 +364,17 @@ function RequestList({
   role: "seller" | "buyer";
   onAnswer: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
   onCancel?: (request: ContactRequest) => Promise<void>;
+  onResolve?: (request: ContactRequest, action: "mark_completed" | "cancel_accepted" | "buyer_no_response") => Promise<void>;
 }>) {
   if (requests.length === 0) {
-    return <EmptyState actionHref="/trade" actionLabel="Browse listings" description={emptyText} title="No requests" />;
+    return (
+      <EmptyState
+        actionHref={role === "seller" ? "/trade/sell" : "/trade"}
+        actionLabel={role === "seller" ? "Sell an Item" : "Browse listings"}
+        description={emptyText}
+        title="No requests"
+      />
+    );
   }
   return (
     <section className="grid gap-3">
@@ -334,6 +386,7 @@ function RequestList({
           role={role}
           onAnswer={onAnswer}
           onCancel={onCancel}
+          onResolve={onResolve}
         />
       ))}
     </section>
@@ -346,12 +399,14 @@ function RequestCard({
   role,
   onAnswer,
   onCancel,
+  onResolve,
 }: Readonly<{
   isUpdating?: boolean;
   request: ContactRequest;
   role: "seller" | "buyer";
   onAnswer?: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
   onCancel?: (request: ContactRequest) => Promise<void>;
+  onResolve?: (request: ContactRequest, action: "mark_completed" | "cancel_accepted" | "buyer_no_response") => Promise<void>;
 }>) {
   const canAnswer = role === "seller" && request.status === "pending" && onAnswer;
   return (
@@ -364,10 +419,16 @@ function RequestCard({
         </div>
         <StatusPill tone={statusTone(request.status)}>{request.status}</StatusPill>
       </div>
+      {role === "seller" && request.buyer_contact_value ? (
+        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          Buyer contact: {request.buyer_contact_method} {request.buyer_contact_value}
+        </div>
+      ) : null}
       {request.status === "accepted" ? (
         <div className="mt-3 grid gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
           <p>Buyer: {request.buyer_contact_method} {request.buyer_contact_value ?? "Hidden"}</p>
-          <p>Seller: {request.seller_contact_method ?? "contact"} {request.seller_contact_value ?? "Hidden"}</p>
+          <p>Seller: {request.seller_contact_method ?? "contact"} {request.seller_contact_value ?? request.contact_reveal_blocked_reason ?? "Hidden"}</p>
+          <p className="font-semibold">Contact details revealed. Arrange pickup safely on campus.</p>
         </div>
       ) : null}
       <RequestTimeline request={request} />
@@ -385,6 +446,19 @@ function RequestCard({
         <button className="trade-button-secondary mt-3" disabled={isUpdating} onClick={() => void onCancel(request)} type="button">
           Cancel request
         </button>
+      ) : null}
+      {role === "seller" && request.status === "accepted" && onResolve ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="trade-button-primary" disabled={isUpdating} onClick={() => void onResolve(request, "mark_completed")} type="button">
+            Mark completed
+          </button>
+          <button className="trade-button-secondary" disabled={isUpdating} onClick={() => void onResolve(request, "buyer_no_response")} type="button">
+            Buyer no response
+          </button>
+          <button className="trade-button-secondary border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isUpdating} onClick={() => void onResolve(request, "cancel_accepted")} type="button">
+            Cancel accepted
+          </button>
+        </div>
       ) : null}
     </article>
   );

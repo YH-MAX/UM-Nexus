@@ -72,6 +72,11 @@ def reset_database() -> Generator[None, None, None]:
     original_ai_student_daily_limit = settings.ai_student_daily_limit
     original_ai_staff_daily_limit = settings.ai_staff_daily_limit
     original_ai_global_daily_limit = settings.ai_global_daily_limit
+    original_contact_request_expiry_days = settings.contact_request_expiry_days
+    original_trade_listing_daily_limit = settings.trade_listing_daily_limit
+    original_trade_contact_request_daily_limit = settings.trade_contact_request_daily_limit
+    original_trade_report_daily_limit = settings.trade_report_daily_limit
+    original_trade_wanted_post_daily_limit = settings.trade_wanted_post_daily_limit
     temp_upload_dir = tempfile.mkdtemp(prefix="umnexus-test-uploads-")
     settings.allowed_email_domains = ("siswa.um.edu.my", "um.edu.my")
     settings.upload_storage_dir = temp_upload_dir
@@ -85,6 +90,11 @@ def reset_database() -> Generator[None, None, None]:
     settings.ai_student_daily_limit = 3
     settings.ai_staff_daily_limit = 50
     settings.ai_global_daily_limit = 200
+    settings.contact_request_expiry_days = 7
+    settings.trade_listing_daily_limit = 10
+    settings.trade_contact_request_daily_limit = 20
+    settings.trade_report_daily_limit = 10
+    settings.trade_wanted_post_daily_limit = 5
     celery_app.conf.task_always_eager = True
     session_module.SessionLocal = TestingSessionLocal
     trade_task_module.SessionLocal = TestingSessionLocal
@@ -107,6 +117,11 @@ def reset_database() -> Generator[None, None, None]:
     settings.ai_student_daily_limit = original_ai_student_daily_limit
     settings.ai_staff_daily_limit = original_ai_staff_daily_limit
     settings.ai_global_daily_limit = original_ai_global_daily_limit
+    settings.contact_request_expiry_days = original_contact_request_expiry_days
+    settings.trade_listing_daily_limit = original_trade_listing_daily_limit
+    settings.trade_contact_request_daily_limit = original_trade_contact_request_daily_limit
+    settings.trade_report_daily_limit = original_trade_report_daily_limit
+    settings.trade_wanted_post_daily_limit = original_trade_wanted_post_daily_limit
     shutil.rmtree(temp_upload_dir, ignore_errors=True)
 
 

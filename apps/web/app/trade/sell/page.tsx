@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   type ChangeEvent,
   type Dispatch,
@@ -27,6 +27,7 @@ import {
   generateSellAgentDraft,
   getCurrentUser,
   getTradeResultStatus,
+  getWantedPost,
   isProfileComplete,
   pickupAreas,
   publishSellAgentDraft,
@@ -136,6 +137,7 @@ const initialListingPayload: ListingPayload = {
 
 export default function SellPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const { user } = useAuth();
@@ -163,6 +165,7 @@ export default function SellPage() {
   const [publishedListingId, setPublishedListingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [qualityReviewMode, setQualityReviewMode] = useState<"manual" | "ai" | null>(null);
 
   useEffect(() => {
     return () => {
@@ -182,13 +185,12 @@ export default function SellPage() {
           return;
         }
         setCurrentProfile(current.profile);
-        const preferredMethod =
-          current.profile.contact_preference === "telegram" || current.profile.contact_preference === "whatsapp"
-            ? current.profile.contact_preference
-            : null;
+        const preferredMethod = contactMethods.some((method) => method.value === current.profile.contact_preference)
+          ? current.profile.contact_preference
+          : null;
         setEditableDraft((existing) => ({
           ...existing,
-          contact_method: preferredMethod ?? existing.contact_method,
+          contact_method: (preferredMethod as ListingPayload["contact_method"]) ?? existing.contact_method,
           contact_value: current.profile.contact_value ?? existing.contact_value,
         }));
       })
@@ -201,6 +203,43 @@ export default function SellPage() {
       isMounted = false;
     };
   }, [user]);
+
+  useEffect(() => {
+    const wantedId = searchParams.get("wanted_id");
+    if (!wantedId || !user) {
+      return;
+    }
+    let isMounted = true;
+    void getWantedPost(wantedId)
+      .then((wantedPost) => {
+        if (!isMounted) {
+          return;
+        }
+        setEditableDraft((current) => ({
+          ...current,
+          title: current.title || `Offer for: ${wantedPost.title}`,
+          description:
+            current.description ||
+            `Created from a UM Nexus wanted request.\n\nBuyer wanted: ${wantedPost.description ?? wantedPost.title}`,
+          category: wantedPost.category || current.category,
+          item_name: wantedPost.desired_item_name ?? current.item_name,
+          price: wantedPost.max_budget ? Math.min(current.price || wantedPost.max_budget, wantedPost.max_budget) : current.price,
+          pickup_location: wantedPost.preferred_pickup_area ?? current.pickup_location,
+          pickup_area: wantedPost.preferred_pickup_area ?? current.pickup_area,
+          residential_college: wantedPost.residential_college ?? current.residential_college,
+          source_wanted_post_id: wantedPost.id,
+        }));
+        setNotice("Wanted request context added. Create the listing manually and publish when ready.");
+      })
+      .catch((nextError) => {
+        if (isMounted) {
+          setError(nextError instanceof Error ? nextError.message : "Unable to load wanted request context.");
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [searchParams, user]);
 
   const canGenerate = useMemo(
     () =>
@@ -361,8 +400,8 @@ export default function SellPage() {
       setError(validationError);
       return;
     }
-    if (!editableDraft.contact_method || !editableDraft.contact_value?.trim()) {
-      setError("Choose Telegram or WhatsApp and enter your contact before publishing.");
+    if (!isContactReady(editableDraft)) {
+      setError("Choose a contact method. Telegram and WhatsApp need a contact value before publishing.");
       return;
     }
     setIsPublishing(true);
@@ -501,8 +540,30 @@ export default function SellPage() {
         </p>
       ) : null}
 
+      {qualityReviewMode ? (
+        <PublishQualityCheckpoint
+          imageCount={images.length}
+          payload={editableDraft}
+          onClose={() => setQualityReviewMode(null)}
+          onImprove={() => setQualityReviewMode(null)}
+          onPublishAnyway={() => {
+            const mode = qualityReviewMode;
+            setQualityReviewMode(null);
+            if (mode === "ai") {
+              void handlePublish();
+            } else {
+              void handlePublishManual();
+            }
+          }}
+          onSaveDraft={() => {
+            setQualityReviewMode(null);
+            void handleSaveManualDraft();
+          }}
+        />
+      ) : null}
+
       {!user ? (
-        <RequireAuthCard description="Sign in with your UM account before creating seller listings." />
+        <RequireAuthCard description="Sign in with your UM account before creating seller listings." intent="sell_item" returnTo="/trade/sell" />
       ) : null}
 
       {user ? (
@@ -522,12 +583,12 @@ export default function SellPage() {
             />
 
             <ManualListingPanel
-              disabled={isBusy || !profileReady}
+              disabled={isBusy}
               draft={editableDraft}
               imageCount={images.length}
               isPublishing={isPublishing}
               isSavingDraft={isSavingDraft}
-              onPublish={handlePublishManual}
+              onPublish={() => setQualityReviewMode("manual")}
               onSaveDraft={handleSaveManualDraft}
               onUpdateDraftField={updateDraftField}
             />
@@ -568,7 +629,7 @@ export default function SellPage() {
               onApplyPriceOption={applyPriceOption}
               onGenerateDraft={handleGenerateDraft}
               onOpenListing={() => (publishedListingId ? router.push(`/trade/${publishedListingId}`) : undefined)}
-              onPublish={handlePublish}
+              onPublish={() => setQualityReviewMode("ai")}
               onUpdateDraftField={updateDraftField}
               publishPhase={publishPhase}
               publishedListingId={publishedListingId}
@@ -597,6 +658,71 @@ function ProfileRequiredPanel() {
         >
           Edit profile
         </Link>
+      </div>
+    </section>
+  );
+}
+
+function PublishQualityCheckpoint({
+  imageCount,
+  payload,
+  onClose,
+  onImprove,
+  onPublishAnyway,
+  onSaveDraft,
+}: Readonly<{
+  imageCount: number;
+  payload: ListingPayload;
+  onClose: () => void;
+  onImprove: () => void;
+  onPublishAnyway: () => void;
+  onSaveDraft: () => void;
+}>) {
+  const prepared = prepareListingPayload(payload);
+  const checks = [
+    { label: "Title added", ok: prepared.title.trim().length >= 5 },
+    { label: "Price added", ok: prepared.category === "free_items" || prepared.price >= 0 },
+    { label: "Pickup location selected", ok: Boolean(prepared.pickup_location) },
+    { label: "Contact method added", ok: isContactReady(prepared) },
+    { label: "Description has enough detail", ok: Boolean(prepared.description && prepared.description.length >= 40) },
+    { label: "At least one photo added", ok: imageCount > 0 },
+  ];
+
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-amber-950">Ready to publish?</h2>
+          <p className="mt-2 text-sm leading-6 text-amber-900">
+            Review the listing quality checkpoint before it goes live. Warnings help quality but do not block publishing.
+          </p>
+        </div>
+        <button className="trade-button-secondary bg-white" onClick={onClose} type="button">
+          Close
+        </button>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {checks.map((check) => (
+          <div
+            className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+              check.ok ? "border-emerald-200 bg-white text-emerald-800" : "border-amber-300 bg-white text-amber-900"
+            }`}
+            key={check.label}
+          >
+            {check.ok ? "OK" : "Needs attention"}: {check.label}
+          </div>
+        ))}
+      </div>
+      <div className="mt-5 flex flex-wrap gap-3">
+        <button className="trade-button-secondary bg-white" onClick={onSaveDraft} type="button">
+          Save Draft
+        </button>
+        <button className="trade-button-secondary bg-white" onClick={onImprove} type="button">
+          Improve Listing
+        </button>
+        <button className="trade-button-primary" onClick={onPublishAnyway} type="button">
+          Publish Anyway
+        </button>
       </div>
     </section>
   );
@@ -1418,7 +1544,7 @@ function DraftReviewPanel({
             </div>
             <button
               className="mt-4 w-full rounded-lg bg-emerald-700 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-              disabled={isPublishing || publishPhase === "ready" || !editableDraft.contact_value?.trim()}
+              disabled={isPublishing || publishPhase === "ready" || !isContactReady(editableDraft)}
               onClick={onPublish}
               type="button"
             >
@@ -1852,6 +1978,7 @@ function hasManualMinimum(payload: ListingPayload): boolean {
 function prepareListingPayload(payload: ListingPayload): ListingPayload {
   const pickupLocation = payload.pickup_location || payload.pickup_area || "kk1";
   const category = payload.category || "others";
+  const contactMethod = payload.contact_method || "in_app";
   return {
     ...payload,
     title: payload.title.trim(),
@@ -1862,7 +1989,8 @@ function prepareListingPayload(payload: ListingPayload): ListingPayload {
     currency: payload.currency || "MYR",
     pickup_location: pickupLocation,
     pickup_area: pickupLocation,
-    contact_value: payload.contact_value?.trim(),
+    contact_method: contactMethod,
+    contact_value: contactMethod === "telegram" || contactMethod === "whatsapp" ? payload.contact_value?.trim() : undefined,
   };
 }
 
@@ -1889,10 +2017,18 @@ function validateManualListing(payload: ListingPayload, profile: CurrentProfile 
   if (prepared.price < 0) {
     return "Price must be 0 or more.";
   }
-  if (!prepared.contact_method || !prepared.contact_value) {
-    return "Choose Telegram or WhatsApp and enter your contact before publishing.";
+  if (!isContactReady(prepared)) {
+    return "Choose a contact method. Telegram and WhatsApp need a contact value before publishing.";
   }
   return null;
+}
+
+function isContactReady(payload: ListingPayload): boolean {
+  const method = payload.contact_method || "in_app";
+  if (method === "telegram" || method === "whatsapp") {
+    return Boolean(payload.contact_value?.trim());
+  }
+  return true;
 }
 
 function UploadIcon() {

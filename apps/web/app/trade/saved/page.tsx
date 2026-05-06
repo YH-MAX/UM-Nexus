@@ -75,7 +75,7 @@ export default function SavedListingsPage() {
       ) : null}
 
       {!user ? (
-        <RequireAuthCard description="Sign in with your UM account to save and review listings." />
+        <RequireAuthCard description="Sign in with your UM account to save and review listings." returnTo="/trade/saved" />
       ) : null}
 
       {user && isLoading ? (

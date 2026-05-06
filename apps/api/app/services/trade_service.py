@@ -42,6 +42,7 @@ from app.schemas.trade_product import (
     ContactRequestCreate,
     ContactRequestDecision,
     ContactRequestRead,
+    ContactRequestSellerResolution,
     DecisionFeedbackCreate,
     ProductEventCreate,
     TradeTransactionUpdate,
@@ -56,9 +57,11 @@ from app.services.trade_policy import (
     normalize_category,
     normalize_condition,
     normalize_listing_status,
+    normalize_moderation_status,
     normalize_pickup_location,
     normalize_listing_report_reason,
     normalize_report_status,
+    normalize_user_report_reason,
     scan_listing_policy,
 )
 from app.trade.constants import TRADE_CATEGORIES
@@ -73,16 +76,32 @@ def create_listing(
     require_profile: bool = True,
 ) -> Listing:
     owner = current_user or get_or_create_demo_user(db)
+    repo = TradeRepository(db)
+    if current_user is not None:
+        _ensure_daily_limit(
+            repo.count_listings_created_by_user_since(
+                owner.id,
+                _daily_limit_start(),
+            ),
+            get_settings().trade_listing_daily_limit,
+            "You reached today's listing limit. Try again tomorrow.",
+        )
     if publish and require_profile:
         _ensure_profile_ready(owner)
-    repo = TradeRepository(db)
     values = _prepare_listing_values(payload.model_dump(), for_publish=publish and require_profile)
     if publish:
         values["status"] = values.get("status") if values.get("status") == "hidden" else "available"
     else:
+        values["title"] = (values.get("title") or "Untitled listing draft").strip()
+        values["description"] = values.get("description") or ""
+        values["category"] = values.get("category") or "others"
+        values["condition_label"] = values.get("condition_label") or "good"
+        values["price"] = values.get("price") or 0
+        values["currency"] = values.get("currency") or "MYR"
         values["status"] = "draft"
     listing = repo.create_listing(owner.id, values)
     if publish:
+        _notify_wanted_source_owner(db, listing)
         _refresh_matches_for_listing(db, listing.id)
     return listing
 
@@ -166,7 +185,7 @@ def update_listing(db: Session, listing_id: str, payload: ListingUpdate, current
         _apply_listing_status_transition(listing, values["status"], current_user)
     updated = repo.update_listing(listing, values)
     if updated.status in {"sold", "hidden", "deleted"}:
-        repo.expire_pending_contact_requests(updated.id)
+        _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
     if {"title", "description", "category", "item_name", "brand", "model", "condition_label", "price", "pickup_area", "pickup_location", "residential_college"} & set(values):
         _refresh_matches_for_listing(db, updated.id)
     return updated
@@ -183,6 +202,7 @@ def publish_listing(db: Session, listing_id: str, current_user: User) -> Listing
     values = _prepare_listing_values(_listing_payload_for_validation(listing), existing=listing, for_publish=True)
     values["status"] = values.get("status") if values.get("status") == "hidden" else "available"
     updated = repo.update_listing(listing, values)
+    _notify_wanted_source_owner(db, updated)
     _refresh_matches_for_listing(db, updated.id)
     return updated
 
@@ -202,10 +222,29 @@ def update_listing_status(
     if payload.status not in {"available", "reserved", "sold", "hidden", "deleted"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid seller listing status.")
     values = {"status": payload.status}
+    if payload.status == "sold":
+        values["sold_source"] = payload.sold_source or "prefer_not_to_say"
+        values["sold_contact_request_id"] = payload.sold_contact_request_id
     _apply_listing_status_transition(listing, payload.status, current_user, reason=payload.reason)
     updated = repo.update_listing(listing, values)
     if updated.status in {"sold", "hidden", "deleted"}:
-        repo.expire_pending_contact_requests(updated.id)
+        _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
+    if updated.status in {"reserved", "sold"}:
+        _notify_listing_status_changed(repo, updated)
+    if updated.status == "sold":
+        repo.create_product_event(
+            {
+                "user_id": current_user.id,
+                "event_type": "listing_sold",
+                "entity_type": "listing",
+                "entity_id": updated.id,
+                "event_metadata": {
+                    "sold_source": values.get("sold_source"),
+                    "sold_contact_request_id": values.get("sold_contact_request_id"),
+                    "agreed_price": payload.agreed_price,
+                },
+            }
+        )
     return updated
 
 
@@ -321,6 +360,13 @@ def remove_listing_image(db: Session, listing_id: str, image_id: str, current_us
 def create_wanted_post(db: Session, payload: WantedPostCreate, current_user: User | None = None) -> WantedPost:
     owner = current_user or get_or_create_demo_user(db)
     repo = TradeRepository(db)
+    if current_user is not None:
+        _ensure_profile_ready(owner)
+        _ensure_daily_limit(
+            repo.count_wanted_posts_created_by_user_since(owner.id, _daily_limit_start()),
+            get_settings().trade_wanted_post_daily_limit,
+            "You reached today's wanted post limit. Try again tomorrow.",
+        )
     wanted_post = repo.create_wanted_post(owner.id, payload.model_dump())
     _refresh_matches_for_category(db, wanted_post.category)
     return wanted_post
@@ -349,6 +395,12 @@ def create_listing_report(
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+    _ensure_daily_limit(
+        repo.count_listing_reports_by_user_since(current_user.id, _daily_limit_start())
+        + repo.count_user_reports_by_user_since(current_user.id, _daily_limit_start()),
+        get_settings().trade_report_daily_limit,
+        "You reached today's report limit. Try again tomorrow.",
+    )
     reason = normalize_listing_report_reason(payload.report_type)
     if reason is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid listing report reason.")
@@ -374,9 +426,9 @@ def create_listing_report(
                 "hidden_reason": "Auto-hidden after safety reports.",
             },
         )
-        repo.expire_pending_contact_requests(listing.id)
-    elif listing.moderation_status == "approved":
-        repo.update_listing(listing, {"moderation_status": "review_required"})
+        _expire_pending_requests_for_listing(repo, listing, "This item is under safety review.")
+    elif listing.moderation_status in {"clear", "approved"}:
+        repo.update_listing(listing, {"moderation_status": "flagged"})
     repo.create_notification(
         {
             "user_id": listing.seller_id,
@@ -398,17 +450,44 @@ def create_contact_request(
     current_user: User,
 ) -> TradeContactRequest:
     repo = TradeRepository(db)
+    _expire_stale_contact_requests(db)
+    _ensure_profile_ready(current_user)
+    _ensure_daily_limit(
+        repo.count_contact_requests_by_user_since(current_user.id, _daily_limit_start()),
+        get_settings().trade_contact_request_daily_limit,
+        "You reached today's contact request limit. Try again tomorrow.",
+    )
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
     if listing.seller_id == current_user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot request contact for your own listing.")
-    if listing.status not in {"available", "reserved"} or listing.moderation_status != "approved":
+    if listing.status not in {"available", "reserved"} or listing.moderation_status not in {"clear", "flagged", "approved"}:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This listing is not available for contact requests.")
-    if not listing.contact_method or not listing.contact_value:
+    if not listing.contact_method or (listing.contact_method not in {"in_app", "email"} and not listing.contact_value):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Seller contact setup is incomplete.")
     if repo.get_existing_contact_request(listing.id, current_user.id) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have an open contact request for this listing.")
+
+    buyer_contact_method = payload.buyer_contact_method
+    buyer_contact_value = (payload.buyer_contact_value or "").strip()
+    if buyer_contact_method == "email" and not buyer_contact_value:
+        buyer_contact_value = current_user.email
+    if buyer_contact_method in {"telegram", "whatsapp"} and not buyer_contact_value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Add your contact value before sending this request.")
+    if buyer_contact_method == "in_app":
+        buyer_contact_value = None
+
+    profile = current_user.profile
+    if getattr(profile, "trade_safety_acknowledged_at", None) is None:
+        if not payload.safety_acknowledged:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Confirm the UM Nexus safety reminder before your first contact request.",
+            )
+        profile.trade_safety_acknowledged_at = datetime.now(UTC)
+        db.add(profile)
+        db.commit()
 
     contact_request = repo.create_contact_request(
         {
@@ -416,8 +495,8 @@ def create_contact_request(
             "buyer_id": current_user.id,
             "seller_id": listing.seller_id,
             "message": payload.message,
-            "buyer_contact_method": payload.buyer_contact_method,
-            "buyer_contact_value": payload.buyer_contact_value,
+            "buyer_contact_method": buyer_contact_method,
+            "buyer_contact_value": buyer_contact_value,
             "status": "pending",
         }
     )
@@ -426,21 +505,35 @@ def create_contact_request(
             "user_id": listing.seller_id,
             "type": "contact_request_received",
             "title": "New buyer interest",
-            "body": f"Someone is interested in {listing.title}.",
+            "body": f"Someone is interested in {listing.title}. Their message and selected contact method are visible in My Trade.",
             "action_url": "/trade/dashboard",
             "entity_type": "contact_request",
             "entity_id": contact_request.id,
+        }
+    )
+    repo.create_product_event(
+        {
+            "user_id": current_user.id,
+            "event_type": "contact_request_sent",
+            "entity_type": "contact_request",
+            "entity_id": contact_request.id,
+            "event_metadata": {"listing_id": listing.id, "listing_status": listing.status},
         }
     )
     return contact_request
 
 
 def list_contact_requests_for_user(db: Session, current_user: User) -> dict[str, list[TradeContactRequest]]:
+    _expire_stale_contact_requests(db)
     repo = TradeRepository(db)
     return {
         "received": list(repo.list_contact_requests_received(current_user.id)),
         "sent": list(repo.list_contact_requests_sent(current_user.id)),
     }
+
+
+def expire_stale_contact_requests(db: Session) -> int:
+    return _expire_stale_contact_requests(db)
 
 
 def decide_contact_request(
@@ -450,6 +543,7 @@ def decide_contact_request(
     current_user: User,
 ) -> TradeContactRequest:
     repo = TradeRepository(db)
+    _expire_stale_contact_requests(db)
     contact_request = repo.get_contact_request_or_none(contact_request_id)
     if contact_request is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact request not found")
@@ -473,15 +567,18 @@ def decide_contact_request(
     }
     updated = repo.update_contact_request(contact_request, values)
     if updated.status == "accepted":
-        if updated.listing and updated.listing.status == "available":
+        if payload.mark_listing_reserved and updated.listing and updated.listing.status == "available":
             repo.update_listing(updated.listing, {"status": "reserved"})
+            _notify_listing_status_changed(repo, updated.listing)
         repo.create_trade_transaction(
             {
                 "listing_id": updated.listing_id,
                 "trade_match_id": None,
+                "contact_request_id": updated.id,
                 "seller_id": updated.seller_id,
                 "buyer_id": updated.buyer_id,
                 "status": "contact_accepted",
+                "sale_source": "accepted_request",
                 "currency": updated.listing.currency if updated.listing else "MYR",
             }
         )
@@ -490,7 +587,11 @@ def decide_contact_request(
             "user_id": updated.buyer_id,
             "type": f"contact_request_{updated.status}",
             "title": "Contact request updated",
-            "body": f"Your contact request was {updated.status}.",
+            "body": (
+                "Request accepted. Seller-approved contact details are visible after profile completion."
+                if updated.status == "accepted"
+                else "Your contact request was rejected by the seller."
+            ),
             "action_url": "/trade/dashboard",
             "entity_type": "contact_request",
             "entity_id": updated.id,
@@ -529,10 +630,98 @@ def cancel_contact_request(db: Session, contact_request_id: str, current_user: U
     return updated
 
 
+def resolve_accepted_contact_request(
+    db: Session,
+    contact_request_id: str,
+    payload: ContactRequestSellerResolution,
+    current_user: User,
+) -> TradeContactRequest:
+    repo = TradeRepository(db)
+    contact_request = repo.get_contact_request_or_none(contact_request_id)
+    if contact_request is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Contact request not found")
+    if contact_request.seller_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can resolve this request.")
+    if contact_request.status != "accepted":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only accepted requests can be resolved by the seller.")
+
+    now = datetime.now(UTC)
+    listing = contact_request.listing
+    if payload.action == "mark_completed":
+        updated = repo.update_contact_request(contact_request, {"status": "accepted"})
+        if listing is not None:
+            _apply_listing_status_transition(listing, "sold", current_user, reason="Seller marked accepted request completed.")
+            repo.update_listing(
+                listing,
+                {
+                    "status": "sold",
+                    "sold_source": payload.sold_source or "accepted_request",
+                    "sold_contact_request_id": contact_request.id,
+                },
+            )
+            _expire_pending_requests_for_listing(repo, listing, "The seller marked this request completed.")
+            repo.create_trade_transaction(
+                {
+                    "listing_id": listing.id,
+                    "trade_match_id": None,
+                    "contact_request_id": contact_request.id,
+                    "seller_id": contact_request.seller_id,
+                    "buyer_id": contact_request.buyer_id,
+                    "status": "completed",
+                    "sale_source": payload.sold_source or "accepted_request",
+                    "agreed_price": Decimal(str(payload.agreed_price)) if payload.agreed_price is not None else None,
+                    "currency": listing.currency,
+                    "completed_at": now,
+                }
+            )
+            _notify_listing_status_changed(repo, listing)
+        repo.create_notification(
+            {
+                "user_id": contact_request.buyer_id,
+                "type": "trade_marked_completed",
+                "title": "Trade marked completed",
+                "body": "The seller marked this accepted request as completed.",
+                "action_url": "/trade/dashboard",
+                "entity_type": "contact_request",
+                "entity_id": contact_request.id,
+            }
+        )
+        return updated
+
+    next_status = "cancelled" if payload.action == "cancel_accepted" else "expired"
+    timestamp_field = "cancelled_at" if next_status == "cancelled" else "expired_at"
+    updated = repo.update_contact_request(contact_request, {"status": next_status, timestamp_field: now})
+    if listing is not None and listing.status == "reserved":
+        repo.update_listing(listing, {"status": "available"})
+    repo.create_notification(
+        {
+            "user_id": contact_request.buyer_id,
+            "type": f"contact_request_{next_status}",
+            "title": "Contact request updated",
+            "body": (
+                "The seller cancelled this accepted request."
+                if next_status == "cancelled"
+                else "The seller marked this request as no response."
+            ),
+            "action_url": "/trade/dashboard",
+            "entity_type": "contact_request",
+            "entity_id": updated.id,
+        }
+    )
+    return updated
+
+
 def contact_request_read(contact_request: TradeContactRequest, viewer: User) -> ContactRequestRead:
     is_party = viewer.id in {contact_request.buyer_id, contact_request.seller_id}
-    reveal = is_party and contact_request.status == "accepted"
+    is_buyer = viewer.id == contact_request.buyer_id
+    is_seller = viewer.id == contact_request.seller_id
+    viewer_profile_ready = _profile_ready(viewer)
+    seller_reveal = is_party and contact_request.status == "accepted" and viewer_profile_ready
+    buyer_reveal = is_seller or (is_buyer and contact_request.status == "accepted" and viewer_profile_ready)
     listing = contact_request.listing
+    blocked_reason = None
+    if is_buyer and contact_request.status == "accepted" and not viewer_profile_ready:
+        blocked_reason = "Complete your profile before viewing seller contact details."
     return ContactRequestRead(
         id=contact_request.id,
         listing_id=contact_request.listing_id,
@@ -540,9 +729,10 @@ def contact_request_read(contact_request: TradeContactRequest, viewer: User) -> 
         seller_id=contact_request.seller_id,
         message=contact_request.message,
         buyer_contact_method=contact_request.buyer_contact_method,
-        buyer_contact_value=contact_request.buyer_contact_value if reveal else None,
-        seller_contact_method=listing.contact_method if reveal and listing else None,
-        seller_contact_value=listing.contact_value if reveal and listing else None,
+        buyer_contact_value=contact_request.buyer_contact_value if buyer_reveal else None,
+        seller_contact_method=listing.contact_method if seller_reveal and listing else None,
+        seller_contact_value=_seller_contact_value(listing) if seller_reveal and listing else None,
+        contact_reveal_blocked_reason=blocked_reason,
         status=contact_request.status,
         seller_response=contact_request.seller_response,
         accepted_at=contact_request.accepted_at,
@@ -566,13 +756,22 @@ def create_user_report(
     repo = TradeRepository(db)
     if repo.get_user_or_none(reported_user_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    _ensure_daily_limit(
+        repo.count_listing_reports_by_user_since(current_user.id, _daily_limit_start())
+        + repo.count_user_reports_by_user_since(current_user.id, _daily_limit_start()),
+        get_settings().trade_report_daily_limit,
+        "You reached today's report limit. Try again tomorrow.",
+    )
+    report_type = normalize_user_report_reason(payload.report_type)
+    if report_type is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user report reason.")
     if repo.get_pending_user_report_by_user(reported_user_id, current_user.id) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already reported this user.")
     return repo.create_user_report(
         {
             "reported_user_id": reported_user_id,
             "reporter_user_id": current_user.id,
-            "report_type": payload.report_type,
+            "report_type": report_type,
             "reason": payload.reason,
             "status": "pending",
         }
@@ -624,7 +823,8 @@ def review_listing_reports(
             db.add(report)
     db.commit()
 
-    moderation_status = payload.moderation_status or ("approved" if report_status in {"reviewed", "dismissed"} else "review_required")
+    moderation_status = normalize_moderation_status(payload.moderation_status) if payload.moderation_status else None
+    moderation_status = moderation_status or ("clear" if report_status in {"reviewed", "dismissed"} else "review_required")
     values = {"moderation_status": moderation_status}
     if moderation_status == "rejected":
         values["status"] = "deleted"
@@ -638,6 +838,17 @@ def review_listing_reports(
             "target_id": listing.id,
             "action_type": "mark_report_action_taken" if report_status == "action_taken" else "dismiss_report",
             "reason": payload.resolution,
+        }
+    )
+    repo.create_notification(
+        {
+            "user_id": listing.seller_id,
+            "type": "report_reviewed",
+            "title": "Listing report reviewed",
+            "body": "A moderator reviewed reports for your listing.",
+            "action_url": f"/trade/{listing.id}",
+            "entity_type": "listing",
+            "entity_id": listing.id,
         }
     )
     return updated
@@ -783,6 +994,7 @@ def update_trade_transaction(
 
 
 def trade_dashboard(db: Session, current_user: User) -> dict:
+    _expire_stale_contact_requests(db)
     repo = TradeRepository(db)
     listings = list(repo.list_listings_by_seller(current_user.id))
     favorites = list(repo.list_favorites_for_user(current_user.id))
@@ -810,7 +1022,7 @@ def moderation_summary(db: Session) -> dict:
         "high_risk_count": sum(1 for listing in listings if listing.risk_level == "high"),
         "pending_review_count": sum(1 for listing in listings if listing.moderation_status == "review_required"),
         "rejected_count": sum(1 for listing in listings if listing.moderation_status == "rejected"),
-        "approved_count": sum(1 for listing in listings if listing.moderation_status == "approved"),
+        "approved_count": sum(1 for listing in listings if listing.moderation_status in {"clear", "approved"}),
     }
 
 
@@ -855,6 +1067,8 @@ def admin_update_listing(
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
     values = payload.model_dump(exclude_unset=True, exclude={"resolution", "reason"})
+    if values.get("moderation_status"):
+        values["moderation_status"] = normalize_moderation_status(values["moderation_status"]) or values["moderation_status"]
     if not (payload.reason or payload.resolution):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin actions require a reason.")
     if values.get("status") == "deleted" and "moderation_status" not in values:
@@ -863,7 +1077,19 @@ def admin_update_listing(
         _apply_listing_status_transition(listing, values["status"], moderator, reason=payload.reason or payload.resolution)
     updated = repo.update_listing(listing, values)
     if updated.status in {"hidden", "deleted", "sold"}:
-        repo.expire_pending_contact_requests(updated.id)
+        _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
+    if updated.status == "hidden":
+        repo.create_notification(
+            {
+                "user_id": updated.seller_id,
+                "type": "listing_hidden_by_moderation",
+                "title": "Listing hidden for review",
+                "body": "A moderator hid your listing while reviewing safety signals.",
+                "action_url": f"/trade/{updated.id}",
+                "entity_type": "listing",
+                "entity_id": updated.id,
+            }
+        )
     if payload.resolution:
         now = datetime.now(UTC)
         for report in repo.list_reports_for_listing(listing.id):
@@ -917,7 +1143,7 @@ def admin_update_user_status(
                         "moderation_status": "review_required",
                     },
                 )
-                repo.expire_pending_contact_requests(listing.id)
+                _expire_pending_requests_for_listing(repo, listing, "This seller account was restricted.")
     if admin is not None:
         repo.create_admin_action(
             {
@@ -1061,11 +1287,15 @@ def _prepare_listing_values(values: dict, existing: Listing | None = None, *, fo
 
     contact_method = prepared.get("contact_method", existing.contact_method if existing else None)
     contact_value = prepared.get("contact_value", existing.contact_value if existing else None)
-    if bool(contact_method) != bool(contact_value):
+    if contact_method in {"telegram", "whatsapp"} and for_publish and not contact_value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Contact method and contact value must be provided together.",
+            detail="Telegram and WhatsApp contacts require a contact value before publishing.",
         )
+    if contact_method == "in_app":
+        prepared["contact_value"] = None
+    if contact_method == "email" and for_publish and not contact_value:
+        prepared["contact_value"] = None
 
     if for_publish:
         _validate_publish_ready(prepared, existing)
@@ -1098,6 +1328,8 @@ def _prepare_listing_values(values: dict, existing: Listing | None = None, *, fo
             prepared["status"] = "hidden"
             prepared["hidden_at"] = datetime.now(UTC)
             prepared["hidden_reason"] = "High-risk policy scan."
+    elif for_publish and not prepared.get("moderation_status"):
+        prepared["moderation_status"] = "clear"
 
     return prepared
 
@@ -1124,8 +1356,10 @@ def _validate_publish_ready(prepared: dict, existing: Listing | None = None) -> 
         errors.append("price")
     if not pickup_location:
         errors.append("pickup_location")
-    if not contact_method or not contact_value:
+    if not contact_method:
         errors.append("contact_method")
+    elif contact_method in {"telegram", "whatsapp"} and not contact_value:
+        errors.append("contact_value")
     if errors:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1134,15 +1368,125 @@ def _validate_publish_ready(prepared: dict, existing: Listing | None = None) -> 
 
 
 def _ensure_profile_ready(user: User) -> None:
+    if _profile_ready(user):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Complete your profile display name, faculty, and campus location before publishing, contacting, or posting wanted requests.",
+    )
+
+
+def _profile_ready(user: User) -> bool:
     profile = user.profile
     display_name = getattr(profile, "display_name", None) or getattr(profile, "full_name", None)
     faculty = getattr(profile, "faculty", None)
     location = getattr(profile, "college_or_location", None) or getattr(profile, "residential_college", None)
-    if not (display_name and faculty and location):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Complete your profile display name, faculty, and campus location before publishing a listing.",
+    return bool(display_name and faculty and location)
+
+
+def _daily_limit_start() -> datetime:
+    return datetime.now(UTC) - timedelta(days=1)
+
+
+def _ensure_daily_limit(current_count: int, limit: int, detail: str) -> None:
+    if limit >= 0 and current_count >= limit:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
+
+
+def _expire_stale_contact_requests(db: Session) -> int:
+    settings = get_settings()
+    if settings.contact_request_expiry_days <= 0:
+        return 0
+    repo = TradeRepository(db)
+    cutoff = datetime.now(UTC) - timedelta(days=settings.contact_request_expiry_days)
+    expired = list(repo.expire_stale_pending_contact_requests(cutoff))
+    for contact_request in expired:
+        title = contact_request.listing.title if contact_request.listing else "a listing"
+        repo.create_notification(
+            {
+                "user_id": contact_request.buyer_id,
+                "type": "contact_request_expired",
+                "title": "Contact request expired",
+                "body": f"Your request for {title} expired because the seller did not respond.",
+                "action_url": "/trade/dashboard",
+                "entity_type": "contact_request",
+                "entity_id": contact_request.id,
+            }
         )
+    return len(expired)
+
+
+def _seller_contact_value(listing: Listing) -> str | None:
+    if listing.contact_method == "email":
+        return listing.contact_value or getattr(listing.seller, "email", None)
+    if listing.contact_method == "in_app":
+        return None
+    return listing.contact_value
+
+
+def _notify_listing_status_changed(repo: TradeRepository, listing: Listing) -> None:
+    if listing.status not in {"reserved", "sold"}:
+        return
+    for contact_request in list(repo.list_contact_requests_sent_for_listing(listing.id)):
+        if contact_request.status not in {"pending", "accepted"}:
+            continue
+        repo.create_notification(
+            {
+                "user_id": contact_request.buyer_id,
+                "type": f"listing_marked_{listing.status}",
+                "title": f"Listing marked {listing.status}",
+                "body": (
+                    "The seller marked this item as reserved."
+                    if listing.status == "reserved"
+                    else "The seller marked this item as sold. Pending requests have been closed."
+                ),
+                "action_url": "/trade/dashboard",
+                "entity_type": "listing",
+                "entity_id": listing.id,
+            }
+        )
+
+
+def _expire_pending_requests_for_listing(repo: TradeRepository, listing: Listing, reason: str) -> int:
+    pending_requests = [
+        contact_request
+        for contact_request in repo.list_contact_requests_sent_for_listing(listing.id)
+        if contact_request.status == "pending"
+    ]
+    repo.expire_pending_contact_requests(listing.id)
+    for contact_request in pending_requests:
+        repo.create_notification(
+            {
+                "user_id": contact_request.buyer_id,
+                "type": "contact_request_expired",
+                "title": "Contact request closed",
+                "body": reason,
+                "action_url": "/trade/dashboard",
+                "entity_type": "contact_request",
+                "entity_id": contact_request.id,
+            }
+        )
+    return len(pending_requests)
+
+
+def _notify_wanted_source_owner(db: Session, listing: Listing) -> None:
+    if not listing.source_wanted_post_id:
+        return
+    repo = TradeRepository(db)
+    wanted_post = repo.get_wanted_post_or_none(listing.source_wanted_post_id)
+    if wanted_post is None or wanted_post.buyer_id == listing.seller_id:
+        return
+    repo.create_notification(
+        {
+            "user_id": wanted_post.buyer_id,
+            "type": "wanted_match_listing_created",
+            "title": "Someone may have your wanted item",
+            "body": f"A seller created a listing from your wanted request: {listing.title}.",
+            "action_url": f"/trade/{listing.id}",
+            "entity_type": "listing",
+            "entity_id": listing.id,
+        }
+    )
 
 
 def _listing_payload_for_validation(listing: Listing) -> dict:
@@ -1208,7 +1552,7 @@ def _apply_listing_status_transition(
 
 
 def _can_view_listing(listing: Listing, viewer: User | None) -> bool:
-    if listing.status in {"available", "reserved", "sold"} and listing.moderation_status == "approved":
+    if listing.status in {"available", "reserved", "sold"} and listing.moderation_status in {"clear", "flagged", "approved"}:
         return True
     if viewer is None:
         return False

@@ -531,7 +531,9 @@ function listingToPayload(listing: Listing): ListingPayload {
     pickup_area: pickupLocation,
     pickup_note: listing.pickup_note ?? "",
     residential_college: listing.residential_college ?? undefined,
-    contact_method: listing.contact_method === "whatsapp" ? "whatsapp" : "telegram",
+    contact_method: contactMethods.some((method) => method.value === listing.contact_method)
+      ? (listing.contact_method as ListingPayload["contact_method"])
+      : "in_app",
     contact_value: "",
   };
 }
@@ -551,7 +553,10 @@ function preparePayload(payload: ListingPayload): Partial<ListingPayload> {
     pickup_location: pickupLocation,
     pickup_area: pickupLocation,
     pickup_note: payload.pickup_note?.trim() || undefined,
-    contact_value: payload.contact_value?.trim() || undefined,
+    contact_value:
+      payload.contact_method === "telegram" || payload.contact_method === "whatsapp"
+        ? payload.contact_value?.trim() || undefined
+        : undefined,
   };
 }
 
@@ -575,7 +580,10 @@ function validatePayload(payload: ListingPayload): string | null {
   if (Number(prepared.price) < 0) {
     return "Price must be 0 or more.";
   }
-  if (!prepared.contact_method || !prepared.contact_value) {
+  if (!prepared.contact_method) {
+    return "Choose a contact method before saving.";
+  }
+  if ((prepared.contact_method === "telegram" || prepared.contact_method === "whatsapp") && !prepared.contact_value) {
     return "Add your Telegram or WhatsApp contact before saving.";
   }
   return null;

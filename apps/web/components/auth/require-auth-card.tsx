@@ -1,19 +1,34 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { type AuthIntent, buildAuthHref } from "@/lib/auth/return-intent";
 
 type RequireAuthCardProps = Readonly<{
   title?: string;
   description?: string;
+  intent?: AuthIntent;
+  listingId?: string;
+  returnTo?: string;
 }>;
 
 export function RequireAuthCard({
   title = "Sign in required",
   description = "Use your UM account to access this trade workflow.",
+  intent,
+  listingId,
+  returnTo,
 }: RequireAuthCardProps) {
   const { isLoading, user } = useAuth();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const query = searchParams.toString();
+  const currentPath = `${pathname}${query ? `?${query}` : ""}`;
+  const safeReturnTo = returnTo ?? currentPath;
+  const loginHref = buildAuthHref("login", { returnTo: safeReturnTo, intent, listingId });
+  const signupHref = buildAuthHref("signup", { returnTo: safeReturnTo, intent, listingId });
 
   if (isLoading) {
     return (
@@ -34,13 +49,13 @@ export function RequireAuthCard({
       <div className="mt-4 flex flex-wrap gap-3">
         <Link
           className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
-          href="/login"
+          href={loginHref}
         >
           Sign in
         </Link>
         <Link
           className="rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-semibold text-amber-950 transition hover:border-amber-500"
-          href="/signup"
+          href={signupHref}
         >
           Create account
         </Link>

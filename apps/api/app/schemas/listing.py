@@ -55,15 +55,15 @@ class SellerSummary(BaseModel):
 
 
 class ListingCreate(BaseModel):
-    title: str = Field(..., min_length=5, max_length=100)
-    description: str = Field(..., min_length=10, max_length=2000)
-    category: TradeCategory
+    title: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    category: TradeCategory = "others"
     item_name: str | None = Field(default=None, max_length=255)
     brand: str | None = Field(default=None, max_length=255)
     model: str | None = Field(default=None, max_length=255)
     condition: ConditionLabel | None = Field(default=None, max_length=64)
     condition_label: ConditionLabel | None = Field(default=None, max_length=64)
-    price: float = Field(..., ge=0)
+    price: float = Field(default=0, ge=0)
     original_price: float | None = Field(default=None, ge=0)
     currency: str = Field(default="MYR", min_length=3, max_length=3)
     pickup_location: PickupArea | None = None
@@ -72,6 +72,7 @@ class ListingCreate(BaseModel):
     residential_college: str | None = Field(default=None, max_length=255)
     contact_method: ContactMethod | None = None
     contact_value: str | None = Field(default=None, max_length=255)
+    source_wanted_post_id: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="before")
     @classmethod
@@ -134,6 +135,7 @@ class ListingUpdate(BaseModel):
     contact_method: ContactMethod | None = None
     contact_value: str | None = Field(default=None, max_length=255)
     status: ListingStatus | None = Field(default=None, max_length=32)
+    source_wanted_post_id: str | None = Field(default=None, max_length=64)
 
     @model_validator(mode="before")
     @classmethod
@@ -203,6 +205,9 @@ class ListingRead(BaseModel):
     pickup_note: str | None = None
     residential_college: str | None
     contact_method: str | None
+    source_wanted_post_id: str | None = None
+    sold_source: str | None = None
+    sold_contact_request_id: str | None = None
     status: str
     view_count: int = 0
     hidden_at: datetime | None = None
@@ -277,6 +282,9 @@ class ListingFavoriteRead(BaseModel):
 class ListingStatusUpdate(BaseModel):
     status: ListingStatus
     reason: str | None = Field(default=None, max_length=2000)
+    sold_source: str | None = Field(default=None, max_length=64)
+    sold_contact_request_id: str | None = Field(default=None, max_length=64)
+    agreed_price: float | None = Field(default=None, ge=0)
 
     @field_validator("status", mode="before")
     @classmethod

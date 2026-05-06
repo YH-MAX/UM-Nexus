@@ -36,6 +36,9 @@ from app.models import (
 from app.trade.constants import PUBLIC_LISTING_STATUSES
 
 
+PUBLIC_MODERATION_STATUSES = ("clear", "flagged", "approved")
+
+
 class TradeRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -45,6 +48,14 @@ class TradeRepository:
         self.db.add(listing)
         self.db.commit()
         return self.get_listing_or_none(listing.id) or listing
+
+    def count_listings_created_by_user_since(self, seller_id: str, since: datetime) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Listing)
+            .where(Listing.seller_id == seller_id, Listing.created_at >= since)
+        )
+        return int(self.db.scalar(stmt) or 0)
 
     def list_listings(
         self,
@@ -66,7 +77,7 @@ class TradeRepository:
             .options(selectinload(Listing.images), selectinload(Listing.seller).selectinload(User.profile))
         )
         if public_only:
-            stmt = stmt.where(Listing.moderation_status == "approved")
+            stmt = stmt.where(Listing.moderation_status.in_(PUBLIC_MODERATION_STATUSES))
             if status is not None and status not in PUBLIC_LISTING_STATUSES:
                 stmt = stmt.where(false())
             elif status is None:
@@ -121,7 +132,7 @@ class TradeRepository:
         stmt = (
             select(Listing)
             .options(selectinload(Listing.images))
-            .where(Listing.category == category, Listing.status == status, Listing.moderation_status == "approved")
+            .where(Listing.category == category, Listing.status == status, Listing.moderation_status.in_(PUBLIC_MODERATION_STATUSES))
             .order_by(desc(Listing.created_at))
         )
         return self.db.scalars(stmt).all()
@@ -244,6 +255,14 @@ class TradeRepository:
         self.db.commit()
         self.db.refresh(wanted_post)
         return wanted_post
+
+    def count_wanted_posts_created_by_user_since(self, buyer_id: str, since: datetime) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(WantedPost)
+            .where(WantedPost.buyer_id == buyer_id, WantedPost.created_at >= since)
+        )
+        return int(self.db.scalar(stmt) or 0)
 
     def list_wanted_posts(self, status: str = "active") -> Sequence[WantedPost]:
         stmt = select(WantedPost).where(WantedPost.status == status).order_by(desc(WantedPost.created_at))
@@ -448,6 +467,14 @@ class TradeRepository:
         self.db.refresh(report)
         return report
 
+    def count_listing_reports_by_user_since(self, reporter_user_id: str, since: datetime) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(ListingReport)
+            .where(ListingReport.reporter_user_id == reporter_user_id, ListingReport.created_at >= since)
+        )
+        return int(self.db.scalar(stmt) or 0)
+
     def get_pending_listing_report_by_user(self, listing_id: str, reporter_user_id: str) -> ListingReport | None:
         stmt = select(ListingReport).where(
             ListingReport.listing_id == listing_id,
@@ -473,6 +500,14 @@ class TradeRepository:
         self.db.add(contact_request)
         self.db.commit()
         return self.get_contact_request_or_none(contact_request.id) or contact_request
+
+    def count_contact_requests_by_user_since(self, buyer_id: str, since: datetime) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(TradeContactRequest)
+            .where(TradeContactRequest.buyer_id == buyer_id, TradeContactRequest.created_at >= since)
+        )
+        return int(self.db.scalar(stmt) or 0)
 
     def get_contact_request_or_none(self, contact_request_id: str) -> TradeContactRequest | None:
         stmt = (
@@ -513,6 +548,37 @@ class TradeRepository:
             self.db.commit()
         return len(requests)
 
+    def expire_stale_pending_contact_requests(
+        self,
+        cutoff: datetime,
+        *,
+        expired_at: datetime | None = None,
+    ) -> Sequence[TradeContactRequest]:
+        now = expired_at or datetime.now(UTC)
+        requests = list(
+            self.db.scalars(
+                select(TradeContactRequest)
+                .options(selectinload(TradeContactRequest.listing))
+                .where(
+                    TradeContactRequest.status == "pending",
+                    TradeContactRequest.created_at <= cutoff,
+                )
+            ).all()
+        )
+        for contact_request in requests:
+            contact_request.status = "expired"
+            contact_request.expired_at = now
+            self.db.add(contact_request)
+        if requests:
+            self.db.commit()
+            ids = [contact_request.id for contact_request in requests]
+            return self.db.scalars(
+                select(TradeContactRequest)
+                .options(selectinload(TradeContactRequest.listing).selectinload(Listing.images))
+                .where(TradeContactRequest.id.in_(ids))
+            ).all()
+        return requests
+
     def list_contact_requests_received(self, seller_id: str) -> Sequence[TradeContactRequest]:
         stmt = (
             select(TradeContactRequest)
@@ -541,6 +607,14 @@ class TradeRepository:
         )
         return self.db.scalars(stmt).all()
 
+    def list_contact_requests_sent_for_listing(self, listing_id: str) -> Sequence[TradeContactRequest]:
+        stmt = (
+            select(TradeContactRequest)
+            .where(TradeContactRequest.listing_id == listing_id)
+            .order_by(desc(TradeContactRequest.updated_at), desc(TradeContactRequest.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
     def update_contact_request(self, contact_request: TradeContactRequest, values: dict) -> TradeContactRequest:
         for field_name, value in values.items():
             setattr(contact_request, field_name, value)
@@ -554,6 +628,14 @@ class TradeRepository:
         self.db.commit()
         self.db.refresh(report)
         return report
+
+    def count_user_reports_by_user_since(self, reporter_user_id: str, since: datetime) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(UserReport)
+            .where(UserReport.reporter_user_id == reporter_user_id, UserReport.created_at >= since)
+        )
+        return int(self.db.scalar(stmt) or 0)
 
     def get_pending_user_report_by_user(self, reported_user_id: str, reporter_user_id: str) -> UserReport | None:
         stmt = select(UserReport).where(
@@ -717,7 +799,7 @@ class TradeRepository:
             )
             .where(
                 or_(
-                    Listing.moderation_status != "approved",
+                    Listing.moderation_status.notin_(("clear", "approved")),
                     Listing.risk_level == "high",
                     Listing.reports.any(ListingReport.status == "pending"),
                 )
@@ -771,7 +853,7 @@ class TradeRepository:
         week_start = datetime.now(UTC) - timedelta(days=7)
         categories_stmt = (
             select(Listing.category, func.count(Listing.id))
-            .where(Listing.status.in_(("available", "reserved")), Listing.moderation_status == "approved")
+            .where(Listing.status.in_(("available", "reserved")), Listing.moderation_status.in_(PUBLIC_MODERATION_STATUSES))
             .group_by(Listing.category)
             .order_by(desc(func.count(Listing.id)))
             .limit(6)

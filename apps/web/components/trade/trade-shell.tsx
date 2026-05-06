@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   Bell,
   Heart,
@@ -12,6 +13,8 @@ import {
   User,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+
+import { useAuth } from "@/components/auth/auth-provider";
 
 type TradeShellProps = Readonly<{
   children: React.ReactNode;
@@ -52,6 +55,21 @@ export function TradeShell({
   action,
 }: TradeShellProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const [showOnboarding, setShowOnboarding] = useState(false);
+
+  useEffect(() => {
+    if (!user || window.localStorage.getItem("um_nexus_trade_onboarding_dismissed") === "true") {
+      setShowOnboarding(false);
+      return;
+    }
+    setShowOnboarding(true);
+  }, [user]);
+
+  function dismissOnboarding() {
+    window.localStorage.setItem("um_nexus_trade_onboarding_dismissed", "true");
+    setShowOnboarding(false);
+  }
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-slate-50 pb-24 text-slate-950 md:pb-0">
@@ -100,6 +118,7 @@ export function TradeShell({
           </div>
           {action ? <div className="shrink-0">{action}</div> : null}
         </section>
+        {showOnboarding ? <TradeOnboardingCard onDismiss={dismissOnboarding} /> : null}
         {children}
       </div>
 
@@ -114,6 +133,27 @@ export function TradeShell({
         </div>
       </nav>
     </main>
+  );
+}
+
+function TradeOnboardingCard({ onDismiss }: Readonly<{ onDismiss: () => void }>) {
+  return (
+    <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Welcome to UM Nexus Trade</h2>
+          <p className="mt-2 text-sm leading-6">
+            Browse UM student listings, sell an item in under one minute, send contact requests safely, and meet on campus before payment.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link className="trade-button-primary" href="/trade">Browse Listings</Link>
+          <Link className="trade-button-secondary bg-white" href="/trade/sell">Sell an Item</Link>
+          <Link className="trade-button-secondary bg-white" href="/trade/profile">Complete Profile</Link>
+          <button className="trade-button-secondary bg-white" onClick={onDismiss} type="button">Dismiss</button>
+        </div>
+      </div>
+    </section>
   );
 }
 

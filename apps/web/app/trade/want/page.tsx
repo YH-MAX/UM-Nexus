@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Megaphone, Search } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
@@ -9,14 +9,18 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   createWantedPost,
+  getCurrentUser,
+  isProfileComplete,
   pickupAreas,
   tradeCategories,
+  type CurrentProfile,
   type WantedPostPayload,
 } from "@/lib/trade/api";
 
 export default function WantPage() {
   const router = useRouter();
   const { user } = useAuth();
+  const [profile, setProfile] = useState<CurrentProfile | null>(null);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -29,12 +33,38 @@ export default function WantPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!user) {
+      setProfile(null);
+      return;
+    }
+    let isMounted = true;
+    void getCurrentUser()
+      .then((current) => {
+        if (isMounted) {
+          setProfile(current.profile);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setProfile(null);
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [user]);
+
   function updateField(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!isProfileComplete(profile)) {
+      setError("Complete your trade profile before posting a wanted request.");
+      return;
+    }
     setIsSubmitting(true);
     setError(null);
 
@@ -50,7 +80,7 @@ export default function WantPage() {
         residential_college: form.residential_college || undefined,
       };
       const wantedPost = await createWantedPost(payload);
-      router.push(`/wanted-posts/${wantedPost.id}`);
+      router.push(`/wanted-posts/${wantedPost.id}?posted=1`);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to create wanted post.");
     } finally {
@@ -64,10 +94,15 @@ export default function WantPage() {
       description="Post a wanted request and let UM students know what you need. Wanted is for buyer demand; listings are still the main marketplace."
     >
       {!user ? (
-        <RequireAuthCard description="Sign in with your UM account before creating buyer wanted posts." />
+        <RequireAuthCard description="Sign in with your UM account before creating buyer wanted posts." intent="post_wanted" returnTo="/trade/want" />
       ) : null}
       {user ? (
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          {!isProfileComplete(profile) ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 lg:col-span-2">
+              Complete your profile before posting wanted requests. You can keep browsing and saving listings now.
+            </div>
+          ) : null}
           <form
             className="trade-card grid gap-5 p-5"
             onSubmit={handleSubmit}

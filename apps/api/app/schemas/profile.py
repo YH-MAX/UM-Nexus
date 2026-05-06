@@ -21,6 +21,7 @@ class ProfileRead(BaseModel):
     contact_preference: str | None
     contact_value: str | None
     verified_um_email: bool
+    trade_safety_acknowledged_at: datetime | None
     app_role: AppRole
     created_at: datetime
     updated_at: datetime

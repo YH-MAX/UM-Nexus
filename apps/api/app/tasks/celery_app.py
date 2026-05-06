@@ -11,3 +11,10 @@ celery_app = Celery(
 
 celery_app.conf.task_always_eager = os.getenv("CELERY_TASK_ALWAYS_EAGER", "true").lower() == "true"
 celery_app.conf.task_eager_propagates = True
+celery_app.conf.imports = ("app.tasks.trade_tasks", "app.tasks.trade_intelligence_tasks")
+celery_app.conf.beat_schedule = {
+    "expire-stale-trade-contact-requests-hourly": {
+        "task": "trade.expire_stale_contact_requests",
+        "schedule": 60 * 60,
+    },
+}

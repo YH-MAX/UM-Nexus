@@ -35,10 +35,11 @@ PickupArea = Literal[
 ]
 ConditionLabel = Literal["new", "like_new", "good", "fair", "poor"]
 ListingStatus = Literal["draft", "available", "reserved", "sold", "hidden", "deleted"]
-ContactMethod = Literal["telegram", "whatsapp"]
+ContactMethod = Literal["in_app", "telegram", "whatsapp", "email"]
 ContactRequestStatus = Literal["pending", "accepted", "rejected", "cancelled", "expired"]
 UserStatus = Literal["active", "suspended", "banned", "deleted"]
 RiskLevel = Literal["low", "medium", "high"]
+ModerationStatus = Literal["clear", "flagged", "review_required", "approved", "rejected"]
 ListingReportReason = Literal[
     "scam_suspicion",
     "prohibited_item",
@@ -50,6 +51,14 @@ ListingReportReason = Literal[
     "other",
 ]
 ReportStatus = Literal["pending", "reviewed", "dismissed", "action_taken"]
+UserReportReason = Literal[
+    "harassment",
+    "repeated_no_show",
+    "suspicious_payment_behavior",
+    "abusive_messages",
+    "fake_identity",
+    "other",
+]
 AdminActionType = Literal[
     "hide_listing",
     "restore_listing",
@@ -106,10 +115,11 @@ PICKUP_AREAS = (
 CONDITION_LABELS = ("new", "like_new", "good", "fair", "poor")
 LISTING_STATUSES = ("draft", "available", "reserved", "sold", "hidden", "deleted")
 PUBLIC_LISTING_STATUSES = ("available", "reserved")
-CONTACT_METHODS = ("telegram", "whatsapp")
+CONTACT_METHODS = ("in_app", "telegram", "whatsapp", "email")
 CONTACT_REQUEST_STATUSES = ("pending", "accepted", "rejected", "cancelled", "expired")
 USER_STATUSES = ("active", "suspended", "banned", "deleted")
 RISK_LEVELS = ("low", "medium", "high")
+MODERATION_STATUSES = ("clear", "flagged", "review_required", "approved", "rejected")
 LISTING_REPORT_REASONS = (
     "scam_suspicion",
     "prohibited_item",
@@ -121,6 +131,14 @@ LISTING_REPORT_REASONS = (
     "other",
 )
 REPORT_STATUSES = ("pending", "reviewed", "dismissed", "action_taken")
+USER_REPORT_REASONS = (
+    "harassment",
+    "repeated_no_show",
+    "suspicious_payment_behavior",
+    "abusive_messages",
+    "fake_identity",
+    "other",
+)
 ADMIN_ACTION_TYPES = (
     "hide_listing",
     "restore_listing",

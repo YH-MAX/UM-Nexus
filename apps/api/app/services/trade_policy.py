@@ -12,9 +12,11 @@ from app.trade.constants import (
     LEGACY_PICKUP_AREA_ALIASES,
     LISTING_STATUSES,
     LISTING_REPORT_REASONS,
+    MODERATION_STATUSES,
     PICKUP_AREAS,
     REPORT_STATUSES,
     TRADE_CATEGORIES,
+    USER_REPORT_REASONS,
 )
 
 
@@ -125,7 +127,26 @@ def normalize_listing_status(value: Any) -> str | None:
 
 def normalize_contact_method(value: Any) -> str | None:
     normalized = _token(value)
+    aliases = {
+        "inapp": "in_app",
+        "in_platform": "in_app",
+        "platform": "in_app",
+        "um_email": "email",
+    }
+    normalized = aliases.get(normalized, normalized)
     return normalized if normalized in CONTACT_METHODS else None
+
+
+def normalize_moderation_status(value: Any) -> str | None:
+    normalized = _token(value)
+    aliases = {
+        "pending": "review_required",
+        "pending_review": "review_required",
+        "ok": "clear",
+        "safe": "clear",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in MODERATION_STATUSES else None
 
 
 def normalize_listing_report_reason(value: Any) -> str | None:
@@ -151,6 +172,20 @@ def normalize_report_status(value: Any) -> str | None:
     }
     normalized = aliases.get(normalized, normalized)
     return normalized if normalized in REPORT_STATUSES else None
+
+
+def normalize_user_report_reason(value: Any) -> str | None:
+    normalized = _token(value)
+    aliases = {
+        "no_show": "repeated_no_show",
+        "unsafe_trade_behavior": "suspicious_payment_behavior",
+        "unsafe_transaction": "suspicious_payment_behavior",
+        "suspicious_payment": "suspicious_payment_behavior",
+        "abuse": "abusive_messages",
+        "fake": "fake_identity",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in USER_REPORT_REASONS else None
 
 
 def scan_listing_policy(*values: Any) -> PolicyScanResult:

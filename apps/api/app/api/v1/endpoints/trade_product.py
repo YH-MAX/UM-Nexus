@@ -24,6 +24,7 @@ from app.schemas.trade_product import (
     ContactMatchCreate,
     ContactRequestDecision,
     ContactRequestRead,
+    ContactRequestSellerResolution,
     ContactRequestsResponse,
     ModerationListingRead,
     ModerationSummary,
@@ -61,6 +62,7 @@ from app.services.trade_service import (
     mark_notification_read,
     moderation_summary,
     review_listing_reports,
+    resolve_accepted_contact_request,
     trade_dashboard,
     update_ai_settings,
     update_trade_category,
@@ -174,6 +176,17 @@ def cancel_contact_request_endpoint(
     current_user=Depends(require_authenticated_user),
 ) -> ContactRequestRead:
     contact_request = cancel_contact_request(db, str(contact_request_id), current_user)
+    return contact_request_read(contact_request, current_user)
+
+
+@router.patch("/contact-requests/{contact_request_id}/seller-resolution", response_model=ContactRequestRead)
+def resolve_accepted_contact_request_endpoint(
+    contact_request_id: UUID,
+    payload: ContactRequestSellerResolution,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ContactRequestRead:
+    contact_request = resolve_accepted_contact_request(db, str(contact_request_id), payload, current_user)
     return contact_request_read(contact_request, current_user)
 
 

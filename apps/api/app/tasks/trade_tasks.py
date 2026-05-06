@@ -7,6 +7,7 @@ from app.services.trade_intelligence import (
     generate_wanted_post_source_text as generate_wanted_post_source_text_service,
     recompute_matches_for_listing,
 )
+from app.services.trade_service import expire_stale_contact_requests as expire_stale_contact_requests_service
 from app.tasks.celery_app import celery_app
 
 
@@ -48,3 +49,9 @@ def recompute_matches_for_listing_task(listing_id: str) -> str:
     with SessionLocal() as db:
         recompute_matches_for_listing(db, listing_id)
     return listing_id
+
+
+@celery_app.task(name="trade.expire_stale_contact_requests")
+def expire_stale_contact_requests_task() -> int:
+    with SessionLocal() as db:
+        return expire_stale_contact_requests_service(db)

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { StatusPill } from "@/components/trade/status-pill";
@@ -22,6 +23,7 @@ type WantedPostDetailPageProps = Readonly<{
 export function WantedPostDetailClient({
   wantedPostId,
 }: WantedPostDetailPageProps) {
+  const searchParams = useSearchParams();
   const [wantedPost, setWantedPost] = useState<WantedPost | null>(null);
   const [recommendations, setRecommendations] = useState<WantedListingRecommendation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -72,6 +74,14 @@ export function WantedPostDetailClient({
         </div>
       ) : wantedPost ? (
         <div className="grid gap-5">
+        {searchParams.get("posted") === "1" ? (
+          <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
+            <h2 className="text-lg font-semibold">You posted this wanted request.</h2>
+            <p className="mt-2 text-sm leading-6">
+              Possible matching listings are shown below. Sellers can also create a listing directly from this demand.
+            </p>
+          </section>
+        ) : null}
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -103,12 +113,20 @@ export function WantedPostDetailClient({
             <Fact label="Currency" value={wantedPost.currency} />
           </div>
 
-          <Link
-            className="mt-6 inline-flex rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-500"
-            href="/trade"
-          >
-            Back to listings
-          </Link>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              className="inline-flex rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-500"
+              href="/trade"
+            >
+              Back to listings
+            </Link>
+            <Link
+              className="inline-flex rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
+              href={`/trade/sell?wanted_id=${wantedPost.id}`}
+            >
+              I have this item
+            </Link>
+          </div>
         </section>
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

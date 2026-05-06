@@ -31,6 +31,12 @@ class TradeTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=True,
         index=True,
     )
+    contact_request_id: Mapped[str | None] = mapped_column(
+        Uuid(as_uuid=False),
+        ForeignKey("trade_contact_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     seller_id: Mapped[str] = mapped_column(
         Uuid(as_uuid=False),
         ForeignKey("users.id", ondelete="CASCADE"),
@@ -44,6 +50,7 @@ class TradeTransaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="contacted", server_default="contacted")
+    sale_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     agreed_price: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="MYR", server_default="MYR")
     seller_feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
