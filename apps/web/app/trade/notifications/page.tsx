@@ -2,13 +2,26 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Bell, CheckCheck, ExternalLink } from "lucide-react";
+import {
+  Bell,
+  CheckCheck,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Inbox,
+  Megaphone,
+  PackageCheck,
+  ShieldAlert,
+  XCircle,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
 import { StatusPill } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
+  formatRelativeTime,
   getNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -24,6 +37,10 @@ export default function TradeNotificationsPage() {
 
   async function loadNotifications() {
     setNotifications(await getNotifications());
+  }
+
+  function notifyAlertStateChanged() {
+    window.dispatchEvent(new Event("trade:notifications-changed"));
   }
 
   useEffect(() => {
@@ -55,10 +72,23 @@ export default function TradeNotificationsPage() {
     try {
       await markNotificationRead(notification.id);
       await loadNotifications();
+      notifyAlertStateChanged();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update notification.");
     } finally {
       setIsUpdating(false);
+    }
+  }
+
+  async function markOpened(notification: TradeNotification) {
+    if (notification.is_read) {
+      return;
+    }
+    try {
+      await markNotificationRead(notification.id);
+      notifyAlertStateChanged();
+    } catch {
+      // Opening the related item should not be blocked by read-state sync.
     }
   }
 
@@ -68,6 +98,7 @@ export default function TradeNotificationsPage() {
     try {
       await markAllNotificationsRead();
       await loadNotifications();
+      notifyAlertStateChanged();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update notifications.");
     } finally {
@@ -110,11 +141,28 @@ export default function TradeNotificationsPage() {
 
           <div className="mt-5 grid gap-3">
             {notifications.length === 0 ? (
-              <p className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
-                No alerts yet.
-              </p>
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm">
+                  <Inbox aria-hidden="true" className="h-5 w-5" />
+                </div>
+                <h3 className="mt-4 font-semibold text-slate-950">No alerts yet</h3>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
+                  Contact requests, seller replies, moderation updates, and wanted matches will appear here.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link className="trade-button-primary" href="/trade">
+                    Browse Listings
+                  </Link>
+                  <Link className="trade-button-secondary bg-white" href="/trade/dashboard">
+                    Open My Trade
+                  </Link>
+                </div>
+              </div>
             ) : (
-              notifications.map((notification) => (
+              notifications.map((notification) => {
+                const meta = notificationMeta(notification.type);
+                const Icon = meta.icon;
+                return (
                 <article
                   className={`rounded-2xl border p-4 ${
                     notification.is_read ? "border-slate-200 bg-white" : "border-emerald-200 bg-emerald-50"
@@ -122,24 +170,30 @@ export default function TradeNotificationsPage() {
                   key={notification.id}
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <div className="flex flex-wrap gap-2">
-                        <StatusPill tone={notification.is_read ? "neutral" : "good"}>
-                          {notification.is_read ? "read" : "new"}
-                        </StatusPill>
-                        <StatusPill>{notification.type.replaceAll("_", " ")}</StatusPill>
+                    <div className="flex min-w-0 gap-3">
+                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${meta.iconClass}`}>
+                        <Icon aria-hidden="true" className="h-5 w-5" />
                       </div>
-                      <h3 className="mt-3 font-semibold text-slate-950">{notification.title}</h3>
-                      <p className="mt-1 text-sm leading-6 text-slate-600">{notification.body}</p>
-                      <p className="mt-2 text-xs font-semibold text-slate-500">
-                        {new Date(notification.created_at).toLocaleString()}
-                      </p>
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap gap-2">
+                          <StatusPill tone={notification.is_read ? "neutral" : "good"}>
+                            {notification.is_read ? "read" : "new"}
+                          </StatusPill>
+                          <StatusPill tone={meta.tone}>{meta.group}</StatusPill>
+                        </div>
+                        <h3 className="mt-3 font-semibold text-slate-950">{notification.title}</h3>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">{notification.body}</p>
+                        <p className="mt-2 text-xs font-semibold text-slate-500">
+                          {formatRelativeTime(notification.created_at)}
+                        </p>
+                      </div>
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       {notification.action_url ? (
                         <Link
                           className="trade-button-primary bg-slate-950 hover:bg-slate-800"
                           href={notification.action_url}
+                          onClick={() => void markOpened(notification)}
                         >
                           <ExternalLink aria-hidden="true" className="h-4 w-4" />
                           Open
@@ -157,11 +211,42 @@ export default function TradeNotificationsPage() {
                     </div>
                   </div>
                 </article>
-              ))
+                );
+              })
             )}
           </div>
         </section>
       ) : null}
     </TradeShell>
   );
+}
+
+function notificationMeta(type: string): {
+  group: string;
+  icon: LucideIcon;
+  iconClass: string;
+  tone: "good" | "warn" | "danger" | "neutral";
+} {
+  if (type.startsWith("contact_request")) {
+    if (type.includes("accepted")) {
+      return { group: "Request", icon: CheckCircle2, iconClass: "bg-emerald-100 text-emerald-700", tone: "good" };
+    }
+    if (type.includes("rejected") || type.includes("cancelled") || type.includes("expired")) {
+      return { group: "Request", icon: XCircle, iconClass: "bg-rose-100 text-rose-700", tone: "danger" };
+    }
+    return { group: "Request", icon: Inbox, iconClass: "bg-sky-100 text-sky-700", tone: "neutral" };
+  }
+  if (type === "buyer_no_response") {
+    return { group: "Request", icon: Clock, iconClass: "bg-amber-100 text-amber-700", tone: "warn" };
+  }
+  if (type.startsWith("listing_marked") || type === "trade_marked_completed") {
+    return { group: "Listing", icon: PackageCheck, iconClass: "bg-emerald-100 text-emerald-700", tone: "good" };
+  }
+  if (type.includes("moderation") || type.includes("reported") || type.includes("report")) {
+    return { group: "Safety", icon: ShieldAlert, iconClass: "bg-amber-100 text-amber-700", tone: "warn" };
+  }
+  if (type.includes("wanted")) {
+    return { group: "Wanted", icon: Megaphone, iconClass: "bg-cyan-100 text-cyan-700", tone: "neutral" };
+  }
+  return { group: "Alert", icon: Bell, iconClass: "bg-slate-100 text-slate-700", tone: "neutral" };
 }

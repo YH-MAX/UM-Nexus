@@ -15,6 +15,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
+import { getNotificationUnreadCount } from "@/lib/trade/api";
 
 type TradeShellProps = Readonly<{
   children: React.ReactNode;
@@ -57,6 +58,7 @@ export function TradeShell({
   const pathname = usePathname();
   const { user } = useAuth();
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
 
   useEffect(() => {
     if (!user || window.localStorage.getItem("um_nexus_trade_onboarding_dismissed") === "true") {
@@ -65,6 +67,38 @@ export function TradeShell({
     }
     setShowOnboarding(true);
   }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setUnreadAlerts(0);
+      return;
+    }
+
+    let isMounted = true;
+    async function loadUnreadCount() {
+      try {
+        const result = await getNotificationUnreadCount();
+        if (isMounted) {
+          setUnreadAlerts(result.unread);
+        }
+      } catch {
+        if (isMounted) {
+          setUnreadAlerts(0);
+        }
+      }
+    }
+
+    const handleNotificationsChanged = () => {
+      void loadUnreadCount();
+    };
+
+    void loadUnreadCount();
+    window.addEventListener("trade:notifications-changed", handleNotificationsChanged);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("trade:notifications-changed", handleNotificationsChanged);
+    };
+  }, [pathname, user]);
 
   function dismissOnboarding() {
     window.localStorage.setItem("um_nexus_trade_onboarding_dismissed", "true");
@@ -90,12 +124,12 @@ export function TradeShell({
           </nav>
 
           <div className="hidden items-center gap-2 md:flex">
-            <UtilityLink active={isActiveRoute(pathname, "/trade/notifications")} href="/trade/notifications" icon={Bell} label="Alerts" />
+            <UtilityLink active={isActiveRoute(pathname, "/trade/notifications")} href="/trade/notifications" icon={Bell} label="Alerts" unreadCount={unreadAlerts} />
             <UtilityLink active={isActiveRoute(pathname, "/trade/profile")} href="/trade/profile" icon={User} label="Profile" />
           </div>
 
           <div className="flex items-center gap-2 md:hidden">
-            <UtilityLink active={isActiveRoute(pathname, "/trade/notifications")} href="/trade/notifications" icon={Bell} label="Alerts" mobile />
+            <UtilityLink active={isActiveRoute(pathname, "/trade/notifications")} href="/trade/notifications" icon={Bell} label="Alerts" mobile unreadCount={unreadAlerts} />
             <UtilityLink active={isActiveRoute(pathname, "/trade/profile")} href="/trade/profile" icon={User} label="Profile" mobile />
           </div>
         </div>
@@ -211,12 +245,14 @@ function UtilityLink({
   icon: Icon,
   label,
   mobile = false,
+  unreadCount = 0,
 }: Readonly<{
   active: boolean;
   href: string;
   icon: LucideIcon;
   label: string;
   mobile?: boolean;
+  unreadCount?: number;
 }>) {
   return (
     <Link
@@ -232,8 +268,10 @@ function UtilityLink({
     >
       <Icon aria-hidden="true" className="h-4 w-4" />
       {!mobile ? <span>{label}</span> : null}
-      {label === "Alerts" ? (
-        <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+      {label === "Alerts" && unreadCount > 0 ? (
+        <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-emerald-600 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white ring-2 ring-white">
+          {unreadCount > 9 ? "9+" : unreadCount}
+        </span>
       ) : null}
     </Link>
   );

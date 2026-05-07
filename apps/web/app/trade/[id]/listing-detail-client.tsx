@@ -42,6 +42,7 @@ import {
   getListingMatches,
   getSellerDisplayName,
   getTradeResultStatus,
+  isProfileComplete,
   publishListing,
   removeFavorite,
   reportListing,
@@ -969,4 +970,3 @@ function riskEvidenceItems(listing: Listing): string[] {
   }
   return items;
 }
-  isProfileComplete,

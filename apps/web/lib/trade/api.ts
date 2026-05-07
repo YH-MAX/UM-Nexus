@@ -628,10 +628,26 @@ export type AdminDashboard = {
   } | null;
 };
 
+export type NotificationType =
+  | "contact_request_received"
+  | "contact_request_accepted"
+  | "contact_request_rejected"
+  | "contact_request_cancelled"
+  | "contact_request_expired"
+  | "trade_marked_completed"
+  | "buyer_no_response"
+  | "listing_marked_reserved"
+  | "listing_marked_sold"
+  | "listing_hidden_by_moderation"
+  | "listing_reported"
+  | "report_reviewed"
+  | "wanted_match_listing_created"
+  | string;
+
 export type TradeNotification = {
   id: string;
   user_id: string;
-  type: string;
+  type: NotificationType;
   title: string;
   body: string;
   action_url: string | null;
@@ -1166,6 +1182,10 @@ export async function getFavorites(): Promise<ListingFavorite[]> {
 
 export async function getNotifications(): Promise<TradeNotification[]> {
   return fetchJson<TradeNotification[]>("/users/me/notifications");
+}
+
+export async function getNotificationUnreadCount(): Promise<{ unread: number }> {
+  return fetchJson<{ unread: number }>("/users/me/notifications/unread-count");
 }
 
 export async function markNotificationRead(id: string): Promise<TradeNotification> {

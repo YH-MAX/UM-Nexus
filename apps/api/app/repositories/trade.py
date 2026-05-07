@@ -685,6 +685,14 @@ class TradeRepository:
         )
         return self.db.scalars(stmt).all()
 
+    def count_unread_notifications_for_user(self, user_id: str) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Notification)
+            .where(Notification.user_id == user_id, Notification.is_read.is_(False))
+        )
+        return int(self.db.scalar(stmt) or 0)
+
     def get_notification_or_none(self, notification_id: str) -> Notification | None:
         return self.db.get(Notification, notification_id)
 

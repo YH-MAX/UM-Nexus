@@ -114,6 +114,7 @@ def test_contact_request_accept_reject_and_reveal_permissions(client, token_veri
     token_verifier.claims = seller_claims.model_copy(
         update={"sub": buyer_id, "email": "buyer@siswa.um.edu.my"}
     )
+    complete_profile(client)
     request = client.post(
         f"/api/v1/listings/{listing['id']}/contact-requests",
         headers=AUTH_HEADERS,
@@ -121,6 +122,7 @@ def test_contact_request_accept_reject_and_reveal_permissions(client, token_veri
             "message": "Is this still available?",
             "buyer_contact_method": "whatsapp",
             "buyer_contact_value": "+60123456789",
+            "safety_acknowledged": True,
         },
     )
 
@@ -134,14 +136,22 @@ def test_contact_request_accept_reject_and_reveal_permissions(client, token_veri
         headers=AUTH_HEADERS,
         json={"status": "accepted"},
     )
+    token_verifier.claims = seller_claims.model_copy(
+        update={"sub": buyer_id, "email": "buyer@siswa.um.edu.my"}
+    )
+    buyer_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
 
     assert accepted.status_code == 200
     assert accepted.json()["buyer_contact_value"] == "+60123456789"
     assert accepted.json()["seller_contact_value"] == "@seller_um"
+    assert buyer_notifications.status_code == 200
+    assert buyer_notifications.json()[0]["type"] == "contact_request_accepted"
+    assert buyer_notifications.json()[0]["action_url"] == f"/trade/dashboard?tab=sent&request_id={contact_request_id}"
 
     token_verifier.claims = seller_claims.model_copy(
         update={"sub": uuid4(), "email": "second-buyer@siswa.um.edu.my"}
     )
+    complete_profile(client)
     second_request = client.post(
         f"/api/v1/listings/{listing['id']}/contact-requests",
         headers=AUTH_HEADERS,
@@ -149,6 +159,7 @@ def test_contact_request_accept_reject_and_reveal_permissions(client, token_veri
             "message": "Backup buyer",
             "buyer_contact_method": "telegram",
             "buyer_contact_value": "@buyer2",
+            "safety_acknowledged": True,
         },
     ).json()
     token_verifier.claims = seller_claims
@@ -157,10 +168,29 @@ def test_contact_request_accept_reject_and_reveal_permissions(client, token_veri
         headers=AUTH_HEADERS,
         json={"status": "rejected"},
     )
+    token_verifier.claims = seller_claims.model_copy(
+        update={"sub": second_request["buyer_id"], "email": "second-buyer@siswa.um.edu.my"}
+    )
+    rejected_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
 
     assert rejected.status_code == 200
-    assert rejected.json()["buyer_contact_value"] is None
+    assert rejected.json()["buyer_contact_value"] == "@buyer2"
     assert rejected.json()["seller_contact_value"] is None
+    assert rejected_notifications.json()[0]["type"] == "contact_request_rejected"
+
+    token_verifier.claims = seller_claims
+    completed = client.patch(
+        f"/api/v1/contact-requests/{contact_request_id}/seller-resolution",
+        headers=AUTH_HEADERS,
+        json={"action": "mark_completed", "agreed_price": 30, "sold_source": "accepted_request"},
+    )
+    token_verifier.claims = seller_claims.model_copy(
+        update={"sub": buyer_id, "email": "buyer@siswa.um.edu.my"}
+    )
+    completed_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    assert completed.status_code == 200
+    assert "trade_marked_completed" in [notification["type"] for notification in completed_notifications.json()]
 
 
 def test_report_user_admin_dashboard_and_user_status_actions(client, db_session, token_verifier) -> None:
@@ -175,7 +205,7 @@ def test_report_user_admin_dashboard_and_user_status_actions(client, db_session,
     report = client.post(
         f"/api/v1/users/{reported.id}/reports",
         headers=AUTH_HEADERS,
-        json={"report_type": "unsafe_trade_behavior", "reason": "Asked to pay first."},
+        json={"report_type": "suspicious_payment_behavior", "reason": "Asked to pay first."},
     )
     dashboard = client.get("/api/v1/admin/dashboard", headers=AUTH_HEADERS)
     suspended = client.patch(
@@ -305,6 +335,7 @@ def test_default_listing_create_is_draft_and_notifications_can_be_read(client, t
     complete_profile(client)
     published = client.post(f"/api/v1/listings/{draft.json()['id']}/publish", headers=AUTH_HEADERS).json()
     token_verifier.claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "notify-buyer@siswa.um.edu.my"})
+    complete_profile(client)
     request = client.post(
         f"/api/v1/listings/{published['id']}/contact-requests",
         headers=AUTH_HEADERS,
@@ -312,20 +343,27 @@ def test_default_listing_create_is_draft_and_notifications_can_be_read(client, t
             "message": "Interested.",
             "buyer_contact_method": "telegram",
             "buyer_contact_value": "@buyer",
+            "safety_acknowledged": True,
         },
     )
 
     token_verifier.claims = seller_claims
     notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+    unread = client.get("/api/v1/users/me/notifications/unread-count", headers=AUTH_HEADERS)
     read = client.patch(f"/api/v1/notifications/{notifications.json()[0]['id']}/read", headers=AUTH_HEADERS)
     read_all = client.patch("/api/v1/notifications/read-all", headers=AUTH_HEADERS)
+    unread_after = client.get("/api/v1/users/me/notifications/unread-count", headers=AUTH_HEADERS)
 
     assert request.status_code == 201
     assert notifications.status_code == 200
     assert notifications.json()[0]["type"] == "contact_request_received"
+    assert notifications.json()[0]["action_url"] == f"/trade/dashboard?tab=received&request_id={request.json()['id']}"
+    assert unread.status_code == 200
+    assert unread.json()["unread"] == 1
     assert read.status_code == 200
     assert read.json()["is_read"] is True
     assert read_all.status_code == 200
+    assert unread_after.json()["unread"] == 0
 
 
 def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> None:
@@ -333,6 +371,7 @@ def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> No
     listing = create_published_listing(client)
 
     token_verifier.claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "buyer@siswa.um.edu.my"})
+    complete_profile(client)
     request = client.post(
         f"/api/v1/listings/{listing['id']}/contact-requests",
         headers=AUTH_HEADERS,
@@ -340,6 +379,7 @@ def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> No
             "message": "Interested.",
             "buyer_contact_method": "telegram",
             "buyer_contact_value": "@buyer",
+            "safety_acknowledged": True,
         },
     )
     cancelled = client.patch(f"/api/v1/contact-requests/{request.json()['id']}/cancel", headers=AUTH_HEADERS)
@@ -354,6 +394,7 @@ def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> No
     )
 
     token_verifier.claims = seller_claims
+    seller_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
     sold = client.patch(
         f"/api/v1/listings/{listing['id']}/status",
         headers=AUTH_HEADERS,
@@ -374,6 +415,7 @@ def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> No
     assert request.status_code == 201
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
+    assert "contact_request_cancelled" in [notification["type"] for notification in seller_notifications.json()]
     assert second.status_code == 201
     assert sold.status_code == 200
     assert blocked.status_code == 409

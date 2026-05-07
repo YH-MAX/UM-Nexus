@@ -634,6 +634,7 @@ def normalize_listing_values(values: dict) -> dict:
     pickup = normalize_pickup(values.get("pickup_area"))
     values["pickup_area"] = pickup
     values["pickup_location"] = pickup
+    values["contact_method"] = values.get("contact_method") or "in_app"
     return values
 
 

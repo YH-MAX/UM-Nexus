@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ShieldCheck, UserRound } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { startTransition, useEffect, useState } from "react";
+import { LogOut, ShieldCheck, UserRound } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -35,11 +36,13 @@ const initialForm: ProfileForm = {
 };
 
 export default function TradeProfilePage() {
-  const { isLoading: isAuthLoading, user } = useAuth();
+  const router = useRouter();
+  const { isLoading: isAuthLoading, supabase, user } = useAuth();
   const [profile, setProfile] = useState<CurrentProfile | null>(null);
   const [form, setForm] = useState<ProfileForm>(initialForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,6 +103,25 @@ export default function TradeProfilePage() {
       setError(nextError instanceof Error ? nextError.message : "Unable to save profile.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function signOut() {
+    setIsSigningOut(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        setError(signOutError.message);
+        return;
+      }
+      startTransition(() => {
+        router.push("/login");
+        router.refresh();
+      });
+    } finally {
+      setIsSigningOut(false);
     }
   }
 
@@ -191,6 +213,19 @@ export default function TradeProfilePage() {
           </div>
 
           <aside className="grid h-fit gap-5">
+          <section className="trade-card p-5">
+            <p className="text-sm text-slate-500">Signed in as</p>
+            <p className="mt-1 break-words text-sm font-semibold text-slate-950">{user.email}</p>
+            <button
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isSigningOut}
+              onClick={() => void signOut()}
+              type="button"
+            >
+              <LogOut aria-hidden="true" className="h-4 w-4" />
+              {isSigningOut ? "Signing out..." : "Sign out"}
+            </button>
+          </section>
           <section className="trade-card p-5">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-slate-950">Launch readiness</h2>

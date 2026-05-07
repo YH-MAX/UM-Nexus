@@ -47,6 +47,7 @@ from app.services.trade_service import (
     cancel_contact_request,
     contact_match,
     contact_request_read,
+    count_unread_notifications,
     create_product_event,
     create_trade_category,
     decide_contact_request,
@@ -139,6 +140,14 @@ def list_my_notifications_endpoint(
     current_user=Depends(require_authenticated_user),
 ) -> list[NotificationRead]:
     return [NotificationRead.model_validate(notification) for notification in list_notifications(db, current_user)]
+
+
+@router.get("/users/me/notifications/unread-count")
+def unread_notification_count_endpoint(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> dict[str, int]:
+    return count_unread_notifications(db, current_user)
 
 
 @router.patch("/notifications/{notification_id}/read", response_model=NotificationRead)

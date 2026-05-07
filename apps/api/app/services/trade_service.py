@@ -67,6 +67,23 @@ from app.services.trade_policy import (
 from app.trade.constants import TRADE_CATEGORIES
 
 
+TRADE_NOTIFICATION_TYPES = {
+    "contact_request_received",
+    "contact_request_accepted",
+    "contact_request_rejected",
+    "contact_request_cancelled",
+    "contact_request_expired",
+    "trade_marked_completed",
+    "buyer_no_response",
+    "listing_marked_reserved",
+    "listing_marked_sold",
+    "listing_hidden_by_moderation",
+    "listing_reported",
+    "report_reviewed",
+    "wanted_match_listing_created",
+}
+
+
 def create_listing(
     db: Session,
     payload: ListingCreate,
@@ -184,7 +201,10 @@ def update_listing(db: Session, listing_id: str, payload: ListingUpdate, current
     if values.get("status"):
         _apply_listing_status_transition(listing, values["status"], current_user)
     updated = repo.update_listing(listing, values)
-    if updated.status in {"sold", "hidden", "deleted"}:
+    if updated.status == "sold":
+        _notify_listing_status_changed(repo, updated)
+        _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.", notify_buyers=False)
+    elif updated.status in {"hidden", "deleted"}:
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
     if {"title", "description", "category", "item_name", "brand", "model", "condition_label", "price", "pickup_area", "pickup_location", "residential_college"} & set(values):
         _refresh_matches_for_listing(db, updated.id)
@@ -227,9 +247,12 @@ def update_listing_status(
         values["sold_contact_request_id"] = payload.sold_contact_request_id
     _apply_listing_status_transition(listing, payload.status, current_user, reason=payload.reason)
     updated = repo.update_listing(listing, values)
-    if updated.status in {"sold", "hidden", "deleted"}:
+    if updated.status == "sold":
+        _notify_listing_status_changed(repo, updated)
+        _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.", notify_buyers=False)
+    elif updated.status in {"hidden", "deleted"}:
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
-    if updated.status in {"reserved", "sold"}:
+    if updated.status == "reserved":
         _notify_listing_status_changed(repo, updated)
     if updated.status == "sold":
         repo.create_product_event(
@@ -429,16 +452,15 @@ def create_listing_report(
         _expire_pending_requests_for_listing(repo, listing, "This item is under safety review.")
     elif listing.moderation_status in {"clear", "approved"}:
         repo.update_listing(listing, {"moderation_status": "flagged"})
-    repo.create_notification(
-        {
-            "user_id": listing.seller_id,
-            "type": "listing_reported",
-            "title": "A listing was reported",
-            "body": "Your listing has been sent for UM Nexus safety review.",
-            "action_url": f"/trade/{listing.id}",
-            "entity_type": "listing",
-            "entity_id": listing.id,
-        }
+    _notify(
+        repo,
+        user_id=listing.seller_id,
+        notification_type="listing_reported",
+        title="A listing was reported",
+        body=f"{listing.title} has been sent for UM Nexus safety review.",
+        action_url=f"/trade/{listing.id}",
+        entity_type="listing",
+        entity_id=listing.id,
     )
     return report
 
@@ -451,12 +473,6 @@ def create_contact_request(
 ) -> TradeContactRequest:
     repo = TradeRepository(db)
     _expire_stale_contact_requests(db)
-    _ensure_profile_ready(current_user)
-    _ensure_daily_limit(
-        repo.count_contact_requests_by_user_since(current_user.id, _daily_limit_start()),
-        get_settings().trade_contact_request_daily_limit,
-        "You reached today's contact request limit. Try again tomorrow.",
-    )
     listing = repo.get_listing_or_none(listing_id)
     if listing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
@@ -468,6 +484,12 @@ def create_contact_request(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Seller contact setup is incomplete.")
     if repo.get_existing_contact_request(listing.id, current_user.id) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have an open contact request for this listing.")
+    _ensure_profile_ready(current_user)
+    _ensure_daily_limit(
+        repo.count_contact_requests_by_user_since(current_user.id, _daily_limit_start()),
+        get_settings().trade_contact_request_daily_limit,
+        "You reached today's contact request limit. Try again tomorrow.",
+    )
 
     buyer_contact_method = payload.buyer_contact_method
     buyer_contact_value = (payload.buyer_contact_value or "").strip()
@@ -500,16 +522,15 @@ def create_contact_request(
             "status": "pending",
         }
     )
-    repo.create_notification(
-        {
-            "user_id": listing.seller_id,
-            "type": "contact_request_received",
-            "title": "New buyer interest",
-            "body": f"Someone is interested in {listing.title}. Their message and selected contact method are visible in My Trade.",
-            "action_url": "/trade/dashboard",
-            "entity_type": "contact_request",
-            "entity_id": contact_request.id,
-        }
+    _notify(
+        repo,
+        user_id=listing.seller_id,
+        notification_type="contact_request_received",
+        title="New buyer interest",
+        body=f"{_user_display_name(current_user)} is interested in {listing.title}. Review the request in My Trade.",
+        action_url=_contact_request_action_url(contact_request, "seller"),
+        entity_type="contact_request",
+        entity_id=contact_request.id,
     )
     repo.create_product_event(
         {
@@ -582,20 +603,19 @@ def decide_contact_request(
                 "currency": updated.listing.currency if updated.listing else "MYR",
             }
         )
-    repo.create_notification(
-        {
-            "user_id": updated.buyer_id,
-            "type": f"contact_request_{updated.status}",
-            "title": "Contact request updated",
-            "body": (
-                "Request accepted. Seller-approved contact details are visible after profile completion."
-                if updated.status == "accepted"
-                else "Your contact request was rejected by the seller."
-            ),
-            "action_url": "/trade/dashboard",
-            "entity_type": "contact_request",
-            "entity_id": updated.id,
-        }
+    _notify(
+        repo,
+        user_id=updated.buyer_id,
+        notification_type=f"contact_request_{updated.status}",
+        title="Contact request accepted" if updated.status == "accepted" else "Contact request rejected",
+        body=(
+            f"The seller accepted your request for {_contact_request_listing_title(updated)}. Seller contact is visible after your profile is complete."
+            if updated.status == "accepted"
+            else f"The seller rejected your request for {_contact_request_listing_title(updated)}. You can keep browsing other UM listings."
+        ),
+        action_url=_contact_request_action_url(updated, "buyer"),
+        entity_type="contact_request",
+        entity_id=updated.id,
     )
     return updated
 
@@ -616,16 +636,15 @@ def cancel_contact_request(db: Session, contact_request_id: str, current_user: U
             "cancelled_at": datetime.now(UTC),
         },
     )
-    repo.create_notification(
-        {
-            "user_id": updated.seller_id,
-            "type": "contact_request_cancelled",
-            "title": "Buyer cancelled a request",
-            "body": "A pending contact request was cancelled by the buyer.",
-            "action_url": "/trade/dashboard",
-            "entity_type": "contact_request",
-            "entity_id": updated.id,
-        }
+    _notify(
+        repo,
+        user_id=updated.seller_id,
+        notification_type="contact_request_cancelled",
+        title="Buyer cancelled a request",
+        body=f"{_user_display_name(current_user)} cancelled their request for {_contact_request_listing_title(updated)}.",
+        action_url=_contact_request_action_url(updated, "seller"),
+        entity_type="contact_request",
+        entity_id=updated.id,
     )
     return updated
 
@@ -659,7 +678,13 @@ def resolve_accepted_contact_request(
                     "sold_contact_request_id": contact_request.id,
                 },
             )
-            _expire_pending_requests_for_listing(repo, listing, "The seller marked this request completed.")
+            _notify_listing_status_changed(repo, listing)
+            _expire_pending_requests_for_listing(
+                repo,
+                listing,
+                "The seller marked this item as sold. Pending requests have been closed.",
+                notify_buyers=False,
+            )
             repo.create_trade_transaction(
                 {
                     "listing_id": listing.id,
@@ -674,17 +699,15 @@ def resolve_accepted_contact_request(
                     "completed_at": now,
                 }
             )
-            _notify_listing_status_changed(repo, listing)
-        repo.create_notification(
-            {
-                "user_id": contact_request.buyer_id,
-                "type": "trade_marked_completed",
-                "title": "Trade marked completed",
-                "body": "The seller marked this accepted request as completed.",
-                "action_url": "/trade/dashboard",
-                "entity_type": "contact_request",
-                "entity_id": contact_request.id,
-            }
+        _notify(
+            repo,
+            user_id=contact_request.buyer_id,
+            notification_type="trade_marked_completed",
+            title="Trade marked completed",
+            body=f"The seller marked your accepted request for {_contact_request_listing_title(contact_request)} as completed.",
+            action_url=_contact_request_action_url(contact_request, "buyer"),
+            entity_type="contact_request",
+            entity_id=contact_request.id,
         )
         return updated
 
@@ -693,20 +716,19 @@ def resolve_accepted_contact_request(
     updated = repo.update_contact_request(contact_request, {"status": next_status, timestamp_field: now})
     if listing is not None and listing.status == "reserved":
         repo.update_listing(listing, {"status": "available"})
-    repo.create_notification(
-        {
-            "user_id": contact_request.buyer_id,
-            "type": f"contact_request_{next_status}",
-            "title": "Contact request updated",
-            "body": (
-                "The seller cancelled this accepted request."
-                if next_status == "cancelled"
-                else "The seller marked this request as no response."
-            ),
-            "action_url": "/trade/dashboard",
-            "entity_type": "contact_request",
-            "entity_id": updated.id,
-        }
+    _notify(
+        repo,
+        user_id=contact_request.buyer_id,
+        notification_type="contact_request_cancelled" if next_status == "cancelled" else "buyer_no_response",
+        title="Accepted request cancelled" if next_status == "cancelled" else "Request closed as no response",
+        body=(
+            f"The seller cancelled your accepted request for {_contact_request_listing_title(updated)}."
+            if next_status == "cancelled"
+            else f"The seller marked your request for {_contact_request_listing_title(updated)} as no response."
+        ),
+        action_url=_contact_request_action_url(updated, "buyer"),
+        entity_type="contact_request",
+        entity_id=updated.id,
     )
     return updated
 
@@ -782,6 +804,11 @@ def list_notifications(db: Session, current_user: User):
     return list(TradeRepository(db).list_notifications_for_user(current_user.id))
 
 
+def count_unread_notifications(db: Session, current_user: User) -> dict[str, int]:
+    count = TradeRepository(db).count_unread_notifications_for_user(current_user.id)
+    return {"unread": count}
+
+
 def mark_notification_read(db: Session, notification_id: str, current_user: User):
     repo = TradeRepository(db)
     notification = repo.get_notification_or_none(notification_id)
@@ -840,16 +867,15 @@ def review_listing_reports(
             "reason": payload.resolution,
         }
     )
-    repo.create_notification(
-        {
-            "user_id": listing.seller_id,
-            "type": "report_reviewed",
-            "title": "Listing report reviewed",
-            "body": "A moderator reviewed reports for your listing.",
-            "action_url": f"/trade/{listing.id}",
-            "entity_type": "listing",
-            "entity_id": listing.id,
-        }
+    _notify(
+        repo,
+        user_id=listing.seller_id,
+        notification_type="report_reviewed",
+        title="Listing report reviewed",
+        body=f"A moderator reviewed reports for {listing.title}. Check the listing for the latest safety status.",
+        action_url=f"/trade/{listing.id}",
+        entity_type="listing",
+        entity_id=listing.id,
     )
     return updated
 
@@ -1076,19 +1102,21 @@ def admin_update_listing(
     if values.get("status"):
         _apply_listing_status_transition(listing, values["status"], moderator, reason=payload.reason or payload.resolution)
     updated = repo.update_listing(listing, values)
-    if updated.status in {"hidden", "deleted", "sold"}:
+    if updated.status == "sold":
+        _notify_listing_status_changed(repo, updated)
+        _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.", notify_buyers=False)
+    elif updated.status in {"hidden", "deleted"}:
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
     if updated.status == "hidden":
-        repo.create_notification(
-            {
-                "user_id": updated.seller_id,
-                "type": "listing_hidden_by_moderation",
-                "title": "Listing hidden for review",
-                "body": "A moderator hid your listing while reviewing safety signals.",
-                "action_url": f"/trade/{updated.id}",
-                "entity_type": "listing",
-                "entity_id": updated.id,
-            }
+        _notify(
+            repo,
+            user_id=updated.seller_id,
+            notification_type="listing_hidden_by_moderation",
+            title="Listing hidden for review",
+            body=f"A moderator hid {updated.title} while reviewing safety signals.",
+            action_url=f"/trade/{updated.id}",
+            entity_type="listing",
+            entity_id=updated.id,
         )
     if payload.resolution:
         now = datetime.now(UTC)
@@ -1402,16 +1430,15 @@ def _expire_stale_contact_requests(db: Session) -> int:
     expired = list(repo.expire_stale_pending_contact_requests(cutoff))
     for contact_request in expired:
         title = contact_request.listing.title if contact_request.listing else "a listing"
-        repo.create_notification(
-            {
-                "user_id": contact_request.buyer_id,
-                "type": "contact_request_expired",
-                "title": "Contact request expired",
-                "body": f"Your request for {title} expired because the seller did not respond.",
-                "action_url": "/trade/dashboard",
-                "entity_type": "contact_request",
-                "entity_id": contact_request.id,
-            }
+        _notify(
+            repo,
+            user_id=contact_request.buyer_id,
+            notification_type="contact_request_expired",
+            title="Contact request expired",
+            body=f"Your request for {title} expired because the seller did not respond.",
+            action_url=_contact_request_action_url(contact_request, "buyer"),
+            entity_type="contact_request",
+            entity_id=contact_request.id,
         )
     return len(expired)
 
@@ -1424,47 +1451,103 @@ def _seller_contact_value(listing: Listing) -> str | None:
     return listing.contact_value
 
 
+def _notify(
+    repo: TradeRepository,
+    *,
+    user_id: str,
+    notification_type: str,
+    title: str,
+    body: str,
+    action_url: str | None = None,
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+):
+    if notification_type not in TRADE_NOTIFICATION_TYPES:
+        raise ValueError(f"Unknown trade notification type: {notification_type}")
+    return repo.create_notification(
+        {
+            "user_id": user_id,
+            "type": notification_type,
+            "title": title,
+            "body": body,
+            "action_url": action_url,
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+        }
+    )
+
+
+def _contact_request_action_url(contact_request: TradeContactRequest, role: str) -> str:
+    tab = "received" if role == "seller" else "sent"
+    return f"/trade/dashboard?tab={tab}&request_id={contact_request.id}"
+
+
+def _contact_request_listing_title(contact_request: TradeContactRequest) -> str:
+    return contact_request.listing.title if contact_request.listing else "this listing"
+
+
+def _user_display_name(user: User) -> str:
+    profile = getattr(user, "profile", None)
+    display_name = (
+        getattr(profile, "display_name", None)
+        or getattr(profile, "full_name", None)
+        or getattr(user, "username", None)
+    )
+    if display_name:
+        return str(display_name)
+    email = getattr(user, "email", None)
+    if email:
+        return email.split("@", 1)[0]
+    return "A UM student"
+
+
 def _notify_listing_status_changed(repo: TradeRepository, listing: Listing) -> None:
     if listing.status not in {"reserved", "sold"}:
         return
     for contact_request in list(repo.list_contact_requests_sent_for_listing(listing.id)):
         if contact_request.status not in {"pending", "accepted"}:
             continue
-        repo.create_notification(
-            {
-                "user_id": contact_request.buyer_id,
-                "type": f"listing_marked_{listing.status}",
-                "title": f"Listing marked {listing.status}",
-                "body": (
-                    "The seller marked this item as reserved."
-                    if listing.status == "reserved"
-                    else "The seller marked this item as sold. Pending requests have been closed."
-                ),
-                "action_url": "/trade/dashboard",
-                "entity_type": "listing",
-                "entity_id": listing.id,
-            }
+        _notify(
+            repo,
+            user_id=contact_request.buyer_id,
+            notification_type=f"listing_marked_{listing.status}",
+            title=f"Listing marked {listing.status}",
+            body=(
+                f"The seller marked {listing.title} as reserved. You can still follow up from My Trade."
+                if listing.status == "reserved"
+                else f"The seller marked {listing.title} as sold. Pending requests have been closed."
+            ),
+            action_url=_contact_request_action_url(contact_request, "buyer"),
+            entity_type="listing",
+            entity_id=listing.id,
         )
 
 
-def _expire_pending_requests_for_listing(repo: TradeRepository, listing: Listing, reason: str) -> int:
+def _expire_pending_requests_for_listing(
+    repo: TradeRepository,
+    listing: Listing,
+    reason: str,
+    *,
+    notify_buyers: bool = True,
+) -> int:
     pending_requests = [
         contact_request
         for contact_request in repo.list_contact_requests_sent_for_listing(listing.id)
         if contact_request.status == "pending"
     ]
     repo.expire_pending_contact_requests(listing.id)
+    if not notify_buyers:
+        return len(pending_requests)
     for contact_request in pending_requests:
-        repo.create_notification(
-            {
-                "user_id": contact_request.buyer_id,
-                "type": "contact_request_expired",
-                "title": "Contact request closed",
-                "body": reason,
-                "action_url": "/trade/dashboard",
-                "entity_type": "contact_request",
-                "entity_id": contact_request.id,
-            }
+        _notify(
+            repo,
+            user_id=contact_request.buyer_id,
+            notification_type="contact_request_expired",
+            title="Contact request closed",
+            body=reason,
+            action_url=_contact_request_action_url(contact_request, "buyer"),
+            entity_type="contact_request",
+            entity_id=contact_request.id,
         )
     return len(pending_requests)
 
@@ -1476,16 +1559,15 @@ def _notify_wanted_source_owner(db: Session, listing: Listing) -> None:
     wanted_post = repo.get_wanted_post_or_none(listing.source_wanted_post_id)
     if wanted_post is None or wanted_post.buyer_id == listing.seller_id:
         return
-    repo.create_notification(
-        {
-            "user_id": wanted_post.buyer_id,
-            "type": "wanted_match_listing_created",
-            "title": "Someone may have your wanted item",
-            "body": f"A seller created a listing from your wanted request: {listing.title}.",
-            "action_url": f"/trade/{listing.id}",
-            "entity_type": "listing",
-            "entity_id": listing.id,
-        }
+    _notify(
+        repo,
+        user_id=wanted_post.buyer_id,
+        notification_type="wanted_match_listing_created",
+        title="Someone may have your wanted item",
+        body=f"A seller created a listing from your wanted request: {listing.title}.",
+        action_url=f"/trade/{listing.id}",
+        entity_type="listing",
+        entity_id=listing.id,
     )
 
 

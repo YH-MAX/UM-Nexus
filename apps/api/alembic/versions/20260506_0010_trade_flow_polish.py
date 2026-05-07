@@ -50,6 +50,10 @@ def upgrade() -> None:
 
     op.alter_column("trade_contact_requests", "buyer_contact_value", existing_type=sa.String(length=255), nullable=True)
 
+    op.execute(
+        "UPDATE listings SET contact_method = 'in_app' "
+        "WHERE contact_method IS NULL AND status IN ('available', 'reserved')"
+    )
     op.execute("UPDATE listings SET moderation_status = 'clear' WHERE moderation_status = 'approved'")
     op.execute("UPDATE listings SET moderation_status = 'review_required' WHERE moderation_status = 'pending'")
 

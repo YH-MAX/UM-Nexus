@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Heart, Inbox, PackageCheck, PlusCircle, Store } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
@@ -38,8 +39,10 @@ const tabs: Array<{ id: DashboardTab; label: string }> = [
 
 export default function TradeDashboardPage() {
   const { isLoading: isAuthLoading, user } = useAuth();
+  const searchParams = useSearchParams();
   const [dashboard, setDashboard] = useState<TradeDashboard | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
+  const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, { agreedPrice: string; followedAi: boolean }>>({});
@@ -83,6 +86,28 @@ export default function TradeDashboardPage() {
       isMounted = false;
     };
   }, [isAuthLoading, user]);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const requestId = searchParams.get("request_id");
+    if (isDashboardTab(tab)) {
+      setActiveTab(tab);
+    }
+    setHighlightedRequestId(requestId);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!dashboard || !highlightedRequestId) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      document.getElementById(`request-${highlightedRequestId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 100);
+    return () => window.clearTimeout(timeout);
+  }, [activeTab, dashboard, highlightedRequestId]);
 
   const stats = useMemo(() => {
     const listings = dashboard?.listings ?? [];
@@ -237,7 +262,7 @@ export default function TradeDashboardPage() {
           </div>
 
           {activeTab === "overview" ? (
-            <Overview dashboard={dashboard} />
+            <Overview dashboard={dashboard} highlightedRequestId={highlightedRequestId} />
           ) : activeTab === "listings" ? (
             <ListingList listings={dashboard.listings.filter((listing) => listing.status !== "draft" && listing.status !== "sold")} />
           ) : activeTab === "drafts" ? (
@@ -254,6 +279,7 @@ export default function TradeDashboardPage() {
             <RequestList
               emptyText="No buyer requests yet."
               isUpdating={isUpdating}
+              highlightedRequestId={highlightedRequestId}
               requests={dashboard.contact_requests_received}
               role="seller"
               onAnswer={answerContactRequest}
@@ -263,6 +289,7 @@ export default function TradeDashboardPage() {
             <RequestList
               emptyText="No sent requests yet."
               isUpdating={isUpdating}
+              highlightedRequestId={highlightedRequestId}
               requests={dashboard.contact_requests_sent}
               role="buyer"
               onAnswer={answerContactRequest}
@@ -275,7 +302,15 @@ export default function TradeDashboardPage() {
   );
 }
 
-function Overview({ dashboard }: Readonly<{ dashboard: TradeDashboard }>) {
+function Overview({
+  dashboard,
+  highlightedRequestId,
+}: Readonly<{ dashboard: TradeDashboard; highlightedRequestId: string | null }>) {
+  const recentRequests = [
+    ...dashboard.contact_requests_received.map((request) => ({ request, role: "seller" as const })),
+    ...dashboard.contact_requests_sent.map((request) => ({ request, role: "buyer" as const })),
+  ];
+
   return (
     <section className="grid gap-5 lg:grid-cols-2">
       <Panel title="Recent listings">
@@ -286,12 +321,19 @@ function Overview({ dashboard }: Readonly<{ dashboard: TradeDashboard }>) {
         )}
       </Panel>
       <Panel title="Recent requests">
-        {[...dashboard.contact_requests_received, ...dashboard.contact_requests_sent].length === 0 ? (
+        {recentRequests.length === 0 ? (
           <p className="text-sm text-slate-600">No contact requests yet.</p>
         ) : (
-          [...dashboard.contact_requests_received, ...dashboard.contact_requests_sent]
+          recentRequests
             .slice(0, 4)
-            .map((request) => <RequestCard key={request.id} request={request} role="buyer" />)
+            .map(({ request, role }) => (
+              <RequestCard
+                isHighlighted={highlightedRequestId === request.id}
+                key={request.id}
+                request={request}
+                role={role}
+              />
+            ))
         )}
       </Panel>
       <Panel title="Wanted posts">
@@ -352,6 +394,7 @@ function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
 function RequestList({
   emptyText,
   isUpdating,
+  highlightedRequestId,
   requests,
   role,
   onAnswer,
@@ -360,6 +403,7 @@ function RequestList({
 }: Readonly<{
   emptyText: string;
   isUpdating: string | null;
+  highlightedRequestId?: string | null;
   requests: ContactRequest[];
   role: "seller" | "buyer";
   onAnswer: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
@@ -381,6 +425,7 @@ function RequestList({
       {requests.map((request) => (
         <RequestCard
           isUpdating={isUpdating === request.id}
+          isHighlighted={highlightedRequestId === request.id}
           key={request.id}
           request={request}
           role={role}
@@ -395,6 +440,7 @@ function RequestList({
 
 function RequestCard({
   isUpdating = false,
+  isHighlighted = false,
   request,
   role,
   onAnswer,
@@ -402,6 +448,7 @@ function RequestCard({
   onResolve,
 }: Readonly<{
   isUpdating?: boolean;
+  isHighlighted?: boolean;
   request: ContactRequest;
   role: "seller" | "buyer";
   onAnswer?: (request: ContactRequest, status: "accepted" | "rejected") => Promise<void>;
@@ -410,7 +457,12 @@ function RequestCard({
 }>) {
   const canAnswer = role === "seller" && request.status === "pending" && onAnswer;
   return (
-    <article className="trade-card p-4">
+    <article
+      className={`trade-card p-4 transition ${
+        isHighlighted ? "border-emerald-300 ring-4 ring-emerald-100" : ""
+      }`}
+      id={`request-${request.id}`}
+    >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="font-semibold text-slate-950">{request.listing?.title ?? "Listing"}</p>
@@ -426,9 +478,18 @@ function RequestCard({
       ) : null}
       {request.status === "accepted" ? (
         <div className="mt-3 grid gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
-          <p>Buyer: {request.buyer_contact_method} {request.buyer_contact_value ?? "Hidden"}</p>
-          <p>Seller: {request.seller_contact_method ?? "contact"} {request.seller_contact_value ?? request.contact_reveal_blocked_reason ?? "Hidden"}</p>
-          <p className="font-semibold">Contact details revealed. Arrange pickup safely on campus.</p>
+          <p>Buyer: {formatContactLine(request.buyer_contact_method, request.buyer_contact_value)}</p>
+          <p>
+            Seller:{" "}
+            {request.contact_reveal_blocked_reason
+              ? request.contact_reveal_blocked_reason
+              : formatContactLine(request.seller_contact_method, request.seller_contact_value)}
+          </p>
+          <p className="font-semibold">
+            {request.seller_contact_method === "in_app"
+              ? "Seller chose in-app requests only. Use the buyer contact above to arrange pickup safely."
+              : "Contact details available. Arrange pickup safely on campus."}
+          </p>
         </div>
       ) : null}
       <RequestTimeline request={request} />
@@ -488,6 +549,20 @@ function RequestTimeline({ request }: Readonly<{ request: ContactRequest }>) {
       ))}
     </div>
   );
+}
+
+function formatContactLine(method: string | null | undefined, value: string | null | undefined): string {
+  if (!method) {
+    return "Not revealed yet";
+  }
+  if (method === "in_app") {
+    return "In-app request only";
+  }
+  return value ? `${method} ${value}` : `${method} not provided`;
+}
+
+function isDashboardTab(value: string | null): value is DashboardTab {
+  return tabs.some((tab) => tab.id === value);
 }
 
 function SoldTab({

@@ -62,7 +62,12 @@ class Listing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     sold_source: Mapped[str | None] = mapped_column(String(64), nullable=True)
     sold_contact_request_id: Mapped[str | None] = mapped_column(
         Uuid(as_uuid=False),
-        ForeignKey("trade_contact_requests.id", ondelete="SET NULL"),
+        ForeignKey(
+            "trade_contact_requests.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_listings_sold_contact_request_id_trade_contact_requests",
+        ),
         nullable=True,
         index=True,
     )

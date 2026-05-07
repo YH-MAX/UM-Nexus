@@ -56,6 +56,7 @@ def create_listing(client, payload: dict | None = None) -> dict:
 
 
 def create_wanted_post(client, payload: dict | None = None) -> dict:
+    complete_profile(client)
     response = client.post("/api/v1/wanted-posts", json=payload or wanted_post_payload(), headers=AUTH_HEADERS)
     assert response.status_code == 201
     return response.json()
