@@ -309,7 +309,7 @@ async function mockTradeApi(page: Page) {
     }
 
     if (method === "GET" && path === "/listings") {
-      return json(route, [baseListing]);
+      return json(route, { items: [baseListing], total: 1, limit: 24, offset: 0, has_more: false });
     }
 
     if (method === "POST" && path === "/listings") {

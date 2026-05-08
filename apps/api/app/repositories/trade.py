@@ -71,35 +71,34 @@ class TradeRepository:
         risk_level: str | None = None,
         sort: str = "newest",
         public_only: bool = True,
-    ) -> Sequence[Listing]:
-        stmt = (
-            select(Listing)
-            .options(selectinload(Listing.images), selectinload(Listing.seller).selectinload(User.profile))
-        )
+        limit: int = 24,
+        offset: int = 0,
+    ) -> tuple[Sequence[Listing], int]:
+        base_filters = []
         if public_only:
-            stmt = stmt.where(Listing.moderation_status.in_(PUBLIC_MODERATION_STATUSES))
+            base_filters.append(Listing.moderation_status.in_(PUBLIC_MODERATION_STATUSES))
             if status is not None and status not in PUBLIC_LISTING_STATUSES:
-                stmt = stmt.where(false())
+                base_filters.append(false())
             elif status is None:
-                stmt = stmt.where(Listing.status.in_(PUBLIC_LISTING_STATUSES))
+                base_filters.append(Listing.status.in_(PUBLIC_LISTING_STATUSES))
         if status:
-            stmt = stmt.where(Listing.status == status)
+            base_filters.append(Listing.status == status)
         if category:
-            stmt = stmt.where(Listing.category == category)
+            base_filters.append(Listing.category == category)
         if condition:
-            stmt = stmt.where(Listing.condition_label == condition)
+            base_filters.append(Listing.condition_label == condition)
         location = pickup_location or pickup_area
         if location:
-            stmt = stmt.where(or_(Listing.pickup_location == location, Listing.pickup_area == location))
+            base_filters.append(or_(Listing.pickup_location == location, Listing.pickup_area == location))
         if risk_level:
-            stmt = stmt.where(Listing.risk_level == risk_level)
+            base_filters.append(Listing.risk_level == risk_level)
         if min_price is not None:
-            stmt = stmt.where(Listing.price >= min_price)
+            base_filters.append(Listing.price >= min_price)
         if max_price is not None:
-            stmt = stmt.where(Listing.price <= max_price)
+            base_filters.append(Listing.price <= max_price)
         if search:
             pattern = f"%{search.lower()}%"
-            stmt = stmt.where(
+            base_filters.append(
                 or_(
                     func.lower(Listing.title).like(pattern),
                     func.lower(Listing.item_name).like(pattern),
@@ -107,6 +106,15 @@ class TradeRepository:
                     func.lower(Listing.description).like(pattern),
                 )
             )
+
+        count_stmt = select(func.count()).select_from(Listing).where(*base_filters)
+        total = int(self.db.scalar(count_stmt) or 0)
+
+        stmt = (
+            select(Listing)
+            .options(selectinload(Listing.images), selectinload(Listing.seller).selectinload(User.profile))
+            .where(*base_filters)
+        )
         if sort in {"price_asc", "price_low_high"}:
             stmt = stmt.order_by(asc(Listing.price), desc(Listing.created_at))
         elif sort in {"price_desc", "price_high_low"}:
@@ -117,7 +125,8 @@ class TradeRepository:
             stmt = stmt.order_by(asc(Listing.created_at))
         else:
             stmt = stmt.order_by(desc(Listing.created_at))
-        return self.db.scalars(stmt).all()
+        stmt = stmt.limit(limit).offset(offset)
+        return self.db.scalars(stmt).all(), total
 
     def list_listings_by_seller(self, seller_id: str) -> Sequence[Listing]:
         stmt = (

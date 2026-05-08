@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Heart, MapPin, ShieldAlert, UserRound } from "lucide-react";
+import { BadgeCheck, Heart, Image as ImageIcon, MapPin, ShieldAlert, UserRound } from "lucide-react";
 
 import {
   formatCategory,
@@ -22,6 +22,11 @@ type ListingCardProps = Readonly<{
   showFavorite?: boolean;
 }>;
 
+const RISK_LABELS: Record<string, string> = {
+  high: "Under review",
+  medium: "Needs review",
+};
+
 export function ListingCard({
   listing,
   isSaved = false,
@@ -37,6 +42,8 @@ export function ListingCard({
     listingId: listing.id,
   });
   const sellerName = getSellerDisplayName(listing);
+  const isVerified = listing.seller?.profile?.verified_um_email === true;
+  const riskLabel = listing.risk_level ? (RISK_LABELS[listing.risk_level] ?? `${listing.risk_level} risk`) : null;
 
   async function handleFavorite(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -56,8 +63,9 @@ export function ListingCard({
               src={primaryImage.public_url}
             />
           ) : (
-            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-emerald-50 px-5 text-center text-sm font-semibold text-slate-500">
-              {primaryImage ? primaryImage.storage_path : "Photo coming soon"}
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-100 to-emerald-50 text-slate-400">
+              <ImageIcon aria-hidden="true" className="h-10 w-10" />
+              <span className="text-xs font-medium">No photo yet</span>
             </div>
           )}
           <div className="absolute left-3 top-3">
@@ -65,17 +73,20 @@ export function ListingCard({
               {listing.status.replaceAll("_", " ")}
             </StatusPill>
           </div>
-          {listing.risk_level && listing.risk_level !== "low" ? (
+          {riskLabel && listing.risk_level !== "low" ? (
             <div className="absolute bottom-3 left-3">
               <StatusPill tone={listing.risk_level === "high" ? "danger" : "warning"}>
                 <ShieldAlert aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
-                {listing.risk_level} risk
+                {riskLabel}
               </StatusPill>
             </div>
           ) : null}
         </div>
 
         <div className="space-y-3 p-4">
+          {listing.status === "reserved" ? (
+            <p className="text-xs text-slate-500">Reserved · backup interest welcome</p>
+          ) : null}
           <div>
             <h2 className="line-clamp-2 min-h-[2.75rem] text-base font-semibold leading-snug text-slate-950">
               {listing.title}
@@ -97,9 +108,15 @@ export function ListingCard({
           </div>
 
           <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs font-medium text-slate-500">
-            <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex min-w-0 flex-wrap items-center gap-1.5">
               <UserRound aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{sellerName}</span>
+              {isVerified ? (
+                <span className="flex items-center gap-0.5 text-emerald-700">
+                  <BadgeCheck aria-hidden="true" className="h-3.5 w-3.5" />
+                  Verified UM
+                </span>
+              ) : null}
             </span>
             <span className="shrink-0">{formatRelativeTime(listing.created_at)}</span>
           </div>

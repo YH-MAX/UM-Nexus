@@ -64,8 +64,17 @@ export type Listing = {
       faculty: string | null;
       residential_college: string | null;
       college_or_location: string | null;
+      verified_um_email: boolean | null;
     } | null;
   } | null;
+};
+
+export type ListingsPage = {
+  items: Listing[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
 };
 
 export type WantedPost = {
@@ -964,15 +973,24 @@ export async function updateMyProfile(payload: {
   });
 }
 
-export async function getListings(filters: Record<string, string> = {}): Promise<Listing[]> {
+export async function getListings(
+  filters: Record<string, string> = {},
+  pagination: { limit?: number; offset?: number } = {},
+): Promise<ListingsPage> {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
     if (value) {
       params.set(key, value);
     }
   });
+  if (pagination.limit !== undefined) {
+    params.set("limit", String(pagination.limit));
+  }
+  if (pagination.offset !== undefined && pagination.offset > 0) {
+    params.set("offset", String(pagination.offset));
+  }
   const query = params.toString();
-  return fetchJson<Listing[]>(`/listings${query ? `?${query}` : ""}`);
+  return fetchJson<ListingsPage>(`/listings${query ? `?${query}` : ""}`);
 }
 
 export async function getListing(id: string): Promise<Listing> {

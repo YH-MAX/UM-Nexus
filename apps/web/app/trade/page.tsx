@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { Filter, PlusCircle, Search, SlidersHorizontal, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Filter, ImageOff, PlusCircle, Search, SlidersHorizontal, X } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { CategoryPill } from "@/components/trade/category-pill";
@@ -13,6 +13,8 @@ import { TradeShell } from "@/components/trade/trade-shell";
 import {
   addFavorite,
   conditionOptions,
+  formatCategory,
+  formatPickupLocation,
   getFavorites,
   getListings,
   listingStatusOptions,
@@ -20,6 +22,7 @@ import {
   removeFavorite,
   tradeCategories,
   type Listing,
+  type ListingsPage,
 } from "@/lib/trade/api";
 
 type ListingFilters = {
@@ -44,35 +47,77 @@ const initialFilters: ListingFilters = {
   sort: "latest",
 };
 
+const CHIP_LABELS: Record<string, string> = {
+  textbooks_notes: "Textbooks",
+  kitchen_appliances: "Kitchen",
+  sports_hobby: "Sports",
+  tickets_events: "Tickets & Events",
+  free_items: "Free Items",
+  dorm_room: "Dorm & Room",
+};
+
 const categoryChips = [
   { value: "", label: "All" },
   ...tradeCategories.map((category) => ({
     value: category.value,
-    label: category.label
-      .replace("Textbooks & Notes", "Textbooks")
-      .replace("Kitchen Appliances", "Kitchen")
-      .replace("Sports & Hobby", "Sports"),
+    label: CHIP_LABELS[category.value] ?? category.label,
   })),
 ];
 
+const PAGE_SIZE = 24;
+
+const emptyPage: ListingsPage = { items: [], total: 0, limit: PAGE_SIZE, offset: 0, has_more: false };
+
 export default function TradePage() {
   const { user } = useAuth();
-  const [listings, setListings] = useState<Listing[]>([]);
+  const [allListings, setAllListings] = useState<Listing[]>([]);
+  const [page, setPage] = useState<ListingsPage>(emptyPage);
   const [filters, setFilters] = useState<ListingFilters>(initialFilters);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Debounce search: 500ms delay before updating debouncedSearch
+  useEffect(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+    debounceTimer.current = setTimeout(() => {
+      setDebouncedSearch(filters.search);
+    }, 500);
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+    };
+  }, [filters.search]);
+
+  // Reset and fetch when filters change (use debouncedSearch for text search)
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
 
-    void getListings(filters)
-      .then((items) => {
+    const activeFilters = buildQueryFilters({
+      search: debouncedSearch,
+      category: filters.category,
+      condition: filters.condition,
+      pickup_location: filters.pickup_location,
+      status: filters.status,
+      min_price: filters.min_price,
+      max_price: filters.max_price,
+      sort: filters.sort,
+    });
+
+    void getListings(activeFilters, { limit: PAGE_SIZE, offset: 0 })
+      .then((result) => {
         if (isMounted) {
-          setListings(items);
+          setPage(result);
+          setAllListings(result.items);
           setError(null);
         }
       })
@@ -90,7 +135,16 @@ export default function TradePage() {
     return () => {
       isMounted = false;
     };
-  }, [filters]);
+  }, [
+    debouncedSearch,
+    filters.category,
+    filters.condition,
+    filters.pickup_location,
+    filters.status,
+    filters.min_price,
+    filters.max_price,
+    filters.sort,
+  ]);
 
   useEffect(() => {
     if (!user) {
@@ -121,6 +175,37 @@ export default function TradePage() {
       ),
     [filters],
   );
+
+  const priceError = useMemo(() => {
+    const min = parseFloat(filters.min_price);
+    const max = parseFloat(filters.max_price);
+    return filters.min_price && filters.max_price && min > max;
+  }, [filters.min_price, filters.max_price]);
+
+  async function loadMore() {
+    if (!page.has_more || isLoadingMore) return;
+    setIsLoadingMore(true);
+    const nextOffset = page.offset + page.limit;
+    const activeFilters = buildQueryFilters({
+      search: debouncedSearch,
+      category: filters.category,
+      condition: filters.condition,
+      pickup_location: filters.pickup_location,
+      status: filters.status,
+      min_price: filters.min_price,
+      max_price: filters.max_price,
+      sort: filters.sort,
+    });
+    try {
+      const result = await getListings(activeFilters, { limit: PAGE_SIZE, offset: nextOffset });
+      setPage(result);
+      setAllListings((prev) => [...prev, ...result.items]);
+    } catch (nextError: unknown) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to load more listings.");
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }
 
   async function toggleFavorite(listingId: string, nextSaved: boolean) {
     if (!user) {
@@ -213,40 +298,107 @@ export default function TradePage() {
         </div>
 
         <div className="mt-4 hidden lg:block">
-          <FilterPanel filters={filters} hasFilters={hasFilters} onClear={() => setFilters(initialFilters)} onUpdate={updateFilter} />
+          <FilterPanel
+            filters={filters}
+            hasFilters={hasFilters}
+            priceError={!!priceError}
+            onClear={() => setFilters(initialFilters)}
+            onUpdate={updateFilter}
+          />
         </div>
       </section>
 
-      {hasFilters ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-slate-500">Active filters:</span>
-          {filters.category ? <CategoryPill active category={filters.category} /> : null}
-          {filters.condition ? <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{filters.condition.replaceAll("_", " ")}</span> : null}
-          {filters.pickup_location ? <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">{filters.pickup_location.replaceAll("_", " ")}</span> : null}
+      {/* Result count + active filter summary */}
+      {!isLoading ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-700">
+              {page.total} {page.total === 1 ? "listing" : "listings"} found
+            </span>
+            {filters.search ? (
+              <span className="text-sm text-slate-500">for &ldquo;{filters.search}&rdquo;</span>
+            ) : null}
+            {filters.category ? <CategoryPill active category={filters.category} /> : null}
+            {filters.condition ? (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                {filters.condition.replaceAll("_", " ")}
+              </span>
+            ) : null}
+            {filters.pickup_location ? (
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                {formatPickupLocation(filters.pickup_location)}
+              </span>
+            ) : null}
+          </div>
+          {hasFilters ? (
+            <button
+              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:text-rose-600"
+              onClick={() => setFilters(initialFilters)}
+              type="button"
+            >
+              <X aria-hidden="true" className="h-3.5 w-3.5" />
+              Clear all filters
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Guest sign-in nudge when listings exist */}
+      {!user && !isLoading && page.total > 0 ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <Link className="font-semibold underline underline-offset-2" href="/login">Sign in with your UM email</Link>
+          {" "}to save listings or contact sellers.
         </div>
       ) : null}
 
       {isLoading ? (
-        <LoadingSkeleton label="Loading marketplace listings" rows={4} />
-      ) : listings.length === 0 ? (
-        <EmptyState
-          actionHref="/trade/sell"
-          actionLabel="Create listing"
-          description={hasFilters ? "No matching listings found. Try changing your filters." : "No listings yet. Be the first to sell something on UM Nexus Trade."}
-          icon={Filter}
-          title={hasFilters ? "No matching listings found" : "No listings yet"}
-        />
+        <LoadingSkeleton />
+      ) : allListings.length === 0 ? (
+        hasFilters ? (
+          <EmptyState
+            actionLabel="Clear filters"
+            description="No matching listings found. Try changing your filters or clearing your search."
+            icon={Filter}
+            title="No matching listings"
+            onAction={() => setFilters(initialFilters)}
+          />
+        ) : (
+          <EmptyState
+            actionHref="/trade/sell"
+            actionLabel="Sell an item"
+            description="No listings yet. Be the first to sell something on UM Nexus Trade."
+            icon={ImageOff}
+            title="No listings yet"
+          />
+        )
       ) : (
-        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {listings.map((listing) => (
-            <ListingCard
-              isSaved={savedIds.has(listing.id)}
-              key={listing.id}
-              listing={listing}
-              onToggleFavorite={user ? toggleFavorite : undefined}
-            />
-          ))}
-        </section>
+        <>
+          <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {allListings.map((listing) => (
+              <ListingCard
+                isSaved={savedIds.has(listing.id)}
+                key={listing.id}
+                listing={listing}
+                onToggleFavorite={user ? toggleFavorite : undefined}
+              />
+            ))}
+          </section>
+
+          {page.has_more ? (
+            <div className="flex justify-center pt-2">
+              <button
+                className="trade-button-secondary min-w-[160px]"
+                disabled={isLoadingMore}
+                onClick={() => void loadMore()}
+                type="button"
+              >
+                {isLoadingMore ? "Loading..." : `Load more (${page.total - allListings.length} remaining)`}
+              </button>
+            </div>
+          ) : allListings.length > PAGE_SIZE ? (
+            <p className="text-center text-sm text-slate-400">All {page.total} listings loaded.</p>
+          ) : null}
+        </>
       )}
 
       {isFilterOpen ? (
@@ -273,7 +425,13 @@ export default function TradePage() {
               </button>
             </div>
             <div className="mt-5">
-              <FilterPanel filters={filters} hasFilters={hasFilters} onClear={() => setFilters(initialFilters)} onUpdate={updateFilter} />
+              <FilterPanel
+                filters={filters}
+                hasFilters={hasFilters}
+                priceError={!!priceError}
+                onClear={() => setFilters(initialFilters)}
+                onUpdate={updateFilter}
+              />
             </div>
           </div>
         </div>
@@ -282,14 +440,30 @@ export default function TradePage() {
   );
 }
 
+function buildQueryFilters(filters: ListingFilters): Record<string, string> {
+  const out: Record<string, string> = {};
+  const min = parseFloat(filters.min_price);
+  const max = parseFloat(filters.max_price);
+  const priceInvalid = filters.min_price && filters.max_price && min > max;
+
+  for (const [key, value] of Object.entries(filters)) {
+    if (!value) continue;
+    if ((key === "min_price" || key === "max_price") && priceInvalid) continue;
+    out[key] = value;
+  }
+  return out;
+}
+
 function FilterPanel({
   filters,
   hasFilters,
+  priceError,
   onClear,
   onUpdate,
 }: Readonly<{
   filters: ListingFilters;
   hasFilters: boolean;
+  priceError: boolean;
   onClear: () => void;
   onUpdate: <K extends keyof ListingFilters>(key: K, value: ListingFilters[K]) => void;
 }>) {
@@ -312,28 +486,39 @@ function FilterPanel({
           <option key={item.value} value={item.value}>{item.label}</option>
         ))}
       </SelectField>
-      <input
-        className="trade-input"
-        min="0"
-        placeholder="Min RM"
-        type="number"
-        value={filters.min_price}
-        onChange={(event) => onUpdate("min_price", event.target.value)}
-      />
-      <input
-        className="trade-input"
-        min="0"
-        placeholder="Max RM"
-        type="number"
-        value={filters.max_price}
-        onChange={(event) => onUpdate("max_price", event.target.value)}
-      />
+      <div className="grid gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Min RM</span>
+        <input
+          className={`trade-input ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
+          min="0"
+          placeholder="Min RM"
+          type="number"
+          value={filters.min_price}
+          onChange={(event) => onUpdate("min_price", event.target.value)}
+        />
+      </div>
+      <div className="grid gap-1.5">
+        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Max RM</span>
+        <input
+          className={`trade-input ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
+          min="0"
+          placeholder="Max RM"
+          type="number"
+          value={filters.max_price}
+          onChange={(event) => onUpdate("max_price", event.target.value)}
+        />
+      </div>
       <SelectField label="Sort" value={filters.sort} onChange={(value) => onUpdate("sort", value)}>
-        <option value="latest">Newest</option>
-        <option value="oldest">Oldest</option>
-        <option value="price_low_high">Lowest price</option>
-        <option value="price_high_low">Highest price</option>
+        <option value="latest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="price_low_high">Price: Low to High</option>
+        <option value="price_high_low">Price: High to Low</option>
       </SelectField>
+      {priceError ? (
+        <p className="col-span-full text-xs text-rose-600">
+          Minimum price cannot be higher than maximum price.
+        </p>
+      ) : null}
       {hasFilters ? (
         <button
           className="trade-button-secondary md:col-span-2 lg:col-span-6"

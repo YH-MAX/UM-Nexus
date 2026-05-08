@@ -7,6 +7,7 @@ type EmptyStateProps = Readonly<{
   description: string;
   actionHref?: string;
   actionLabel?: string;
+  onAction?: () => void;
   icon?: LucideIcon;
 }>;
 
@@ -15,6 +16,7 @@ export function EmptyState({
   description,
   actionHref,
   actionLabel,
+  onAction,
   icon: Icon = Search,
 }: EmptyStateProps) {
   return (
@@ -28,6 +30,10 @@ export function EmptyState({
         <Link className="trade-button-primary mt-5" href={actionHref}>
           {actionLabel}
         </Link>
+      ) : onAction && actionLabel ? (
+        <button className="trade-button-secondary mt-5" onClick={onAction} type="button">
+          {actionLabel}
+        </button>
       ) : null}
     </section>
   );

@@ -85,7 +85,7 @@ def test_feed_filters_and_legacy_category_normalization(client) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert [item["id"] for item in body] == [second["id"]]
+    assert [item["id"] for item in body["items"]] == [second["id"]]
 
 
 def test_public_feed_excludes_hidden_and_review_required_listings(client, db_session) -> None:
@@ -102,7 +102,7 @@ def test_public_feed_excludes_hidden_and_review_required_listings(client, db_ses
     response = client.get("/api/v1/listings")
 
     assert response.status_code == 200
-    ids = {item["id"] for item in response.json()}
+    ids = {item["id"] for item in response.json()["items"]}
     assert visible["id"] in ids
     assert hidden["id"] not in ids
     assert review_required["id"] not in ids

@@ -125,24 +125,33 @@ def list_listings(
     condition: str | None = None,
     status: str | None = None,
     sort: str = "latest",
-) -> list[Listing]:
+    limit: int = 24,
+    offset: int = 0,
+) -> dict:
     repo = TradeRepository(db)
     normalized_status = normalize_listing_status(status) if status else None
     normalized_condition = normalize_condition(condition) if condition else None
     normalized_pickup = normalize_pickup_location(pickup_location or pickup_area) if (pickup_location or pickup_area) else None
-    return list(
-        repo.list_listings(
-            status=normalized_status,
-            category=normalize_category(category) if category else None,
-            condition=normalized_condition,
-            search=search,
-            min_price=min_price,
-            max_price=max_price,
-            pickup_location=normalized_pickup,
-            risk_level=risk_level,
-            sort=sort,
-        )
+    items, total = repo.list_listings(
+        status=normalized_status,
+        category=normalize_category(category) if category else None,
+        condition=normalized_condition,
+        search=search,
+        min_price=min_price,
+        max_price=max_price,
+        pickup_location=normalized_pickup,
+        risk_level=risk_level,
+        sort=sort,
+        limit=limit,
+        offset=offset,
     )
+    return {
+        "items": list(items),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(items) < total,
+    }
 
 
 def get_listing(
@@ -1123,7 +1132,7 @@ def trade_dashboard(db: Session, current_user: User) -> dict:
 
 
 def moderation_summary(db: Session) -> dict:
-    listings = list(TradeRepository(db).list_listings(status=None, sort="risk", public_only=False))
+    listings, _ = TradeRepository(db).list_listings(status=None, sort="risk", public_only=False, limit=10_000, offset=0)
     return {
         "high_risk_count": sum(1 for listing in listings if listing.risk_level == "high"),
         "pending_review_count": sum(1 for listing in listings if listing.moderation_status == "review_required"),

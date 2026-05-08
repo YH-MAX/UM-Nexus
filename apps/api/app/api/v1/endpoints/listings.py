@@ -14,6 +14,7 @@ from app.schemas.listing import (
     ListingRead,
     ListingReportCreate,
     ListingReportRead,
+    ListingsPage,
     ListingStatusUpdate,
     ListingUpdate,
 )
@@ -61,7 +62,7 @@ def create_listing_endpoint(
     return ListingRead.model_validate(listing)
 
 
-@router.get("", response_model=list[ListingRead])
+@router.get("", response_model=ListingsPage)
 def list_listings_endpoint(
     db: Session = Depends(get_db),
     category: str | None = Query(default=None),
@@ -74,23 +75,31 @@ def list_listings_endpoint(
     risk_level: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     sort: str = Query(default="latest"),
-) -> list[ListingRead]:
-    return [
-        ListingRead.model_validate(listing)
-        for listing in list_listings(
-            db,
-            category=category,
-            search=search,
-            min_price=min_price,
-            max_price=max_price,
-            pickup_area=pickup_area,
-            pickup_location=pickup_location,
-            condition=condition,
-            risk_level=risk_level,
-            status=status_filter,
-            sort=sort,
-        )
-    ]
+    limit: int = Query(default=24, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> ListingsPage:
+    page = list_listings(
+        db,
+        category=category,
+        search=search,
+        min_price=min_price,
+        max_price=max_price,
+        pickup_area=pickup_area,
+        pickup_location=pickup_location,
+        condition=condition,
+        risk_level=risk_level,
+        status=status_filter,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+    return ListingsPage(
+        items=[ListingRead.model_validate(listing) for listing in page["items"]],
+        total=page["total"],
+        limit=page["limit"],
+        offset=page["offset"],
+        has_more=page["has_more"],
+    )
 
 
 @router.get("/{listing_id}", response_model=ListingRead)

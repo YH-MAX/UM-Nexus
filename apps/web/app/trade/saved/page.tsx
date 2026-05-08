@@ -79,7 +79,7 @@ export default function SavedListingsPage() {
       ) : null}
 
       {user && isLoading ? (
-        <LoadingSkeleton label="Loading saved listings" rows={4} />
+        <LoadingSkeleton />
       ) : user && availableFavorites.length === 0 ? (
         <EmptyState
           actionHref="/trade"

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, Uuid
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -30,6 +30,13 @@ JsonPayload = JSON().with_variant(postgresql.JSONB, "postgresql")
 
 class Listing(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "listings"
+    __table_args__ = (
+        Index("listings_status_moderation_idx", "status", "moderation_status"),
+        Index("listings_category_status_idx", "category", "status"),
+        Index("listings_created_at_idx", "created_at"),
+        Index("listings_price_idx", "price"),
+        Index("listings_pickup_location_idx", "pickup_location"),
+    )
 
     seller_id: Mapped[str] = mapped_column(
         Uuid(as_uuid=False),

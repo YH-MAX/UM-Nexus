@@ -43,6 +43,7 @@ class SellerProfileSummary(BaseModel):
     faculty: str | None = None
     residential_college: str | None = None
     college_or_location: str | None = None
+    verified_um_email: bool = False
 
 
 class SellerSummary(BaseModel):
@@ -277,6 +278,14 @@ class ListingFavoriteRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     listing: ListingRead | None = None
+
+
+class ListingsPage(BaseModel):
+    items: list[ListingRead]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
 
 
 class ListingStatusUpdate(BaseModel):
