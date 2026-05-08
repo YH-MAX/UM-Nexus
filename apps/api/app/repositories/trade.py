@@ -670,19 +670,60 @@ class TradeRepository:
         return user
 
     def create_notification(self, values: dict) -> Notification:
+        if "metadata" in values and "notification_metadata" not in values:
+            values = {**values, "notification_metadata": values["metadata"]}
+            values.pop("metadata", None)
         notification = Notification(**values)
         self.db.add(notification)
         self.db.commit()
         self.db.refresh(notification)
         return notification
 
-    def list_notifications_for_user(self, user_id: str, limit: int = 50) -> Sequence[Notification]:
+    def find_recent_notification(
+        self,
+        *,
+        user_id: str,
+        notification_type: str,
+        entity_type: str | None,
+        entity_id: str | None,
+        created_after: datetime,
+    ) -> Notification | None:
+        stmt = (
+            select(Notification)
+            .where(
+                Notification.user_id == user_id,
+                Notification.type == notification_type,
+                Notification.entity_type == entity_type,
+                Notification.entity_id == entity_id,
+                Notification.created_at >= created_after,
+            )
+            .order_by(desc(Notification.created_at))
+            .limit(1)
+        )
+        return self.db.scalar(stmt)
+
+    def list_notifications_for_user(
+        self,
+        user_id: str,
+        limit: int = 50,
+        *,
+        before: datetime | None = None,
+        unread_only: bool = False,
+        notification_type: str | None = None,
+    ) -> Sequence[Notification]:
+        limit = max(1, min(limit, 100))
         stmt = (
             select(Notification)
             .where(Notification.user_id == user_id)
             .order_by(desc(Notification.created_at))
             .limit(limit)
         )
+        if before is not None:
+            stmt = stmt.where(Notification.created_at < before)
+        if unread_only:
+            stmt = stmt.where(Notification.is_read.is_(False))
+        if notification_type:
+            stmt = stmt.where(Notification.type == notification_type)
         return self.db.scalars(stmt).all()
 
     def count_unread_notifications_for_user(self, user_id: str) -> int:

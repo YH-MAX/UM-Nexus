@@ -93,9 +93,11 @@ export function TradeShell({
     };
 
     void loadUnreadCount();
+    const intervalId = window.setInterval(loadUnreadCount, 60_000);
     window.addEventListener("trade:notifications-changed", handleNotificationsChanged);
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
       window.removeEventListener("trade:notifications-changed", handleNotificationsChanged);
     };
   }, [pathname, user]);

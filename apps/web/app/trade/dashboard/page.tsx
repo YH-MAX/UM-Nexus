@@ -43,6 +43,7 @@ export default function TradeDashboardPage() {
   const [dashboard, setDashboard] = useState<TradeDashboard | null>(null);
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
   const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
+  const [highlightedListingId, setHighlightedListingId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, { agreedPrice: string; followedAi: boolean }>>({});
@@ -94,14 +95,18 @@ export default function TradeDashboardPage() {
   useEffect(() => {
     const tab = searchParams.get("tab");
     const requestId = searchParams.get("request_id");
+    const listingId = searchParams.get("listing_id");
     if (isDashboardTab(tab)) {
       setActiveTab(tab);
     } else if (requestId && dashboard?.contact_requests_received.some((request) => request.id === requestId)) {
       setActiveTab("received");
     } else if (requestId && dashboard?.contact_requests_sent.some((request) => request.id === requestId)) {
       setActiveTab("sent");
+    } else if (listingId && dashboard?.listings.some((listing) => listing.id === listingId)) {
+      setActiveTab("listings");
     }
     setHighlightedRequestId(requestId);
+    setHighlightedListingId(listingId);
   }, [dashboard, searchParams]);
 
   useEffect(() => {
@@ -118,14 +123,28 @@ export default function TradeDashboardPage() {
   }, [activeTab, dashboard, highlightedRequestId]);
 
   useEffect(() => {
-    if (!highlightedRequestId) {
+    if (!dashboard || !highlightedListingId) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      document.getElementById(`listing-${highlightedListingId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 100);
+    return () => window.clearTimeout(timeout);
+  }, [activeTab, dashboard, highlightedListingId]);
+
+  useEffect(() => {
+    if (!highlightedRequestId && !highlightedListingId) {
       return;
     }
     const timeout = window.setTimeout(() => {
       setHighlightedRequestId(null);
-    }, 6000);
+      setHighlightedListingId(null);
+    }, 60_000);
     return () => window.clearTimeout(timeout);
-  }, [highlightedRequestId]);
+  }, [highlightedRequestId, highlightedListingId]);
 
   const stats = useMemo(() => {
     const listings = dashboard?.listings ?? [];
@@ -274,6 +293,7 @@ export default function TradeDashboardPage() {
           <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
             {tabs.map((tab) => (
               <button
+                aria-pressed={activeTab === tab.id}
                 className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                   activeTab === tab.id ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
                 }`}
@@ -289,9 +309,9 @@ export default function TradeDashboardPage() {
           {activeTab === "overview" ? (
             <Overview dashboard={dashboard} highlightedRequestId={highlightedRequestId} />
           ) : activeTab === "listings" ? (
-            <ListingList listings={dashboard.listings.filter((listing) => listing.status !== "draft" && listing.status !== "sold")} />
+            <ListingList highlightedListingId={highlightedListingId} listings={dashboard.listings.filter((listing) => listing.status !== "draft" && listing.status !== "sold")} />
           ) : activeTab === "drafts" ? (
-            <ListingList emptyLabel="No drafts yet." listings={dashboard.listings.filter((listing) => listing.status === "draft")} />
+            <ListingList emptyLabel="No drafts yet." highlightedListingId={highlightedListingId} listings={dashboard.listings.filter((listing) => listing.status === "draft")} />
           ) : activeTab === "sold" ? (
             <SoldTab
               dashboard={dashboard}
@@ -388,20 +408,33 @@ function Overview({
   );
 }
 
-function ListingList({ listings, emptyLabel = "No listings in this tab." }: Readonly<{ listings: Listing[]; emptyLabel?: string }>) {
+function ListingList({
+  listings,
+  emptyLabel = "No listings in this tab.",
+  highlightedListingId = null,
+}: Readonly<{ listings: Listing[]; emptyLabel?: string; highlightedListingId?: string | null }>) {
   if (listings.length === 0) {
     return <EmptyState actionHref="/trade/sell" actionLabel="Create listing" description={emptyLabel} title="Nothing here yet" />;
   }
   return (
     <section className="grid gap-3">
-      {listings.map((listing) => <ListingRow key={listing.id} listing={listing} />)}
+      {listings.map((listing) => (
+        <ListingRow isHighlighted={highlightedListingId === listing.id} key={listing.id} listing={listing} />
+      ))}
     </section>
   );
 }
 
-function ListingRow({ listing }: Readonly<{ listing: Listing }>) {
+function ListingRow({ isHighlighted = false, listing }: Readonly<{ isHighlighted?: boolean; listing: Listing }>) {
   return (
-    <Link className="trade-card trade-card-hover block p-4" href={`/trade/${listing.id}`}>
+    <Link
+      className={`trade-card trade-card-hover block p-4 ${
+        isHighlighted ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200" : ""
+      }`}
+      data-highlighted={isHighlighted ? "true" : "false"}
+      href={`/trade/${listing.id}`}
+      id={`listing-${listing.id}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-semibold text-slate-950">{listing.title}</p>
@@ -486,6 +519,7 @@ function RequestCard({
       className={`trade-card p-4 transition ${
         isHighlighted ? "border-emerald-300 ring-4 ring-emerald-100" : ""
       }`}
+      data-highlighted={isHighlighted ? "true" : "false"}
       id={`request-${request.id}`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

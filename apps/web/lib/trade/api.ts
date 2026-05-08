@@ -644,15 +644,20 @@ export type NotificationType =
   | "wanted_match_listing_created"
   | string;
 
+export type NotificationPriority = "low" | "normal" | "high" | "urgent";
+
 export type TradeNotification = {
   id: string;
   user_id: string;
+  actor_id: string | null;
   type: NotificationType;
   title: string;
   body: string;
   action_url: string | null;
   entity_type: string | null;
   entity_id: string | null;
+  metadata: Record<string, unknown> | null;
+  priority: NotificationPriority;
   is_read: boolean;
   read_at: string | null;
   created_at: string;
@@ -778,6 +783,13 @@ const API_REQUEST_TIMEOUT_MS = readPositiveNumber(
 );
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (
+    process.env.NEXT_PUBLIC_E2E_AUTH === "true" &&
+    typeof window !== "undefined" &&
+    window.localStorage.getItem("um_nexus_e2e_user")
+  ) {
+    return { Authorization: "Bearer e2e-access-token" };
+  }
   const supabase = createBrowserSupabaseClient();
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -1180,8 +1192,27 @@ export async function getFavorites(): Promise<ListingFavorite[]> {
   return fetchJson<ListingFavorite[]>("/users/me/favorites");
 }
 
-export async function getNotifications(): Promise<TradeNotification[]> {
-  return fetchJson<TradeNotification[]>("/users/me/notifications");
+export async function getNotifications(params: {
+  limit?: number;
+  before?: string;
+  unreadOnly?: boolean;
+  type?: NotificationType;
+} = {}): Promise<TradeNotification[]> {
+  const searchParams = new URLSearchParams();
+  if (params.limit) {
+    searchParams.set("limit", String(params.limit));
+  }
+  if (params.before) {
+    searchParams.set("before", params.before);
+  }
+  if (params.unreadOnly) {
+    searchParams.set("unread_only", "true");
+  }
+  if (params.type) {
+    searchParams.set("type", params.type);
+  }
+  const query = searchParams.toString();
+  return fetchJson<TradeNotification[]>(`/users/me/notifications${query ? `?${query}` : ""}`);
 }
 
 export async function getNotificationUnreadCount(): Promise<{ unread: number }> {

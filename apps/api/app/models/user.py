@@ -29,5 +29,8 @@ class User(TimestampMixin, Base):
         uselist=False,
     )
     created_societies: Mapped[list["Society"]] = relationship(back_populates="creator")
-    notifications: Mapped[list["Notification"]] = relationship(back_populates="user")
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="user",
+        foreign_keys="Notification.user_id",
+    )
     media_assets: Mapped[list["MediaAsset"]] = relationship(back_populates="owner_user")

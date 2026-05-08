@@ -169,7 +169,7 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page.getByText(/Can I pick this up today/i)).toBeVisible();
     await expect(page.getByText("Sent", { exact: true }).last()).toBeVisible();
 
-    await page.getByRole("button", { name: "Accept" }).click();
+    await page.getByRole("button", { name: "Accept" }).dispatchEvent("click");
     await expect.poll(() => state.acceptedRequests).toBe(1);
 
     await page.getByRole("button", { name: "Sent Requests" }).click();
@@ -182,8 +182,8 @@ test.describe("authenticated Trade product workflows", () => {
 
     await page.goto("/trade/dashboard?request_id=contact-pending");
 
-    await expect(page.getByRole("button", { name: "Received Requests" })).toHaveClass(/bg-slate-950/);
-    await expect(page.locator("#request-contact-pending")).toHaveClass(/ring-emerald-100/);
+    await expect(page.getByRole("button", { name: "Received Requests" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#request-contact-pending")).toHaveAttribute("data-highlighted", "true");
   });
 
   test("alerts show unread state and deep-link into the relevant dashboard request", async ({ page }) => {
@@ -195,13 +195,15 @@ test.describe("authenticated Trade product workflows", () => {
 
     await page.goto("/trade/notifications");
     await expect(page.getByRole("heading", { name: /Inbox/i })).toBeVisible();
+    await expect(page.getByText("Earlier")).toBeVisible();
     await expect(page.getByText(/New buyer interest/i)).toBeVisible();
     await expect(page.getByText("Request").first()).toBeVisible();
+    await expect(page.getByText("urgent")).toBeVisible();
 
     await page.getByRole("link", { name: /Open/i }).first().click();
     await expect(page).toHaveURL(/\/trade\/dashboard\?tab=received&request_id=contact-pending/);
-    await expect(page.getByRole("button", { name: "Received Requests" })).toHaveClass(/bg-slate-950/);
-    await expect(page.locator("#request-contact-pending")).toHaveClass(/ring-emerald-100/);
+    await expect(page.getByRole("button", { name: "Received Requests" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#request-contact-pending")).toHaveAttribute("data-highlighted", "true");
     await expect.poll(() => state.notifications.filter((notification) => !notification.is_read).length).toBe(1);
   });
 
@@ -219,6 +221,17 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByRole("button", { name: "Mark all read" }).click();
     await expect.poll(() => state.notifications.filter((notification) => !notification.is_read).length).toBe(0);
     await expect(page.getByText("0 unread")).toBeVisible();
+    await expect(page.getByText("You're all caught up.")).toBeVisible();
+  });
+
+  test("dashboard highlights a listing from a listing alert link", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+
+    await page.goto("/trade/dashboard?tab=listings&listing_id=listing-1");
+
+    await expect(page.getByRole("button", { name: "My Listings" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("#listing-listing-1")).toHaveAttribute("data-highlighted", "true");
   });
 
   test("seller can edit listing details from the dedicated edit route", async ({ page }) => {
@@ -424,7 +437,19 @@ async function mockTradeApi(page: Page) {
     }
 
     if (method === "GET" && path === "/users/me/notifications") {
-      return json(route, state.notifications);
+      let notifications = [...state.notifications];
+      if (url.searchParams.get("unread_only") === "true") {
+        notifications = notifications.filter((notification) => !notification.is_read);
+      }
+      const notificationType = url.searchParams.get("type");
+      if (notificationType) {
+        notifications = notifications.filter((notification) => notification.type === notificationType);
+      }
+      const limit = Number(url.searchParams.get("limit"));
+      if (Number.isFinite(limit) && limit > 0) {
+        notifications = notifications.slice(0, limit);
+      }
+      return json(route, notifications);
     }
 
     if (method === "PATCH" && path.startsWith("/notifications/") && path.endsWith("/read")) {
@@ -509,12 +534,15 @@ function tradeNotifications() {
     {
       id: "notification-1",
       user_id: "seller-1",
+      actor_id: "buyer-1",
       type: "contact_request_received",
       title: "New buyer interest",
       body: "Buyer Student is interested in Casio Scientific Calculator. Review the request in My Trade.",
       action_url: "/trade/dashboard?tab=received&request_id=contact-pending",
       entity_type: "contact_request",
       entity_id: "contact-pending",
+      metadata: { listing_id: "listing-1", listing_title: "Casio Scientific Calculator", request_id: "contact-pending" },
+      priority: "high",
       is_read: false,
       read_at: null,
       created_at: now,
@@ -522,12 +550,15 @@ function tradeNotifications() {
     {
       id: "notification-2",
       user_id: "seller-1",
-      type: "listing_reported",
-      title: "A listing was reported",
-      body: "Casio Scientific Calculator has been sent for UM Nexus safety review.",
-      action_url: "/trade/listing-1",
+      actor_id: "moderator-1",
+      type: "listing_hidden_by_moderation",
+      title: "Listing hidden for review",
+      body: "Casio Scientific Calculator was hidden while UM Nexus reviews safety reports.",
+      action_url: "/trade/dashboard?tab=listings&listing_id=listing-1",
       entity_type: "listing",
       entity_id: "listing-1",
+      metadata: { listing_id: "listing-1", listing_title: "Casio Scientific Calculator" },
+      priority: "urgent",
       is_read: false,
       read_at: null,
       created_at: now,

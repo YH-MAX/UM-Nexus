@@ -275,12 +275,18 @@ class NotificationRead(BaseModel):
 
     id: str
     user_id: str
+    actor_id: str | None = None
     type: str
     title: str
     body: str
     action_url: str | None
     entity_type: str | None
     entity_id: str | None
+    metadata: dict[str, object] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("notification_metadata", "metadata"),
+    )
+    priority: Literal["low", "normal", "high", "urgent"] = "normal"
     is_read: bool
     read_at: datetime | None
     created_at: datetime

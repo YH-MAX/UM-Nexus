@@ -67,7 +67,7 @@ from app.services.trade_policy import (
 from app.services.trade_notifications import (
     contact_request_action_url as _contact_request_action_url,
     contact_request_listing_title as _contact_request_listing_title,
-    create_trade_notification as _notify,
+    safe_create_trade_notification as _notify,
     user_display_name as _user_display_name,
 )
 from app.trade.constants import TRADE_CATEGORIES
@@ -187,14 +187,17 @@ def update_listing(db: Session, listing_id: str, payload: ListingUpdate, current
             status_code=status.HTTP_409_CONFLICT,
             detail="Sold listings can only change status or moderation metadata.",
         )
+    old_status = listing.status
     if values.get("status"):
         _apply_listing_status_transition(listing, values["status"], current_user)
     updated = repo.update_listing(listing, values)
     if updated.status == "sold":
-        _notify_listing_status_changed(repo, updated)
+        _notify_listing_status_changed(repo, updated, actor=current_user, old_status=old_status)
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.", notify_buyers=False)
     elif updated.status in {"hidden", "deleted"}:
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
+    if updated.status == "reserved":
+        _notify_listing_status_changed(repo, updated, actor=current_user, old_status=old_status)
     if {"title", "description", "category", "item_name", "brand", "model", "condition_label", "price", "pickup_area", "pickup_location", "residential_college"} & set(values):
         _refresh_matches_for_listing(db, updated.id)
     return updated
@@ -230,6 +233,7 @@ def update_listing_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can change this listing status.")
     if payload.status not in {"available", "reserved", "sold", "hidden", "deleted"}:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid seller listing status.")
+    old_status = listing.status
     values = {"status": payload.status}
     if payload.status == "sold":
         values["sold_source"] = payload.sold_source or "prefer_not_to_say"
@@ -237,12 +241,12 @@ def update_listing_status(
     _apply_listing_status_transition(listing, payload.status, current_user, reason=payload.reason)
     updated = repo.update_listing(listing, values)
     if updated.status == "sold":
-        _notify_listing_status_changed(repo, updated)
+        _notify_listing_status_changed(repo, updated, actor=current_user, old_status=old_status)
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.", notify_buyers=False)
     elif updated.status in {"hidden", "deleted"}:
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
     if updated.status == "reserved":
-        _notify_listing_status_changed(repo, updated)
+        _notify_listing_status_changed(repo, updated, actor=current_user, old_status=old_status)
     if updated.status == "sold":
         repo.create_product_event(
             {
@@ -428,6 +432,7 @@ def create_listing_report(
         }
     )
     pending_reports = repo.count_pending_listing_reports_from_distinct_users(listing.id)
+    seller_notification_needed = False
     if pending_reports >= 3 or reason == "prohibited_item" or listing.risk_level == "high":
         repo.update_listing(
             listing,
@@ -438,19 +443,29 @@ def create_listing_report(
                 "hidden_reason": "Auto-hidden after safety reports.",
             },
         )
+        seller_notification_needed = True
         _expire_pending_requests_for_listing(repo, listing, "This item is under safety review.")
     elif listing.moderation_status in {"clear", "approved"}:
         repo.update_listing(listing, {"moderation_status": "flagged"})
-    _notify(
-        repo,
-        user_id=listing.seller_id,
-        notification_type="listing_reported",
-        title="A listing was reported",
-        body=f"{listing.title} has been sent for UM Nexus safety review.",
-        action_url=f"/trade/{listing.id}",
-        entity_type="listing",
-        entity_id=listing.id,
-    )
+    if seller_notification_needed:
+        _notify(
+            repo,
+            user_id=listing.seller_id,
+            actor_id=current_user.id,
+            notification_type="listing_hidden_by_moderation",
+            title="Listing under safety review",
+            body=f"{listing.title} was hidden while UM Nexus reviews safety reports.",
+            action_url=f"/trade/dashboard?tab=listings&listing_id={listing.id}",
+            entity_type="listing",
+            entity_id=listing.id,
+            metadata={
+                "listing_id": listing.id,
+                "listing_title": listing.title,
+                "report_id": report.id,
+                "reporter_id": current_user.id,
+                "new_listing_status": "hidden",
+            },
+        )
     return report
 
 
@@ -514,12 +529,17 @@ def create_contact_request(
     _notify(
         repo,
         user_id=listing.seller_id,
+        actor_id=current_user.id,
         notification_type="contact_request_received",
         title="New buyer interest",
         body=f"{_user_display_name(current_user)} is interested in {listing.title}. Review the request in My Trade.",
         action_url=_contact_request_action_url(contact_request, "seller"),
         entity_type="contact_request",
         entity_id=contact_request.id,
+        metadata=_contact_request_notification_metadata(
+            contact_request,
+            buyer_display_name=_user_display_name(current_user),
+        ),
     )
     repo.create_product_event(
         {
@@ -578,8 +598,9 @@ def decide_contact_request(
     updated = repo.update_contact_request(contact_request, values)
     if updated.status == "accepted":
         if payload.mark_listing_reserved and updated.listing and updated.listing.status == "available":
+            old_listing_status = updated.listing.status
             repo.update_listing(updated.listing, {"status": "reserved"})
-            _notify_listing_status_changed(repo, updated.listing)
+            _notify_listing_status_changed(repo, updated.listing, actor=current_user, old_status=old_listing_status)
         repo.create_trade_transaction(
             {
                 "listing_id": updated.listing_id,
@@ -595,6 +616,7 @@ def decide_contact_request(
     _notify(
         repo,
         user_id=updated.buyer_id,
+        actor_id=current_user.id,
         notification_type=f"contact_request_{updated.status}",
         title="Contact request accepted" if updated.status == "accepted" else "Contact request rejected",
         body=(
@@ -605,6 +627,10 @@ def decide_contact_request(
         action_url=_contact_request_action_url(updated, "buyer"),
         entity_type="contact_request",
         entity_id=updated.id,
+        metadata=_contact_request_notification_metadata(
+            updated,
+            seller_display_name=_user_display_name(current_user),
+        ),
     )
     return updated
 
@@ -628,12 +654,17 @@ def cancel_contact_request(db: Session, contact_request_id: str, current_user: U
     _notify(
         repo,
         user_id=updated.seller_id,
+        actor_id=current_user.id,
         notification_type="contact_request_cancelled",
         title="Buyer cancelled a request",
         body=f"{_user_display_name(current_user)} cancelled their request for {_contact_request_listing_title(updated)}.",
         action_url=_contact_request_action_url(updated, "seller"),
         entity_type="contact_request",
         entity_id=updated.id,
+        metadata=_contact_request_notification_metadata(
+            updated,
+            buyer_display_name=_user_display_name(current_user),
+        ),
     )
     return updated
 
@@ -658,6 +689,7 @@ def resolve_accepted_contact_request(
     if payload.action == "mark_completed":
         updated = repo.update_contact_request(contact_request, {"status": "accepted"})
         if listing is not None:
+            old_listing_status = listing.status
             _apply_listing_status_transition(listing, "sold", current_user, reason="Seller marked accepted request completed.")
             repo.update_listing(
                 listing,
@@ -667,7 +699,7 @@ def resolve_accepted_contact_request(
                     "sold_contact_request_id": contact_request.id,
                 },
             )
-            _notify_listing_status_changed(repo, listing)
+            _notify_listing_status_changed(repo, listing, actor=current_user, old_status=old_listing_status)
             _expire_pending_requests_for_listing(
                 repo,
                 listing,
@@ -691,12 +723,17 @@ def resolve_accepted_contact_request(
         _notify(
             repo,
             user_id=contact_request.buyer_id,
+            actor_id=current_user.id,
             notification_type="trade_marked_completed",
             title="Trade marked completed",
             body=f"The seller marked your accepted request for {_contact_request_listing_title(contact_request)} as completed.",
             action_url=_contact_request_action_url(contact_request, "buyer"),
             entity_type="contact_request",
             entity_id=contact_request.id,
+            metadata=_contact_request_notification_metadata(
+                contact_request,
+                seller_display_name=_user_display_name(current_user),
+            ),
         )
         return updated
 
@@ -708,6 +745,7 @@ def resolve_accepted_contact_request(
     _notify(
         repo,
         user_id=contact_request.buyer_id,
+        actor_id=current_user.id,
         notification_type="contact_request_cancelled" if next_status == "cancelled" else "buyer_no_response",
         title="Accepted request cancelled" if next_status == "cancelled" else "Request closed as no response",
         body=(
@@ -718,6 +756,10 @@ def resolve_accepted_contact_request(
         action_url=_contact_request_action_url(updated, "buyer"),
         entity_type="contact_request",
         entity_id=updated.id,
+        metadata=_contact_request_notification_metadata(
+            updated,
+            seller_display_name=_user_display_name(current_user),
+        ),
     )
     return updated
 
@@ -789,8 +831,24 @@ def create_user_report(
     )
 
 
-def list_notifications(db: Session, current_user: User):
-    return list(TradeRepository(db).list_notifications_for_user(current_user.id))
+def list_notifications(
+    db: Session,
+    current_user: User,
+    *,
+    limit: int = 50,
+    before: datetime | None = None,
+    unread_only: bool = False,
+    notification_type: str | None = None,
+):
+    return list(
+        TradeRepository(db).list_notifications_for_user(
+            current_user.id,
+            limit=limit,
+            before=before,
+            unread_only=unread_only,
+            notification_type=notification_type,
+        )
+    )
 
 
 def count_unread_notifications(db: Session, current_user: User) -> dict[str, int]:
@@ -830,7 +888,13 @@ def review_listing_reports(
     report_status = normalize_report_status(payload.status)
     if report_status is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid report status.")
-    for report in repo.list_reports_for_listing(listing.id):
+    reports = list(repo.list_reports_for_listing(listing.id))
+    reporter_ids = {
+        report.reporter_user_id
+        for report in reports
+        if report.status == "pending" and report.reporter_user_id is not None
+    }
+    for report in reports:
         if report.status == "pending":
             report.status = report_status
             report.moderator_user_id = moderator.id
@@ -856,16 +920,43 @@ def review_listing_reports(
             "reason": payload.resolution,
         }
     )
-    _notify(
-        repo,
-        user_id=listing.seller_id,
-        notification_type="report_reviewed",
-        title="Listing report reviewed",
-        body=f"A moderator reviewed reports for {listing.title}. Check the listing for the latest safety status.",
-        action_url=f"/trade/{listing.id}",
-        entity_type="listing",
-        entity_id=listing.id,
-    )
+    for reporter_id in reporter_ids:
+        _notify(
+            repo,
+            user_id=reporter_id,
+            actor_id=moderator.id,
+            notification_type="report_reviewed",
+            title="Report reviewed",
+            body=f"UM Nexus reviewed your report for {listing.title}. Thank you for helping keep Trade safe.",
+            action_url=f"/trade/{listing.id}",
+            entity_type="listing",
+            entity_id=listing.id,
+            metadata={
+                "listing_id": listing.id,
+                "listing_title": listing.title,
+                "report_status": report_status,
+                "moderation_status": moderation_status,
+            },
+        )
+    if values.get("status"):
+        _notify(
+            repo,
+            user_id=listing.seller_id,
+            actor_id=moderator.id,
+            notification_type="listing_hidden_by_moderation",
+            title="Listing actioned by moderation",
+            body=f"UM Nexus moderation updated {listing.title}. Check My Trade for the latest status.",
+            action_url=f"/trade/dashboard?tab=listings&listing_id={listing.id}",
+            entity_type="listing",
+            entity_id=listing.id,
+            metadata={
+                "listing_id": listing.id,
+                "listing_title": listing.title,
+                "report_status": report_status,
+                "moderation_status": moderation_status,
+                "new_listing_status": values.get("status"),
+            },
+        )
     return updated
 
 
@@ -1088,24 +1179,42 @@ def admin_update_listing(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Admin actions require a reason.")
     if values.get("status") == "deleted" and "moderation_status" not in values:
         values["moderation_status"] = "rejected"
+    old_status = listing.status
+    pending_reporter_ids = {
+        report.reporter_user_id
+        for report in repo.list_reports_for_listing(listing.id)
+        if report.status == "pending" and report.reporter_user_id is not None
+    }
     if values.get("status"):
         _apply_listing_status_transition(listing, values["status"], moderator, reason=payload.reason or payload.resolution)
     updated = repo.update_listing(listing, values)
     if updated.status == "sold":
-        _notify_listing_status_changed(repo, updated)
+        _notify_listing_status_changed(repo, updated, actor=moderator, old_status=old_status)
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.", notify_buyers=False)
     elif updated.status in {"hidden", "deleted"}:
         _expire_pending_requests_for_listing(repo, updated, "This item is no longer available.")
-    if updated.status == "hidden":
+    if updated.status in {"hidden", "deleted"}:
         _notify(
             repo,
             user_id=updated.seller_id,
+            actor_id=moderator.id,
             notification_type="listing_hidden_by_moderation",
-            title="Listing hidden for review",
-            body=f"A moderator hid {updated.title} while reviewing safety signals.",
-            action_url=f"/trade/{updated.id}",
+            title="Listing hidden for review" if updated.status == "hidden" else "Listing removed by moderation",
+            body=(
+                f"A moderator hid {updated.title} while reviewing safety signals."
+                if updated.status == "hidden"
+                else f"A moderator removed {updated.title} after reviewing safety signals."
+            ),
+            action_url=f"/trade/dashboard?tab=listings&listing_id={updated.id}",
             entity_type="listing",
             entity_id=updated.id,
+            metadata={
+                "listing_id": updated.id,
+                "listing_title": updated.title,
+                "old_listing_status": old_status,
+                "new_listing_status": updated.status,
+                "moderation_status": updated.moderation_status,
+            },
         )
     if payload.resolution:
         now = datetime.now(UTC)
@@ -1117,6 +1226,24 @@ def admin_update_listing(
                 report.reviewed_at = now
                 db.add(report)
         db.commit()
+        for reporter_id in pending_reporter_ids:
+            _notify(
+                repo,
+                user_id=reporter_id,
+                actor_id=moderator.id,
+                notification_type="report_reviewed",
+                title="Report reviewed",
+                body=f"UM Nexus reviewed your report for {updated.title}. Thank you for helping keep Trade safe.",
+                action_url=f"/trade/{updated.id}",
+                entity_type="listing",
+                entity_id=updated.id,
+                metadata={
+                    "listing_id": updated.id,
+                    "listing_title": updated.title,
+                    "new_listing_status": updated.status,
+                    "moderation_status": updated.moderation_status,
+                },
+            )
     action_type = "change_category"
     if updated.status == "hidden":
         action_type = "hide_listing"
@@ -1410,6 +1537,24 @@ def _ensure_daily_limit(current_count: int, limit: int, detail: str) -> None:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=detail)
 
 
+def _contact_request_notification_metadata(
+    contact_request: TradeContactRequest,
+    *,
+    buyer_display_name: str | None = None,
+    seller_display_name: str | None = None,
+) -> dict[str, str | None]:
+    listing = contact_request.listing
+    return {
+        "listing_id": contact_request.listing_id,
+        "listing_title": listing.title if listing else None,
+        "request_id": contact_request.id,
+        "buyer_id": contact_request.buyer_id,
+        "seller_id": contact_request.seller_id,
+        "buyer_display_name": buyer_display_name,
+        "seller_display_name": seller_display_name,
+    }
+
+
 def _expire_stale_contact_requests(db: Session) -> int:
     settings = get_settings()
     if settings.contact_request_expiry_days <= 0:
@@ -1422,12 +1567,14 @@ def _expire_stale_contact_requests(db: Session) -> int:
         _notify(
             repo,
             user_id=contact_request.buyer_id,
+            actor_id=None,
             notification_type="contact_request_expired",
             title="Contact request expired",
             body=f"Your request for {title} expired because the seller did not respond.",
             action_url=_contact_request_action_url(contact_request, "buyer"),
             entity_type="contact_request",
             entity_id=contact_request.id,
+            metadata=_contact_request_notification_metadata(contact_request),
         )
     return len(expired)
 
@@ -1440,8 +1587,16 @@ def _seller_contact_value(listing: Listing) -> str | None:
     return listing.contact_value
 
 
-def _notify_listing_status_changed(repo: TradeRepository, listing: Listing) -> None:
+def _notify_listing_status_changed(
+    repo: TradeRepository,
+    listing: Listing,
+    *,
+    actor: User | None = None,
+    old_status: str | None = None,
+) -> None:
     if listing.status not in {"reserved", "sold"}:
+        return
+    if old_status == listing.status:
         return
     for contact_request in list(repo.list_contact_requests_sent_for_listing(listing.id)):
         if contact_request.status not in {"pending", "accepted"}:
@@ -1449,6 +1604,7 @@ def _notify_listing_status_changed(repo: TradeRepository, listing: Listing) -> N
         _notify(
             repo,
             user_id=contact_request.buyer_id,
+            actor_id=actor.id if actor else None,
             notification_type=f"listing_marked_{listing.status}",
             title=f"Listing marked {listing.status}",
             body=(
@@ -1456,9 +1612,16 @@ def _notify_listing_status_changed(repo: TradeRepository, listing: Listing) -> N
                 if listing.status == "reserved"
                 else f"The seller marked {listing.title} as sold. Pending requests have been closed."
             ),
-            action_url=_contact_request_action_url(contact_request, "buyer"),
+            action_url=f"/trade/{listing.id}",
             entity_type="listing",
             entity_id=listing.id,
+            metadata={
+                "listing_id": listing.id,
+                "listing_title": listing.title,
+                "request_id": contact_request.id,
+                "old_listing_status": old_status,
+                "new_listing_status": listing.status,
+            },
         )
 
 
@@ -1481,12 +1644,14 @@ def _expire_pending_requests_for_listing(
         _notify(
             repo,
             user_id=contact_request.buyer_id,
+            actor_id=None,
             notification_type="contact_request_expired",
             title="Contact request closed",
             body=reason,
             action_url=_contact_request_action_url(contact_request, "buyer"),
             entity_type="contact_request",
             entity_id=contact_request.id,
+            metadata=_contact_request_notification_metadata(contact_request),
         )
     return len(pending_requests)
 
@@ -1501,12 +1666,19 @@ def _notify_wanted_source_owner(db: Session, listing: Listing) -> None:
     _notify(
         repo,
         user_id=wanted_post.buyer_id,
+        actor_id=listing.seller_id,
         notification_type="wanted_match_listing_created",
         title="Someone may have your wanted item",
         body=f"A seller created a listing from your wanted request: {listing.title}.",
         action_url=f"/trade/{listing.id}",
         entity_type="listing",
         entity_id=listing.id,
+        metadata={
+            "listing_id": listing.id,
+            "listing_title": listing.title,
+            "wanted_post_id": wanted_post.id,
+            "seller_id": listing.seller_id,
+        },
     )
 
 

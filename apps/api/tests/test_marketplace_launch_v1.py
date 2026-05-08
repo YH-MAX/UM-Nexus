@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from app.models import AppRole, Listing, Profile, TradeContactRequest, User
+from app.models import AppRole, Listing, Notification, Profile, TradeContactRequest, User
+from app.repositories.trade import TradeRepository
+from app.services.trade_notifications import create_trade_notification
 from tests.conftest import authorization_headers
 
 
@@ -165,6 +167,9 @@ def test_contact_request_accept_reject_and_reveal_permissions(client, token_veri
     assert buyer_notifications.status_code == 200
     assert buyer_notifications.json()[0]["type"] == "contact_request_accepted"
     assert buyer_notifications.json()[0]["action_url"] == f"/trade/dashboard?tab=sent&request_id={contact_request_id}"
+    assert buyer_notifications.json()[0]["actor_id"] == str(seller_claims.sub)
+    assert buyer_notifications.json()[0]["metadata"]["request_id"] == contact_request_id
+    assert buyer_notifications.json()[0]["priority"] == "high"
 
     token_verifier.claims = seller_claims.model_copy(
         update={"sub": uuid4(), "email": "second-buyer@siswa.um.edu.my"}
@@ -343,7 +348,7 @@ def test_draft_publish_view_count_and_favorites(client, token_verifier) -> None:
     assert removed.status_code == 204
 
 
-def test_default_listing_create_is_draft_and_notifications_can_be_read(client, token_verifier) -> None:
+def test_default_listing_create_is_draft_and_notifications_can_be_read(client, db_session, token_verifier) -> None:
     seller_claims = token_verifier.claims
     draft = client.post("/api/v1/listings", headers=AUTH_HEADERS, json=listing_payload())
 
@@ -368,7 +373,29 @@ def test_default_listing_create_is_draft_and_notifications_can_be_read(client, t
     token_verifier.claims = seller_claims
     notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
     unread = client.get("/api/v1/users/me/notifications/unread-count", headers=AUTH_HEADERS)
+    other_user_id = uuid4()
+    other_user = User(id=str(other_user_id), email="other-notify@siswa.um.edu.my")
+    other_user.profile = Profile(app_role=AppRole.STUDENT)
+    db_session.add(other_user)
+    db_session.commit()
+    TradeRepository(db_session).create_notification(
+        {
+            "user_id": other_user.id,
+            "type": "contact_request_received",
+            "title": "Other user alert",
+            "body": "This alert should stay unread.",
+            "entity_type": "contact_request",
+            "entity_id": request.json()["id"],
+        }
+    )
+    limited_unread = client.get(
+        "/api/v1/users/me/notifications?limit=1&unread_only=true&type=contact_request_received",
+        headers=AUTH_HEADERS,
+    )
     read = client.patch(f"/api/v1/notifications/{notifications.json()[0]['id']}/read", headers=AUTH_HEADERS)
+    token_verifier.claims = seller_claims.model_copy(update={"sub": other_user_id, "email": other_user.email})
+    forbidden_read = client.patch(f"/api/v1/notifications/{notifications.json()[0]['id']}/read", headers=AUTH_HEADERS)
+    token_verifier.claims = seller_claims
     read_all = client.patch("/api/v1/notifications/read-all", headers=AUTH_HEADERS)
     unread_after = client.get("/api/v1/users/me/notifications/unread-count", headers=AUTH_HEADERS)
 
@@ -376,12 +403,88 @@ def test_default_listing_create_is_draft_and_notifications_can_be_read(client, t
     assert notifications.status_code == 200
     assert notifications.json()[0]["type"] == "contact_request_received"
     assert notifications.json()[0]["action_url"] == f"/trade/dashboard?tab=received&request_id={request.json()['id']}"
+    assert notifications.json()[0]["actor_id"] == str(request.json()["buyer_id"])
+    assert notifications.json()[0]["metadata"]["listing_id"] == published["id"]
+    assert notifications.json()[0]["priority"] == "high"
     assert unread.status_code == 200
     assert unread.json()["unread"] == 1
+    assert limited_unread.status_code == 200
+    assert len(limited_unread.json()) == 1
     assert read.status_code == 200
     assert read.json()["is_read"] is True
+    assert forbidden_read.status_code == 404
     assert read_all.status_code == 200
     assert unread_after.json()["unread"] == 0
+    db_session.expire_all()
+    other_notification = db_session.query(Notification).filter(Notification.user_id == other_user.id).one()
+    assert other_notification.is_read is False
+
+
+def test_trade_notification_dedupe_window_and_scope(db_session) -> None:
+    first_user = User(id=str(uuid4()), email="dedupe-one@siswa.um.edu.my")
+    first_user.profile = Profile(app_role=AppRole.STUDENT)
+    second_user = User(id=str(uuid4()), email="dedupe-two@siswa.um.edu.my")
+    second_user.profile = Profile(app_role=AppRole.STUDENT)
+    db_session.add_all([first_user, second_user])
+    db_session.commit()
+    repo = TradeRepository(db_session)
+    listing_id = str(uuid4())
+
+    first = create_trade_notification(
+        repo,
+        user_id=first_user.id,
+        notification_type="listing_marked_sold",
+        title="Listing sold",
+        body="A listing was sold.",
+        entity_type="listing",
+        entity_id=listing_id,
+    )
+    duplicate = create_trade_notification(
+        repo,
+        user_id=first_user.id,
+        notification_type="listing_marked_sold",
+        title="Listing sold again",
+        body="This should dedupe.",
+        entity_type="listing",
+        entity_id=listing_id,
+    )
+    different_user = create_trade_notification(
+        repo,
+        user_id=second_user.id,
+        notification_type="listing_marked_sold",
+        title="Listing sold",
+        body="Different users do not dedupe.",
+        entity_type="listing",
+        entity_id=listing_id,
+    )
+    different_entity = create_trade_notification(
+        repo,
+        user_id=first_user.id,
+        notification_type="listing_marked_sold",
+        title="Other listing sold",
+        body="Different entities do not dedupe.",
+        entity_type="listing",
+        entity_id=str(uuid4()),
+    )
+    db_session.query(Notification).filter(Notification.id == first.id).update(
+        {"created_at": datetime.now(UTC) - timedelta(days=2)}
+    )
+    db_session.commit()
+    outside_window = create_trade_notification(
+        repo,
+        user_id=first_user.id,
+        notification_type="listing_marked_sold",
+        title="Listing sold later",
+        body="Outside the dedupe window.",
+        entity_type="listing",
+        entity_id=listing_id,
+    )
+
+    assert duplicate.id == first.id
+    assert different_user.id != first.id
+    assert different_entity.id != first.id
+    assert outside_window.id != first.id
+    assert db_session.query(Notification).count() == 4
 
 
 def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> None:
@@ -471,6 +574,11 @@ def test_listing_reserved_and_sold_notify_interested_buyers(client, token_verifi
         headers=AUTH_HEADERS,
         json={"status": "sold", "reason": "Sold after meetup."},
     )
+    repeated_sold = client.patch(
+        f"/api/v1/listings/{listing['id']}/status",
+        headers=AUTH_HEADERS,
+        json={"status": "sold", "reason": "Already sold."},
+    )
 
     token_verifier.claims = first_buyer_claims
     first_after_sold = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
@@ -484,8 +592,10 @@ def test_listing_reserved_and_sold_notify_interested_buyers(client, token_verifi
     }
     assert "listing_marked_reserved" in [notification["type"] for notification in second_notifications.json()]
     assert sold.status_code == 200
+    assert repeated_sold.status_code == 200
     assert "listing_marked_sold" in [notification["type"] for notification in first_after_sold.json()]
-    assert "listing_marked_sold" in [notification["type"] for notification in second_after_sold.json()]
+    assert [notification["type"] for notification in second_after_sold.json()].count("listing_marked_sold") == 1
+    assert second_after_sold.json()[0]["action_url"] == f"/trade/{listing['id']}"
 
 
 def test_seller_resolution_notifies_buyer_when_request_is_closed(client, token_verifier) -> None:
@@ -565,7 +675,8 @@ def test_moderation_notifications_reach_listing_seller(client, db_session, token
     seller_claims = token_verifier.claims
     listing = create_published_listing(client)
 
-    token_verifier.claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "reporter@siswa.um.edu.my"})
+    reporter_claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "reporter@siswa.um.edu.my"})
+    token_verifier.claims = reporter_claims
     complete_profile(client)
     report = client.post(
         f"/api/v1/listings/{listing['id']}/reports",
@@ -591,6 +702,8 @@ def test_moderation_notifications_reach_listing_seller(client, db_session, token
         headers=AUTH_HEADERS,
         json={"status": "reviewed", "moderation_status": "clear", "resolution": "Report reviewed by moderator."},
     )
+    token_verifier.claims = reporter_claims
+    reporter_after_review = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
 
     token_verifier.claims = seller_claims.model_copy(update={"sub": admin_id, "email": admin.email})
     hidden = client.patch(
@@ -604,11 +717,13 @@ def test_moderation_notifications_reach_listing_seller(client, db_session, token
 
     notification_types = [notification["type"] for notification in seller_after_review.json()]
     assert report.status_code == 201
-    assert "listing_reported" in [notification["type"] for notification in seller_reported_notifications.json()]
+    assert seller_reported_notifications.json() == []
     assert reviewed.status_code == 200
+    assert reporter_after_review.status_code == 200
+    assert "report_reviewed" in [notification["type"] for notification in reporter_after_review.json()]
     assert hidden.status_code == 200
-    assert "report_reviewed" in notification_types
     assert "listing_hidden_by_moderation" in notification_types
+    assert seller_after_review.json()[0]["actor_id"] == admin_id
 
 
 def test_listing_created_from_wanted_post_notifies_wanted_owner(client, token_verifier) -> None:

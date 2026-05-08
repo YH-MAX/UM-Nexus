@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_optional_authenticated_user, require_app_role, require_authenticated_user
@@ -136,10 +137,24 @@ def list_my_favorites_endpoint(
 
 @router.get("/users/me/notifications", response_model=list[NotificationRead])
 def list_my_notifications_endpoint(
+    limit: int = Query(default=50, ge=1, le=100),
+    before: datetime | None = None,
+    unread_only: bool = False,
+    notification_type: str | None = Query(default=None, alias="type"),
     db: Session = Depends(get_db),
     current_user=Depends(require_authenticated_user),
 ) -> list[NotificationRead]:
-    return [NotificationRead.model_validate(notification) for notification in list_notifications(db, current_user)]
+    return [
+        NotificationRead.model_validate(notification)
+        for notification in list_notifications(
+            db,
+            current_user,
+            limit=limit,
+            before=before,
+            unread_only=unread_only,
+            notification_type=notification_type,
+        )
+    ]
 
 
 @router.get("/users/me/notifications/unread-count")
