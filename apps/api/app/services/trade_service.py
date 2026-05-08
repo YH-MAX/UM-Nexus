@@ -64,24 +64,13 @@ from app.services.trade_policy import (
     normalize_user_report_reason,
     scan_listing_policy,
 )
+from app.services.trade_notifications import (
+    contact_request_action_url as _contact_request_action_url,
+    contact_request_listing_title as _contact_request_listing_title,
+    create_trade_notification as _notify,
+    user_display_name as _user_display_name,
+)
 from app.trade.constants import TRADE_CATEGORIES
-
-
-TRADE_NOTIFICATION_TYPES = {
-    "contact_request_received",
-    "contact_request_accepted",
-    "contact_request_rejected",
-    "contact_request_cancelled",
-    "contact_request_expired",
-    "trade_marked_completed",
-    "buyer_no_response",
-    "listing_marked_reserved",
-    "listing_marked_sold",
-    "listing_hidden_by_moderation",
-    "listing_reported",
-    "report_reviewed",
-    "wanted_match_listing_created",
-}
 
 
 def create_listing(
@@ -1449,56 +1438,6 @@ def _seller_contact_value(listing: Listing) -> str | None:
     if listing.contact_method == "in_app":
         return None
     return listing.contact_value
-
-
-def _notify(
-    repo: TradeRepository,
-    *,
-    user_id: str,
-    notification_type: str,
-    title: str,
-    body: str,
-    action_url: str | None = None,
-    entity_type: str | None = None,
-    entity_id: str | None = None,
-):
-    if notification_type not in TRADE_NOTIFICATION_TYPES:
-        raise ValueError(f"Unknown trade notification type: {notification_type}")
-    return repo.create_notification(
-        {
-            "user_id": user_id,
-            "type": notification_type,
-            "title": title,
-            "body": body,
-            "action_url": action_url,
-            "entity_type": entity_type,
-            "entity_id": entity_id,
-        }
-    )
-
-
-def _contact_request_action_url(contact_request: TradeContactRequest, role: str) -> str:
-    tab = "received" if role == "seller" else "sent"
-    return f"/trade/dashboard?tab={tab}&request_id={contact_request.id}"
-
-
-def _contact_request_listing_title(contact_request: TradeContactRequest) -> str:
-    return contact_request.listing.title if contact_request.listing else "this listing"
-
-
-def _user_display_name(user: User) -> str:
-    profile = getattr(user, "profile", None)
-    display_name = (
-        getattr(profile, "display_name", None)
-        or getattr(profile, "full_name", None)
-        or getattr(user, "username", None)
-    )
-    if display_name:
-        return str(display_name)
-    email = getattr(user, "email", None)
-    if email:
-        return email.split("@", 1)[0]
-    return "A UM student"
 
 
 def _notify_listing_status_changed(repo: TradeRepository, listing: Listing) -> None:

@@ -176,6 +176,16 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page.getByText(/Seller: telegram @aina_um/i)).toBeVisible();
   });
 
+  test("dashboard infers the request tab from a request id link", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+
+    await page.goto("/trade/dashboard?request_id=contact-pending");
+
+    await expect(page.getByRole("button", { name: "Received Requests" })).toHaveClass(/bg-slate-950/);
+    await expect(page.locator("#request-contact-pending")).toHaveClass(/ring-emerald-100/);
+  });
+
   test("alerts show unread state and deep-link into the relevant dashboard request", async ({ page }) => {
     await loginAs(page, sellerUser);
     const state = await mockTradeApi(page);
@@ -193,6 +203,22 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page.getByRole("button", { name: "Received Requests" })).toHaveClass(/bg-slate-950/);
     await expect(page.locator("#request-contact-pending")).toHaveClass(/ring-emerald-100/);
     await expect.poll(() => state.notifications.filter((notification) => !notification.is_read).length).toBe(1);
+  });
+
+  test("alerts can mark one or all notifications read", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    const state = await mockTradeApi(page);
+
+    await page.goto("/trade/notifications");
+    await expect(page.getByText("2 unread")).toBeVisible();
+
+    await page.getByRole("button", { name: "Mark read" }).first().click();
+    await expect.poll(() => state.notifications.filter((notification) => !notification.is_read).length).toBe(1);
+    await expect(page.getByText("1 unread")).toBeVisible();
+
+    await page.getByRole("button", { name: "Mark all read" }).click();
+    await expect.poll(() => state.notifications.filter((notification) => !notification.is_read).length).toBe(0);
+    await expect(page.getByText("0 unread")).toBeVisible();
   });
 
   test("seller can edit listing details from the dedicated edit route", async ({ page }) => {

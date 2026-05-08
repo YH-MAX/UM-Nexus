@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from app.models import AppRole, Listing, Profile, User
+from app.models import AppRole, Listing, Profile, TradeContactRequest, User
 from tests.conftest import authorization_headers
 
 
@@ -41,6 +42,23 @@ def complete_profile(client) -> None:
 def create_published_listing(client, **overrides) -> dict:
     complete_profile(client)
     response = client.post("/api/v1/listings?publish=true", headers=AUTH_HEADERS, json=listing_payload(**overrides))
+    assert response.status_code == 201
+    return response.json()
+
+
+def send_contact_request(client, listing_id: str, **overrides) -> dict:
+    payload = {
+        "message": "Interested.",
+        "buyer_contact_method": "telegram",
+        "buyer_contact_value": "@buyer",
+        "safety_acknowledged": True,
+    }
+    payload.update(overrides)
+    response = client.post(
+        f"/api/v1/listings/{listing_id}/contact-requests",
+        headers=AUTH_HEADERS,
+        json=payload,
+    )
     assert response.status_code == 201
     return response.json()
 
@@ -419,6 +437,214 @@ def test_contact_request_cancel_and_expire_on_sold(client, token_verifier) -> No
     assert second.status_code == 201
     assert sold.status_code == 200
     assert blocked.status_code == 409
+
+
+def test_listing_reserved_and_sold_notify_interested_buyers(client, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    listing = create_published_listing(client)
+
+    first_buyer_claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "reserved-one@siswa.um.edu.my"})
+    token_verifier.claims = first_buyer_claims
+    complete_profile(client)
+    first_request = send_contact_request(client, listing["id"], buyer_contact_value="@buyer1")
+
+    second_buyer_claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "reserved-two@siswa.um.edu.my"})
+    token_verifier.claims = second_buyer_claims
+    complete_profile(client)
+    second_request = send_contact_request(client, listing["id"], buyer_contact_value="@buyer2")
+
+    token_verifier.claims = seller_claims
+    accepted = client.patch(
+        f"/api/v1/contact-requests/{first_request['id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "accepted", "mark_listing_reserved": True},
+    )
+
+    token_verifier.claims = first_buyer_claims
+    first_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+    token_verifier.claims = second_buyer_claims
+    second_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    token_verifier.claims = seller_claims
+    sold = client.patch(
+        f"/api/v1/listings/{listing['id']}/status",
+        headers=AUTH_HEADERS,
+        json={"status": "sold", "reason": "Sold after meetup."},
+    )
+
+    token_verifier.claims = first_buyer_claims
+    first_after_sold = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+    token_verifier.claims = second_buyer_claims
+    second_after_sold = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    assert accepted.status_code == 200
+    assert second_request["status"] == "pending"
+    assert {"contact_request_accepted", "listing_marked_reserved"} <= {
+        notification["type"] for notification in first_notifications.json()
+    }
+    assert "listing_marked_reserved" in [notification["type"] for notification in second_notifications.json()]
+    assert sold.status_code == 200
+    assert "listing_marked_sold" in [notification["type"] for notification in first_after_sold.json()]
+    assert "listing_marked_sold" in [notification["type"] for notification in second_after_sold.json()]
+
+
+def test_seller_resolution_notifies_buyer_when_request_is_closed(client, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    listing = create_published_listing(client)
+
+    no_response_claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "no-response@siswa.um.edu.my"})
+    token_verifier.claims = no_response_claims
+    complete_profile(client)
+    no_response_request = send_contact_request(client, listing["id"], buyer_contact_value="@noresponse")
+
+    token_verifier.claims = seller_claims
+    accepted_no_response = client.patch(
+        f"/api/v1/contact-requests/{no_response_request['id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "accepted"},
+    )
+    no_response = client.patch(
+        f"/api/v1/contact-requests/{no_response_request['id']}/seller-resolution",
+        headers=AUTH_HEADERS,
+        json={"action": "buyer_no_response"},
+    )
+
+    token_verifier.claims = no_response_claims
+    no_response_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    cancelled_claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "cancelled-accepted@siswa.um.edu.my"})
+    token_verifier.claims = cancelled_claims
+    complete_profile(client)
+    cancelled_request = send_contact_request(client, listing["id"], buyer_contact_value="@cancelled")
+
+    token_verifier.claims = seller_claims
+    accepted_cancelled = client.patch(
+        f"/api/v1/contact-requests/{cancelled_request['id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "accepted"},
+    )
+    cancelled = client.patch(
+        f"/api/v1/contact-requests/{cancelled_request['id']}/seller-resolution",
+        headers=AUTH_HEADERS,
+        json={"action": "cancel_accepted"},
+    )
+
+    token_verifier.claims = cancelled_claims
+    cancelled_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    assert accepted_no_response.status_code == 200
+    assert no_response.status_code == 200
+    assert "buyer_no_response" in [notification["type"] for notification in no_response_notifications.json()]
+    assert accepted_cancelled.status_code == 200
+    assert cancelled.status_code == 200
+    assert "contact_request_cancelled" in [notification["type"] for notification in cancelled_notifications.json()]
+
+
+def test_stale_contact_request_expiry_notifies_buyer(client, db_session, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    listing = create_published_listing(client)
+
+    buyer_claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "expired-buyer@siswa.um.edu.my"})
+    token_verifier.claims = buyer_claims
+    complete_profile(client)
+    request = send_contact_request(client, listing["id"])
+    db_session.query(TradeContactRequest).filter(TradeContactRequest.id == request["id"]).update(
+        {"created_at": datetime.now(UTC) - timedelta(days=8)}
+    )
+    db_session.commit()
+
+    contact_requests = client.get("/api/v1/users/me/contact-requests", headers=AUTH_HEADERS)
+    notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    assert contact_requests.status_code == 200
+    assert contact_requests.json()["sent"][0]["status"] == "expired"
+    assert "contact_request_expired" in [notification["type"] for notification in notifications.json()]
+
+
+def test_moderation_notifications_reach_listing_seller(client, db_session, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    listing = create_published_listing(client)
+
+    token_verifier.claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "reporter@siswa.um.edu.my"})
+    complete_profile(client)
+    report = client.post(
+        f"/api/v1/listings/{listing['id']}/reports",
+        headers=AUTH_HEADERS,
+        json={"report_type": "misleading_description", "reason": "The listing details seem inaccurate."},
+    )
+
+    token_verifier.claims = seller_claims
+    seller_reported_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    moderator_id = str(uuid4())
+    moderator = User(id=moderator_id, email="moderator@um.edu.my")
+    moderator.profile = Profile(app_role=AppRole.MODERATOR)
+    admin_id = str(uuid4())
+    admin = User(id=admin_id, email="admin@um.edu.my")
+    admin.profile = Profile(app_role=AppRole.ADMIN)
+    db_session.add_all([moderator, admin])
+    db_session.commit()
+
+    token_verifier.claims = seller_claims.model_copy(update={"sub": moderator_id, "email": moderator.email})
+    reviewed = client.patch(
+        f"/api/v1/moderation/listings/{listing['id']}/review",
+        headers=AUTH_HEADERS,
+        json={"status": "reviewed", "moderation_status": "clear", "resolution": "Report reviewed by moderator."},
+    )
+
+    token_verifier.claims = seller_claims.model_copy(update={"sub": admin_id, "email": admin.email})
+    hidden = client.patch(
+        f"/api/v1/admin/listings/{listing['id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "hidden", "reason": "Temporarily hidden for safety review."},
+    )
+
+    token_verifier.claims = seller_claims
+    seller_after_review = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    notification_types = [notification["type"] for notification in seller_after_review.json()]
+    assert report.status_code == 201
+    assert "listing_reported" in [notification["type"] for notification in seller_reported_notifications.json()]
+    assert reviewed.status_code == 200
+    assert hidden.status_code == 200
+    assert "report_reviewed" in notification_types
+    assert "listing_hidden_by_moderation" in notification_types
+
+
+def test_listing_created_from_wanted_post_notifies_wanted_owner(client, token_verifier) -> None:
+    seller_claims = token_verifier.claims
+    buyer_claims = seller_claims.model_copy(update={"sub": uuid4(), "email": "wanted-owner@siswa.um.edu.my"})
+    token_verifier.claims = buyer_claims
+    complete_profile(client)
+    wanted = client.post(
+        "/api/v1/wanted-posts",
+        headers=AUTH_HEADERS,
+        json={
+            "title": "Looking for a calculator",
+            "description": "Need a scientific calculator for exams.",
+            "category": "electronics",
+            "desired_item_name": "Scientific calculator",
+            "max_budget": 50,
+            "currency": "MYR",
+            "preferred_pickup_area": "fsktm",
+        },
+    )
+
+    token_verifier.claims = seller_claims
+    listing = create_published_listing(
+        client,
+        title="Calculator from wanted post",
+        category="electronics",
+        source_wanted_post_id=wanted.json()["id"],
+    )
+
+    token_verifier.claims = buyer_claims
+    notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    assert wanted.status_code == 201
+    assert listing["source_wanted_post_id"] == wanted.json()["id"]
+    assert notifications.status_code == 200
+    assert notifications.json()[0]["type"] == "wanted_match_listing_created"
 
 
 def test_duplicate_report_prevention_and_threshold_auto_hide(client, db_session, token_verifier) -> None:

@@ -64,6 +64,10 @@ export default function TradeDashboardPage() {
     });
   }
 
+  function notifyAlertStateChanged() {
+    window.dispatchEvent(new Event("trade:notifications-changed"));
+  }
+
   useEffect(() => {
     if (isAuthLoading || !user) {
       setIsLoading(false);
@@ -92,9 +96,13 @@ export default function TradeDashboardPage() {
     const requestId = searchParams.get("request_id");
     if (isDashboardTab(tab)) {
       setActiveTab(tab);
+    } else if (requestId && dashboard?.contact_requests_received.some((request) => request.id === requestId)) {
+      setActiveTab("received");
+    } else if (requestId && dashboard?.contact_requests_sent.some((request) => request.id === requestId)) {
+      setActiveTab("sent");
     }
     setHighlightedRequestId(requestId);
-  }, [searchParams]);
+  }, [dashboard, searchParams]);
 
   useEffect(() => {
     if (!dashboard || !highlightedRequestId) {
@@ -108,6 +116,16 @@ export default function TradeDashboardPage() {
     }, 100);
     return () => window.clearTimeout(timeout);
   }, [activeTab, dashboard, highlightedRequestId]);
+
+  useEffect(() => {
+    if (!highlightedRequestId) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      setHighlightedRequestId(null);
+    }, 6000);
+    return () => window.clearTimeout(timeout);
+  }, [highlightedRequestId]);
 
   const stats = useMemo(() => {
     const listings = dashboard?.listings ?? [];
@@ -137,7 +155,9 @@ export default function TradeDashboardPage() {
         agreed_price: agreedPrice,
         followed_ai_recommendation: draft?.followedAi ?? true,
       });
+      setNotice("Transaction marked completed. Your dashboard is up to date.");
       await loadDashboard();
+      notifyAlertStateChanged();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update transaction.");
     } finally {
@@ -157,10 +177,11 @@ export default function TradeDashboardPage() {
       });
       setNotice(
         status === "accepted"
-          ? "Request accepted. Your approved contact details are now visible to the buyer."
-          : "Request rejected. Contact details remain hidden.",
+          ? "Request accepted. The buyer has been notified and can see seller contact after their profile is complete."
+          : "Request rejected. The buyer has been notified and can keep browsing other UM listings.",
       );
       await loadDashboard();
+      notifyAlertStateChanged();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update contact request.");
     } finally {
@@ -185,10 +206,11 @@ export default function TradeDashboardPage() {
       });
       setNotice(
         action === "mark_completed"
-          ? "Listing marked as sold. Pending requests have been closed."
-          : "Request updated and the listing can receive interest again.",
+          ? "Trade marked completed. The buyer has been notified and pending requests were closed."
+          : "Request closed. The buyer has been notified and the listing can receive interest again.",
       );
       await loadDashboard();
+      notifyAlertStateChanged();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to resolve contact request.");
     } finally {
@@ -199,9 +221,12 @@ export default function TradeDashboardPage() {
   async function cancelSentRequest(request: ContactRequest) {
     setIsUpdating(request.id);
     setError(null);
+    setNotice(null);
     try {
       await cancelContactRequest(request.id);
+      setNotice("Request cancelled. The seller has been notified that your pending request is closed.");
       await loadDashboard();
+      notifyAlertStateChanged();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to cancel contact request.");
     } finally {
