@@ -4,9 +4,12 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  ArrowLeft,
+  BadgeCheck,
   BellRing,
   Flag,
   Heart,
+  Image as ImageIcon,
   MapPin,
   MessageCircle,
   Pencil,
@@ -439,6 +442,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   }
 
   const isSeller = Boolean(user && listing && user.id === listing.seller_id);
+  const profileIncomplete = user ? !isProfileComplete(currentProfile) : false;
 
   return (
     <TradeShell
@@ -459,73 +463,127 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       {isLoading ? (
         <div className="trade-card p-5 text-sm text-slate-600">Loading listing...</div>
       ) : listing ? (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="grid gap-5">
-            <ImageGallery listing={listing} />
-            <section className="trade-card p-5">
-              <h2 className="text-xl font-semibold text-slate-950">Description</h2>
-              <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-600">
-                {listing.description ?? "No description provided."}
-              </p>
-            </section>
-            {listing.risk_level && listing.risk_level !== "low" ? <RiskWarning listing={listing} /> : null}
-            <SellerCard listing={listing} />
-            <SafetyNotice />
-            {isSeller ? (
-              <SellerIntelligencePanel
-                isActing={isActing}
-                isEnriching={isEnriching}
-                listing={listing}
-                matches={matches}
-                resultStatus={resultStatus}
-                simulation={simulation}
-                simulationPrice={simulationPrice}
-                onApplyPrice={handleApplyPrice}
-                onContactTopMatch={handleContactTopMatch}
-                onEnrich={handleEnrich}
-                onFeedback={handleFeedback}
-                onSimulate={handleSimulatePrice}
-                onSimulationPriceChange={setSimulationPrice}
-              />
-            ) : (
-              <MatchSuggestions matches={matches} />
-            )}
-          </div>
+        <>
+          {/* Back navigation */}
+          <Link
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-900"
+            href="/trade"
+          >
+            <ArrowLeft aria-hidden="true" className="h-4 w-4" />
+            Back to listings
+          </Link>
 
-          <ListingSummaryCard
-            contactDraft={contactDraft}
-            isActing={isActing}
-            isSaved={isSaved}
-            isSeller={isSeller}
-            listing={listing}
-            profile={currentProfile}
-            user={user}
-            onContactDraftChange={setContactDraft}
-            onContactRequest={handleContactRequest}
-            onFavorite={handleFavorite}
-            onReportListing={handleReportListing}
-            onReportSeller={handleReportSeller}
-            onStatus={handleListingStatus}
-          />
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+            {/* Left column */}
+            <div className="grid gap-5">
+              <ImageGallery listing={listing} />
 
-          {!isSeller && user && ["available", "reserved"].includes(listing.status) ? (
-            <div className="fixed inset-x-0 bottom-[74px] z-40 px-4 md:hidden">
-              <button
-                className="trade-button-primary w-full py-3 shadow-lg"
-                disabled={isActing}
-                onClick={() => void handleContactRequest()}
-                type="button"
-              >
-                <MessageCircle aria-hidden="true" className="h-4 w-4" />
-                I&apos;m interested
-              </button>
+              {/* Description with metadata chips */}
+              <section className="trade-card p-5">
+                <h2 className="text-xl font-semibold text-slate-950">Description</h2>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {formatCategory(listing.category)}
+                  </span>
+                  {listing.condition ?? listing.condition_label ? (
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                      {(listing.condition ?? listing.condition_label ?? "").replaceAll("_", " ")}
+                    </span>
+                  ) : null}
+                  <span className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    <MapPin aria-hidden="true" className="h-3.5 w-3.5 text-emerald-700" />
+                    {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                    Posted {formatRelativeTime(listing.created_at)}
+                  </span>
+                </div>
+                <p className="mt-4 whitespace-pre-line text-sm leading-7 text-slate-600">
+                  {listing.description ?? "No description provided."}
+                </p>
+              </section>
+
+              {listing.risk_level && listing.risk_level !== "low" ? <RiskWarning listing={listing} /> : null}
+
+              {/* Seller card — enhanced with verified badge */}
+              <SellerCard listing={listing} />
+
+              <SafetyNotice />
+
+              {isSeller ? (
+                <SellerIntelligencePanel
+                  isActing={isActing}
+                  isEnriching={isEnriching}
+                  listing={listing}
+                  matches={matches}
+                  resultStatus={resultStatus}
+                  simulation={simulation}
+                  simulationPrice={simulationPrice}
+                  onApplyPrice={handleApplyPrice}
+                  onContactTopMatch={handleContactTopMatch}
+                  onEnrich={handleEnrich}
+                  onFeedback={handleFeedback}
+                  onSimulate={handleSimulatePrice}
+                  onSimulationPriceChange={setSimulationPrice}
+                />
+              ) : (
+                <section className="trade-card p-5 text-center">
+                  <p className="text-sm text-slate-600">Looking for more items?</p>
+                  <Link className="trade-button-secondary mt-3" href="/trade">
+                    Browse marketplace
+                  </Link>
+                </section>
+              )}
             </div>
-          ) : null}
-        </div>
+
+            {/* Right sticky card */}
+            <ListingSummaryCard
+              contactDraft={contactDraft}
+              isActing={isActing}
+              isSaved={isSaved}
+              isSeller={isSeller}
+              listing={listing}
+              profile={currentProfile}
+              user={user}
+              onContactDraftChange={setContactDraft}
+              onContactRequest={handleContactRequest}
+              onFavorite={handleFavorite}
+              onReportListing={handleReportListing}
+              onReportSeller={handleReportSeller}
+              onStatus={handleListingStatus}
+            />
+
+            {/* Mobile sticky bottom CTA */}
+            {!isSeller && user && ["available", "reserved"].includes(listing.status) ? (
+              <div className="fixed inset-x-0 bottom-[74px] z-40 px-4 md:hidden">
+                {profileIncomplete ? (
+                  <Link
+                    className="trade-button-primary block w-full py-3 text-center shadow-lg"
+                    href="/trade/profile"
+                  >
+                    Complete Profile
+                  </Link>
+                ) : (
+                  <button
+                    className="trade-button-primary w-full py-3 shadow-lg"
+                    disabled={isActing}
+                    onClick={() => void handleContactRequest()}
+                    type="button"
+                  >
+                    <MessageCircle aria-hidden="true" className="h-4 w-4" />
+                    I&apos;m interested
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </div>
+        </>
       ) : null}
     </TradeShell>
   );
 }
+
+// ─── ImageGallery ────────────────────────────────────────────────────────────
 
 function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
   const primaryImage = listing.images.find((image) => image.is_primary) ?? listing.images[0] ?? null;
@@ -538,9 +596,10 @@ function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
           // eslint-disable-next-line @next/next/no-img-element
           <img alt={listing.title} className="h-full w-full object-cover" src={primaryImage.public_url} />
         ) : (
-          <span className="px-5 text-center text-sm font-semibold text-slate-500">
-            {primaryImage?.storage_path ?? "Photo coming soon"}
-          </span>
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-100 to-emerald-50 text-slate-400">
+            <ImageIcon aria-hidden="true" className="h-12 w-12" />
+            <span className="text-sm font-medium">No photo yet</span>
+          </div>
         )}
       </div>
       {galleryImages.length > 0 ? (
@@ -551,8 +610,9 @@ function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img alt={listing.title} className="aspect-square w-full object-cover" src={image.public_url} />
               ) : (
-                <div className="flex aspect-square items-center justify-center px-3 text-center text-xs text-slate-500">
-                  {image.storage_path}
+                <div className="flex aspect-square flex-col items-center justify-center gap-1 bg-gradient-to-br from-slate-100 to-emerald-50 text-slate-400">
+                  <ImageIcon aria-hidden="true" className="h-6 w-6" />
+                  <span className="text-xs">No photo</span>
                 </div>
               )}
             </div>
@@ -562,6 +622,8 @@ function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
     </section>
   );
 }
+
+// ─── ListingSummaryCard ───────────────────────────────────────────────────────
 
 function ListingSummaryCard({
   contactDraft,
@@ -602,36 +664,41 @@ function ListingSummaryCard({
   onReportSeller: () => Promise<void>;
   onStatus: (status: "available" | "reserved" | "sold" | "hidden" | "deleted") => Promise<void>;
 }>) {
-  const condition = listing.condition ?? listing.condition_label ?? "Unknown";
-
   return (
-    <aside className="h-fit rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:sticky lg:top-24">
-      <div className="flex flex-wrap gap-2">
-        <StatusPill tone={statusTone(listing.status)}>{listing.status.replaceAll("_", " ")}</StatusPill>
-        <StatusPill>{formatCategory(listing.category)}</StatusPill>
+    <aside className="h-fit rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-24">
+      {/* Section 1: Status + price + title */}
+      <div className="p-5">
+        <div className="flex flex-wrap gap-2">
+          <StatusPill tone={statusTone(listing.status)}>{listing.status.replaceAll("_", " ")}</StatusPill>
+          <StatusPill>{formatCategory(listing.category)}</StatusPill>
+        </div>
+        <div className="mt-3">
+          <PriceText currency={listing.currency} size="lg" value={listing.price} />
+        </div>
+        <h2 className="mt-1 text-lg font-semibold leading-snug text-slate-800">{listing.title}</h2>
       </div>
-      <h2 className="mt-4 text-2xl font-semibold leading-tight text-slate-950">{listing.title}</h2>
-      <div className="mt-4">
-        <PriceText currency={listing.currency} size="lg" value={listing.price} />
-      </div>
-      <div className="mt-5 grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
-        <p>{formatCategory(listing.category)} · {condition.replaceAll("_", " ")}</p>
+
+      <hr className="border-slate-100" />
+
+      {/* Section 2: Metadata */}
+      <div className="grid gap-2 p-5 text-sm text-slate-600">
+        <p>
+          <span className="font-medium text-slate-700">{formatCategory(listing.category)}</span>
+          {(listing.condition ?? listing.condition_label) ? (
+            <span> · {(listing.condition ?? listing.condition_label ?? "").replaceAll("_", " ")}</span>
+          ) : null}
+        </p>
         <p className="flex items-center gap-2">
-          <MapPin aria-hidden="true" className="h-4 w-4 text-emerald-700" />
+          <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-700" />
           {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}
         </p>
-        <p>Posted {formatRelativeTime(listing.created_at)}</p>
+        <p className="text-xs text-slate-400">Posted {formatRelativeTime(listing.created_at)}</p>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-slate-100 p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Seller</p>
-        <p className="mt-1 text-sm font-semibold text-slate-950">{getSellerDisplayName(listing)}</p>
-        <p className="mt-1 text-xs text-slate-500">
-          {listing.seller?.profile?.faculty ?? "UM student"} · {listing.seller?.status ?? "active"}
-        </p>
-      </div>
+      <hr className="border-slate-100" />
 
-      <div className="mt-5 grid gap-3">
+      {/* Section 3: Contact / seller actions */}
+      <div className="p-5">
         {user ? (
           isSeller ? (
             <SellerActions isActing={isActing} listing={listing} onStatus={onStatus} />
@@ -653,16 +720,31 @@ function ListingSummaryCard({
             returnTo={`/trade/${listing.id}`}
           />
         )}
+      </div>
 
+      <hr className="border-slate-100" />
+
+      {/* Section 4: Save + report actions */}
+      <div className="grid gap-2 p-5">
         <button className="trade-button-secondary w-full" disabled={isActing} onClick={() => void onFavorite()} type="button">
           <Heart aria-hidden="true" className={`h-4 w-4 ${isSaved ? "fill-current text-rose-600" : ""}`} />
           {isSaved ? "Saved" : "Save listing"}
         </button>
-        <button className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isActing} onClick={() => void onReportListing()} type="button">
+        <button
+          className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50"
+          disabled={isActing}
+          onClick={() => void onReportListing()}
+          type="button"
+        >
           <Flag aria-hidden="true" className="h-4 w-4" />
           Report listing
         </button>
-        <button className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isActing} onClick={() => void onReportSeller()} type="button">
+        <button
+          className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50"
+          disabled={isActing}
+          onClick={() => void onReportSeller()}
+          type="button"
+        >
           <Flag aria-hidden="true" className="h-4 w-4" />
           Report seller
         </button>
@@ -670,6 +752,8 @@ function ListingSummaryCard({
     </aside>
   );
 }
+
+// ─── BuyerRequestForm ─────────────────────────────────────────────────────────
 
 function BuyerRequestForm({
   contactDraft,
@@ -696,22 +780,32 @@ function BuyerRequestForm({
   }>>;
   onContactRequest: () => Promise<void>;
 }>) {
+  // Gate: show completion CTA when profile is incomplete
+  if (!isProfileComplete(profile)) {
+    return (
+      <div className="grid gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <p className="text-sm font-semibold text-amber-950">Complete your profile to contact this seller.</p>
+        <p className="text-xs leading-5 text-amber-800">
+          Add your name and contact method so sellers can identify you.
+        </p>
+        <Link className="trade-button-primary" href="/trade/profile">
+          Complete Profile
+        </Link>
+      </div>
+    );
+  }
+
   const needsContactValue = contactDraft.buyer_contact_method === "telegram" || contactDraft.buyer_contact_method === "whatsapp";
   const needsSafetyAck = !profile?.trade_safety_acknowledged_at;
+
   return (
     <div className="grid gap-3">
       <p className="text-sm leading-6 text-slate-600">
-        Your message and selected contact method will be shown to the seller. The seller&apos;s contact details are shown only if they accept.
+        Your message and selected contact method will be shown to the seller. The seller&apos;s contact details are shared only if they accept.
       </p>
-      {!isProfileComplete(profile) ? (
-        <Link className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-950" href="/trade/profile">
-          Complete your profile before contacting sellers.
-        </Link>
-      ) : null}
       {listingStatus === "reserved" ? (
         <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
-          This item is currently reserved. You can still request backup interest, but the seller may already be
-          discussing it with another buyer.
+          This item is currently reserved. You can still request backup interest, but the seller may already be discussing it with another buyer.
         </p>
       ) : null}
       <textarea
@@ -745,25 +839,32 @@ function BuyerRequestForm({
         />
       ) : null}
       {needsSafetyAck ? (
-        <label className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+        <label className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
           <input
             checked={contactDraft.safety_acknowledged}
-            className="mt-1"
+            className="mt-0.5 shrink-0"
             onChange={(event) =>
               onContactDraftChange((current) => ({ ...current, safety_acknowledged: event.target.checked }))
             }
             type="checkbox"
           />
-          <span>I understand UM Nexus does not hold payment and I should check the item before paying.</span>
+          <span>I understand UM Nexus does not hold payments, and I will check the item before paying.</span>
         </label>
       ) : null}
-      <button className="trade-button-primary w-full" disabled={disabled} onClick={() => void onContactRequest()} type="button">
+      <button
+        className="trade-button-primary w-full"
+        disabled={disabled}
+        onClick={() => void onContactRequest()}
+        type="button"
+      >
         <MessageCircle aria-hidden="true" className="h-4 w-4" />
         I&apos;m interested
       </button>
     </div>
   );
 }
+
+// ─── SellerActions ────────────────────────────────────────────────────────────
 
 function SellerActions({
   isActing,
@@ -798,7 +899,12 @@ function SellerActions({
           Hide
         </button>
       </div>
-      <button className="trade-button-secondary border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isActing || listing.status === "deleted"} onClick={() => void onStatus("deleted")} type="button">
+      <button
+        className="trade-button-secondary border-rose-200 text-rose-700 hover:bg-rose-50"
+        disabled={isActing || listing.status === "deleted"}
+        onClick={() => void onStatus("deleted")}
+        type="button"
+      >
         <Trash2 aria-hidden="true" className="h-4 w-4" />
         Delete
       </button>
@@ -806,12 +912,24 @@ function SellerActions({
   );
 }
 
+// ─── SellerCard ───────────────────────────────────────────────────────────────
+
 function SellerCard({ listing }: Readonly<{ listing: Listing }>) {
+  const isVerified = listing.seller?.profile?.verified_um_email === true;
+
   return (
     <section className="trade-card p-5">
       <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Seller</p>
-      <h2 className="mt-2 text-lg font-semibold text-slate-950">{getSellerDisplayName(listing)}</h2>
-      <p className="mt-2 text-sm leading-6 text-slate-600">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <h2 className="text-lg font-semibold text-slate-950">{getSellerDisplayName(listing)}</h2>
+        {isVerified ? (
+          <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
+            <BadgeCheck aria-hidden="true" className="h-3.5 w-3.5" />
+            Verified UM
+          </span>
+        ) : null}
+      </div>
+      <p className="mt-1 text-sm leading-6 text-slate-600">
         {listing.seller?.profile?.faculty ?? "University of Malaya student"} ·{" "}
         {listing.seller?.profile?.college_or_location ?? listing.seller?.profile?.residential_college ?? "Campus pickup"}
       </p>
@@ -821,6 +939,8 @@ function SellerCard({ listing }: Readonly<{ listing: Listing }>) {
     </section>
   );
 }
+
+// ─── SellerIntelligencePanel ──────────────────────────────────────────────────
 
 function SellerIntelligencePanel({
   isActing,
@@ -867,7 +987,12 @@ function SellerIntelligencePanel({
           </StatusPill>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          <button className="trade-button-primary" disabled={isEnriching || resultStatus?.status === "pending" || resultStatus?.status === "running"} onClick={() => void onEnrich()} type="button">
+          <button
+            className="trade-button-primary"
+            disabled={isEnriching || resultStatus?.status === "pending" || resultStatus?.status === "running"}
+            onClick={() => void onEnrich()}
+            type="button"
+          >
             <Sparkles aria-hidden="true" className="h-4 w-4" />
             {isEnriching ? "Enqueueing..." : "Enrich Listing"}
           </button>
@@ -921,18 +1046,23 @@ function SellerIntelligencePanel({
           </button>
         </div>
       </section>
+
       <MatchSuggestions matches={matches} />
     </section>
   );
 }
 
+// ─── RiskWarning ──────────────────────────────────────────────────────────────
+
 function RiskWarning({ listing }: Readonly<{ listing: Listing }>) {
   const items = riskEvidenceItems(listing);
+  const riskTitle = listing.risk_level === "high" ? "Under review" : "Needs review";
+
   return (
     <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-amber-950">{listing.risk_level} risk listing</h2>
+          <h2 className="text-lg font-semibold text-amber-950">{riskTitle}</h2>
           <p className="mt-2 text-sm leading-6 text-amber-900">
             Trust signals should be checked before a fast transaction.
           </p>
