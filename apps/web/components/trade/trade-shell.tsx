@@ -174,19 +174,29 @@ export function TradeShell({
 
 function TradeOnboardingCard({ onDismiss }: Readonly<{ onDismiss: () => void }>) {
   return (
-    <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold">Welcome to UM Nexus Trade</h2>
-          <p className="mt-2 text-sm leading-6">
-            Browse UM student listings, sell an item in under one minute, send contact requests safely, and meet on campus before payment.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link className="trade-button-primary" href="/trade">Browse Listings</Link>
-          <Link className="trade-button-secondary bg-white" href="/trade/sell">Sell an Item</Link>
-          <Link className="trade-button-secondary bg-white" href="/trade/profile">Complete Profile</Link>
-          <button className="trade-button-secondary bg-white" onClick={onDismiss} type="button">Dismiss</button>
+    <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm font-semibold text-emerald-950">
+          Welcome to UM Nexus Trade — buy and sell safely within the UM campus community.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100" href="/trade">
+            Browse
+          </Link>
+          <Link className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100" href="/trade/sell">
+            Sell an item
+          </Link>
+          <Link className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100" href="/trade/profile">
+            Complete profile
+          </Link>
+          <button
+            aria-label="Dismiss welcome banner"
+            className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            onClick={onDismiss}
+            type="button"
+          >
+            ✕ Dismiss
+          </button>
         </div>
       </div>
     </section>

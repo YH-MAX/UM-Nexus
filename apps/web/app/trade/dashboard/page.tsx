@@ -7,6 +7,8 @@ import { Heart, Inbox, PackageCheck, PlusCircle, Store } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
+import { AcceptRequestModal } from "@/components/trade/accept-request-modal";
+import { CompleteTradeModal } from "@/components/trade/complete-trade-modal";
 import { DashboardStatCard } from "@/components/trade/dashboard-stat-card";
 import { EmptyState } from "@/components/trade/empty-state";
 import { StatusPill, statusTone } from "@/components/trade/status-pill";
@@ -31,8 +33,8 @@ type DashboardTab = "overview" | "listings" | "received" | "sent" | "drafts" | "
 const tabs: Array<{ id: DashboardTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "listings", label: "My Listings" },
-  { id: "received", label: "Received Requests" },
-  { id: "sent", label: "Sent Requests" },
+  { id: "received", label: "Buyer Requests" },
+  { id: "sent", label: "My Requests" },
   { id: "drafts", label: "Drafts" },
   { id: "sold", label: "Sold" },
 ];
@@ -47,6 +49,8 @@ export default function TradeDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, { agreedPrice: string; followedAi: boolean }>>({});
+  const [acceptModal, setAcceptModal] = useState<ContactRequest | null>(null);
+  const [completeModal, setCompleteModal] = useState<ContactRequest | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -185,20 +189,21 @@ export default function TradeDashboardPage() {
   }
 
   async function answerContactRequest(request: ContactRequest, status: "accepted" | "rejected") {
+    if (status === "accepted") {
+      setAcceptModal(request);
+      return;
+    }
+    // Rejection goes straight through — no modal needed
     setIsUpdating(request.id);
     setError(null);
     setNotice(null);
     try {
       await updateContactRequest(request.id, {
-        status,
-        seller_response: status === "accepted" ? "Accepted. Contact details are now visible." : "Rejected by seller.",
-        mark_listing_reserved: status === "accepted" ? window.confirm("Do you want to mark this listing as reserved?") : false,
+        status: "rejected",
+        seller_response: "Rejected by seller.",
+        mark_listing_reserved: false,
       });
-      setNotice(
-        status === "accepted"
-          ? "Request accepted. The buyer has been notified and can see seller contact after their profile is complete."
-          : "Request rejected. The buyer has been notified and can keep browsing other UM listings.",
-      );
+      setNotice("Request rejected. The buyer has been notified and can keep browsing other UM listings.");
       await loadDashboard();
       notifyAlertStateChanged();
     } catch (nextError) {
@@ -208,30 +213,74 @@ export default function TradeDashboardPage() {
     }
   }
 
-  async function resolveSellerRequest(
-    request: ContactRequest,
-    action: "mark_completed" | "cancel_accepted" | "buyer_no_response",
-  ) {
+  async function confirmAcceptRequest(request: ContactRequest, markReserved: boolean) {
+    setAcceptModal(null);
     setIsUpdating(request.id);
     setError(null);
     setNotice(null);
     try {
-      const agreedPrice =
-        action === "mark_completed" ? Number(window.prompt("Optional agreed price in RM", String(request.listing?.price ?? ""))) : undefined;
-      await resolveContactRequest(request.id, {
-        action,
-        agreed_price: Number.isFinite(agreedPrice) && agreedPrice ? agreedPrice : undefined,
-        sold_source: action === "mark_completed" ? "accepted_request" : undefined,
+      await updateContactRequest(request.id, {
+        status: "accepted",
+        seller_response: "Accepted. Contact details are now visible.",
+        mark_listing_reserved: markReserved,
       });
       setNotice(
-        action === "mark_completed"
-          ? "Trade marked completed. The buyer has been notified and pending requests were closed."
-          : "Request closed. The buyer has been notified and the listing can receive interest again.",
+        markReserved
+          ? "Request accepted and listing marked as reserved. The buyer has been notified."
+          : "Request accepted. The buyer has been notified and can see your contact details.",
       );
       await loadDashboard();
       notifyAlertStateChanged();
     } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to accept contact request.");
+    } finally {
+      setIsUpdating(null);
+    }
+  }
+
+  async function resolveSellerRequest(
+    request: ContactRequest,
+    action: "mark_completed" | "cancel_accepted" | "buyer_no_response",
+  ) {
+    if (action === "mark_completed") {
+      setCompleteModal(request);
+      return;
+    }
+    setIsUpdating(request.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await resolveContactRequest(request.id, {
+        action,
+        agreed_price: undefined,
+        sold_source: undefined,
+      });
+      setNotice("Request closed. The buyer has been notified and the listing can receive interest again.");
+      await loadDashboard();
+      notifyAlertStateChanged();
+    } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to resolve contact request.");
+    } finally {
+      setIsUpdating(null);
+    }
+  }
+
+  async function confirmCompleteTrade(request: ContactRequest, agreedPrice: number) {
+    setCompleteModal(null);
+    setIsUpdating(request.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await resolveContactRequest(request.id, {
+        action: "mark_completed",
+        agreed_price: agreedPrice,
+        sold_source: "accepted_request",
+      });
+      setNotice("Trade marked completed. The buyer has been notified and pending requests were closed.");
+      await loadDashboard();
+      notifyAlertStateChanged();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to complete trade.");
     } finally {
       setIsUpdating(null);
     }
@@ -290,11 +339,11 @@ export default function TradeDashboardPage() {
             <DashboardStatCard detail="Marked sold" icon={PackageCheck} label="Sold items" value={stats.soldItems} />
           </section>
 
-          <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+          <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
             {tabs.map((tab) => (
               <button
                 aria-pressed={activeTab === tab.id}
-                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                className={`shrink-0 snap-start rounded-xl px-4 py-2 text-sm font-semibold transition ${
                   activeTab === tab.id ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
                 }`}
                 key={tab.id}
@@ -341,6 +390,23 @@ export default function TradeDashboardPage() {
               onCancel={cancelSentRequest}
             />
           )}
+
+          {acceptModal ? (
+            <AcceptRequestModal
+              isUpdating={isUpdating === acceptModal.id}
+              request={acceptModal}
+              onCancel={() => setAcceptModal(null)}
+              onConfirm={(markReserved) => void confirmAcceptRequest(acceptModal, markReserved)}
+            />
+          ) : null}
+          {completeModal ? (
+            <CompleteTradeModal
+              isUpdating={isUpdating === completeModal.id}
+              request={completeModal}
+              onCancel={() => setCompleteModal(null)}
+              onConfirm={(agreedPrice) => void confirmCompleteTrade(completeModal, agreedPrice)}
+            />
+          ) : null}
         </div>
       ) : null}
     </TradeShell>
@@ -664,6 +730,9 @@ function SoldTab({
               </div>
               {!transaction.completed_at ? (
                 <div className="mt-3 grid gap-3">
+                  <p className="text-xs text-slate-500">
+                    Help improve future price suggestions by recording the final sale price.
+                  </p>
                   <input
                     className="trade-input"
                     min="1"
@@ -676,7 +745,7 @@ function SoldTab({
                         },
                       }))
                     }
-                    placeholder="Agreed price"
+                    placeholder="Final agreed price (RM)"
                     type="number"
                     value={transactionDrafts[transaction.id]?.agreedPrice ?? ""}
                   />
@@ -694,10 +763,10 @@ function SoldTab({
                       }
                       type="checkbox"
                     />
-                    Followed AI recommendation
+                    I followed the AI price suggestion
                   </label>
                   <button className="trade-button-primary" disabled={isUpdating === transaction.id} onClick={() => void markCompleted(transaction)} type="button">
-                    {isUpdating === transaction.id ? "Updating..." : "Mark completed"}
+                    {isUpdating === transaction.id ? "Updating…" : "Mark completed"}
                   </button>
                 </div>
               ) : null}

@@ -125,12 +125,12 @@ const publishSteps: Array<{ phase: PublishPhase; label: string }> = [
 const initialListingPayload: ListingPayload = {
   title: "",
   description: "",
-  category: "others",
-  condition_label: "good",
+  category: "",
+  condition_label: "",
   price: 0,
   currency: "MYR",
-  pickup_location: "kk1",
-  pickup_area: "kk1",
+  pickup_location: "",
+  pickup_area: "",
   contact_method: "telegram",
   contact_value: "",
 };
@@ -166,12 +166,23 @@ export default function SellPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qualityReviewMode, setQualityReviewMode] = useState<"manual" | "ai" | null>(null);
+  const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
     return () => {
       images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
     };
   }, [images]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   useEffect(() => {
     if (!user) {
@@ -256,10 +267,10 @@ export default function SellPage() {
     () => [
       { label: "Photos", complete: images.length > 0 },
       { label: "Details", complete: hasManualMinimum(editableDraft) },
-      { label: "AI optional", complete: Boolean(draft) },
+      { label: "Review", complete: publishPhase !== "idle" },
       { label: "Publish", complete: publishPhase === "ready" },
     ],
-    [draft, editableDraft, images.length, publishPhase],
+    [editableDraft, images.length, publishPhase],
   );
 
   const followUpClues = useMemo(() => {
@@ -338,6 +349,7 @@ export default function SellPage() {
       return;
     }
 
+    setIsDirty(true);
     setImages((current) => [
       ...current,
       ...filesToAdd.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })),
@@ -349,6 +361,7 @@ export default function SellPage() {
   }
 
   function removeImage(previewUrl: string) {
+    setIsDirty(true);
     setImages((current) => {
       const target = current.find((image) => image.previewUrl === previewUrl);
       if (target) {
@@ -432,6 +445,7 @@ export default function SellPage() {
           setPublishPhase("risk");
           await sleep(250);
           setPublishPhase("ready");
+          setIsDirty(false);
           await sleep(650);
           router.push(`/trade/${response.listing.id}`);
           return;
@@ -457,9 +471,10 @@ export default function SellPage() {
     setError(null);
     setNotice(null);
     try {
-      const listing = await createListing(prepareListingPayload(editableDraft), { publish: false });
+      const listing = await createListing(prepareListingPayload(editableDraft, "draft"), { publish: false });
       await uploadSelectedImages(listing.id);
       setPublishedListingId(listing.id);
+      setIsDirty(false);
       setNotice("Draft saved. You can finish it from your dashboard.");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to save draft.");
@@ -479,7 +494,7 @@ export default function SellPage() {
     setNotice(null);
     setPublishPhase("creating");
     try {
-      const listing = await createListing(prepareListingPayload(editableDraft), { publish: true });
+      const listing = await createListing(prepareListingPayload(editableDraft, "publish"), { publish: true });
       setPublishedListingId(listing.id);
       void trackProductEvent({
         event_type: "listing_published",
@@ -488,10 +503,14 @@ export default function SellPage() {
         metadata: { source: "manual_sell_page" },
       });
       setPublishPhase("images");
-      await uploadSelectedImages(listing.id);
+      const failedCount = await uploadSelectedImages(listing.id);
+      if (failedCount > 0) {
+        setNotice(`Listing published! ${failedCount} photo${failedCount > 1 ? "s" : ""} failed to upload. You can retry from Edit Listing.`);
+      }
       setPublishPhase("risk");
       await sleep(250);
       setPublishPhase("ready");
+      setIsDirty(false);
       router.push(`/trade/${listing.id}`);
     } catch (nextError) {
       setPublishPhase("failed");
@@ -501,16 +520,23 @@ export default function SellPage() {
     }
   }
 
-  async function uploadSelectedImages(listingId: string) {
+  async function uploadSelectedImages(listingId: string): Promise<number> {
+    let failedCount = 0;
     for (const [index, image] of images.entries()) {
-      await uploadListingImage(listingId, image.file, {
-        sortOrder: index,
-        isPrimary: index === 0,
-      });
+      try {
+        await uploadListingImage(listingId, image.file, {
+          sortOrder: index,
+          isPrimary: index === 0,
+        });
+      } catch {
+        failedCount++;
+      }
     }
+    return failedCount;
   }
 
   function updateDraftField(field: keyof ListingPayload, value: string | number | undefined) {
+    setIsDirty(true);
     setEditableDraft((current) => (current ? { ...current, [field]: value } : current));
   }
 
@@ -605,6 +631,7 @@ export default function SellPage() {
               freeText={freeText}
               imagesCount={images.length}
               isGenerating={isGenerating}
+              isOpen={isAiPanelOpen}
               messages={messages}
               onCancelClue={() => setActiveClue(null)}
               onClueClick={handleClueClick}
@@ -612,6 +639,7 @@ export default function SellPage() {
               onGoalSelect={handleGoalSelect}
               onSaveClue={saveActiveClue}
               onSendFreeText={handleSendFreeText}
+              onToggle={() => setIsAiPanelOpen((prev) => !prev)}
               sellerContext={sellerContext}
               setActiveValue={setActiveValue}
               setFreeText={setFreeText}
@@ -619,7 +647,12 @@ export default function SellPage() {
           </div>
 
           <aside className="grid gap-5 lg:sticky lg:top-24">
-            <ListingPreviewPanel draft={editableDraft} images={images} />
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                Preview — this is how your listing will appear to buyers
+              </p>
+              <ListingPreviewPanel draft={editableDraft} images={images} />
+            </div>
             <SafetyNotice />
             <DraftReviewPanel
               draft={draft}
@@ -678,15 +711,22 @@ function PublishQualityCheckpoint({
   onPublishAnyway: () => void;
   onSaveDraft: () => void;
 }>) {
-  const prepared = prepareListingPayload(payload);
-  const checks = [
+  const prepared = prepareListingPayload(payload, "publish");
+
+  const requiredChecks = [
     { label: "Title added", ok: prepared.title.trim().length >= 5 },
-    { label: "Price added", ok: prepared.category === "free_items" || prepared.price >= 0 },
+    { label: "Price set or free item", ok: prepared.category === "free_items" || prepared.price >= 0 },
     { label: "Pickup location selected", ok: Boolean(prepared.pickup_location) },
-    { label: "Contact method added", ok: isContactReady(prepared) },
-    { label: "Description has enough detail", ok: Boolean(prepared.description && prepared.description.length >= 40) },
-    { label: "At least one photo added", ok: imageCount > 0 },
+    { label: "Contact method ready", ok: isContactReady(prepared) },
   ];
+
+  const recommendedChecks = [
+    { label: "At least one photo added", ok: imageCount > 0 },
+    { label: "Description detail (40+ chars)", ok: Boolean(prepared.description && prepared.description.length >= 40) },
+  ];
+
+  const hasFailedRequired = requiredChecks.some((c) => !c.ok);
+  const hasWarnings = recommendedChecks.some((c) => !c.ok);
 
   return (
     <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
@@ -694,36 +734,74 @@ function PublishQualityCheckpoint({
         <div>
           <h2 className="text-lg font-semibold text-amber-950">Ready to publish?</h2>
           <p className="mt-2 text-sm leading-6 text-amber-900">
-            Review the listing quality checkpoint before it goes live. Warnings help quality but do not block publishing.
+            Review before your listing goes live. Required checks must pass; recommended checks improve quality.
           </p>
         </div>
         <button className="trade-button-secondary bg-white" onClick={onClose} type="button">
           Close
         </button>
       </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2">
-        {checks.map((check) => (
-          <div
-            className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
-              check.ok ? "border-emerald-200 bg-white text-emerald-800" : "border-amber-300 bg-white text-amber-900"
-            }`}
-            key={check.label}
-          >
-            {check.ok ? "OK" : "Needs attention"}: {check.label}
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">Required</p>
+          <div className="grid gap-2">
+            {requiredChecks.map((check) => (
+              <div
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
+                  check.ok
+                    ? "border-emerald-200 bg-white text-emerald-800"
+                    : "border-rose-200 bg-rose-50 text-rose-800"
+                }`}
+                key={check.label}
+              >
+                <span aria-hidden="true">{check.ok ? "\u2713" : "\u2717"}</span>
+                {check.label}
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">Recommended</p>
+          <div className="grid gap-2">
+            {recommendedChecks.map((check) => (
+              <div
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
+                  check.ok
+                    ? "border-emerald-200 bg-white text-emerald-800"
+                    : "border-amber-200 bg-white text-amber-800"
+                }`}
+                key={check.label}
+              >
+                <span aria-hidden="true">{check.ok ? "\u2713" : "\u26a0"}</span>
+                {check.label}
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
+
       <div className="mt-5 flex flex-wrap gap-3">
-        <button className="trade-button-secondary bg-white" onClick={onSaveDraft} type="button">
-          Save Draft
-        </button>
         <button className="trade-button-secondary bg-white" onClick={onImprove} type="button">
           Improve Listing
         </button>
-        <button className="trade-button-primary" onClick={onPublishAnyway} type="button">
-          Publish Anyway
+        <button className="trade-button-secondary bg-white" onClick={onSaveDraft} type="button">
+          Save Draft
+        </button>
+        <button
+          className="trade-button-primary"
+          disabled={hasFailedRequired}
+          onClick={onPublishAnyway}
+          type="button"
+        >
+          {hasWarnings && !hasFailedRequired ? "Publish with Warnings" : "Publish Listing"}
         </button>
       </div>
+      {hasFailedRequired ? (
+        <p className="mt-3 text-sm font-semibold text-rose-700">
+          Fix the required fields above before publishing.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -819,6 +897,8 @@ function ManualListingPanel({
           onChange={(value) => onUpdateDraftField("price", value)}
         />
         <EditableSelect
+          allowEmpty
+          emptyLabel="Choose category"
           label="Category"
           options={tradeCategories}
           value={draft.category}
@@ -830,15 +910,19 @@ function ManualListingPanel({
           }}
         />
         <EditableSelect
+          allowEmpty
+          emptyLabel="Choose condition"
           label="Condition"
           options={conditionOptions}
-          value={draft.condition_label ?? "good"}
+          value={draft.condition_label ?? ""}
           onChange={(value) => onUpdateDraftField("condition_label", value)}
         />
         <EditableSelect
+          allowEmpty
+          emptyLabel="Choose pickup location"
           label="Pickup location"
           options={pickupAreas}
-          value={draft.pickup_location ?? draft.pickup_area ?? "kk1"}
+          value={draft.pickup_location ?? draft.pickup_area ?? ""}
           onChange={(value) => {
             onUpdateDraftField("pickup_location", value);
             onUpdateDraftField("pickup_area", value);
@@ -1087,6 +1171,7 @@ function AgentConversationPanel({
   freeText,
   imagesCount,
   isGenerating,
+  isOpen,
   messages,
   onCancelClue,
   onClueClick,
@@ -1094,6 +1179,7 @@ function AgentConversationPanel({
   onGoalSelect,
   onSaveClue,
   onSendFreeText,
+  onToggle,
   sellerContext,
   setActiveValue,
   setFreeText,
@@ -1109,6 +1195,7 @@ function AgentConversationPanel({
   freeText: string;
   imagesCount: number;
   isGenerating: boolean;
+  isOpen: boolean;
   messages: AgentMessage[];
   onCancelClue: () => void;
   onClueClick: (clue: Clue) => void;
@@ -1116,151 +1203,159 @@ function AgentConversationPanel({
   onGoalSelect: (value: SellAgentSellerContext["seller_goal"]) => void;
   onSaveClue: () => void;
   onSendFreeText: () => void;
+  onToggle: () => void;
   sellerContext: SellAgentSellerContext;
   setActiveValue: Dispatch<SetStateAction<string>>;
   setFreeText: Dispatch<SetStateAction<string>>;
 }>) {
   return (
     <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${className ?? ""}`}>
-      <div className="border-b border-slate-200 p-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">2 Seller clues</p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-950">AI listing assistant</h2>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <StatusPill tone={imagesCount > 0 ? "good" : "neutral"}>{imagesCount}/5 photos</StatusPill>
-            {draft ? (
-              <StatusPill tone={draft.metadata.used_fallback ? "warn" : "good"}>
-                {draft.metadata.used_fallback ? "fallback" : draft.metadata.analysis_mode}
-              </StatusPill>
-            ) : (
-              <StatusPill>ready</StatusPill>
-            )}
-          </div>
+      {/* Collapsible header */}
+      <button
+        className="flex w-full items-center justify-between gap-3 border-b border-slate-200 p-5 text-left transition hover:bg-slate-50"
+        onClick={onToggle}
+        type="button"
+      >
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Optional</p>
+          <p className="text-base font-semibold text-slate-950">✨ AI listing assistant</p>
+          <p className="text-xs leading-5 text-slate-500">
+            AI can help draft your title, category, description, and fair price. You can publish without it.
+          </p>
         </div>
-      </div>
+        <span
+          aria-hidden="true"
+          className={`shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+          style={{ fontSize: "1.25rem", lineHeight: 1 }}
+        >
+          ▾
+        </span>
+      </button>
 
-      <div className="h-[320px] space-y-3 overflow-y-auto bg-slate-50 p-4">
-        {messages.map((message, index) => (
-          <div
-            className={`flex ${message.role === "seller" ? "justify-end" : "justify-start"}`}
-            key={`${message.role}-${index}`}
-          >
-            <div
-              className={`max-w-[88%] rounded-lg px-4 py-3 text-sm leading-6 shadow-sm ${
-                message.role === "agent"
-                  ? "border border-slate-200 bg-white text-slate-800"
-                  : "bg-slate-950 text-white"
-              }`}
-            >
-              {message.body}
-            </div>
+      {isOpen ? (
+        <>
+          <div className="h-[320px] space-y-3 overflow-y-auto bg-slate-50 p-4">
+            {messages.map((message, index) => (
+              <div
+                className={`flex ${message.role === "seller" ? "justify-end" : "justify-start"}`}
+                key={`${message.role}-${index}`}
+              >
+                <div
+                  className={`max-w-[88%] rounded-lg px-4 py-3 text-sm leading-6 shadow-sm ${
+                    message.role === "agent"
+                      ? "border border-slate-200 bg-white text-slate-800"
+                      : "bg-slate-950 text-white"
+                  }`}
+                >
+                  {message.body}
+                </div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <div className="space-y-4 border-t border-slate-200 p-5">
-        {followUpClues.length > 0 ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm font-semibold text-amber-950">Add these to improve confidence</p>
-              <div className="flex flex-wrap gap-2">
-                {followUpClues.map((clue) => (
-                  <button
-                    className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 ring-1 ring-amber-300 transition hover:bg-amber-100 disabled:opacity-60"
-                    disabled={disabled}
-                    key={clue.label}
-                    onClick={() => onClueClick(clue)}
-                    type="button"
-                  >
-                    {clue.label}
-                  </button>
-                ))}
+          <div className="space-y-4 border-t border-slate-200 p-5">
+            {followUpClues.length > 0 ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm font-semibold text-amber-950">Add these to improve confidence</p>
+                  <div className="flex flex-wrap gap-2">
+                    {followUpClues.map((clue) => (
+                      <button
+                        className="rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-amber-900 ring-1 ring-amber-300 transition hover:bg-amber-100 disabled:opacity-60"
+                        disabled={disabled}
+                        key={clue.label}
+                        onClick={() => onClueClick(clue)}
+                        type="button"
+                      >
+                        {clue.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <ClueGroup disabled={disabled} label="Required" clues={requiredClues} onClueClick={onClueClick} />
+            <ClueGroup disabled={disabled} label="Useful details" clues={usefulClues} onClueClick={onClueClick} />
+
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Goal</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                {sellerGoalOptions.map((option) => {
+                  const isSelected = sellerContext.seller_goal === option.value;
+                  return (
+                    <button
+                      className={`rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        isSelected
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-950"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-emerald-300"
+                      }`}
+                      disabled={disabled}
+                      key={option.value}
+                      onClick={() => onGoalSelect(option.value)}
+                      type="button"
+                    >
+                      <span className="block text-sm font-semibold">{option.label}</span>
+                      <span className="mt-1 block text-xs text-slate-500">{option.hint}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          </div>
-        ) : null}
 
-        <ClueGroup disabled={disabled} label="Required" clues={requiredClues} onClueClick={onClueClick} />
-        <ClueGroup disabled={disabled} label="Useful details" clues={usefulClues} onClueClick={onClueClick} />
+            {activeClue ? (
+              <ClueInputPanel
+                activeClue={activeClue}
+                activeValue={activeValue}
+                disabled={disabled}
+                onCancel={onCancelClue}
+                onSave={onSaveClue}
+                setActiveValue={setActiveValue}
+              />
+            ) : null}
 
-        <div>
-          <p className="text-sm font-semibold text-slate-800">Goal</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-3">
-            {sellerGoalOptions.map((option) => {
-              const isSelected = sellerContext.seller_goal === option.value;
-              return (
-                <button
-                  className={`rounded-lg border px-3 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                    isSelected
-                      ? "border-emerald-500 bg-emerald-50 text-emerald-950"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-emerald-300"
-                  }`}
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <label className="sr-only" htmlFor="seller-message">
+                Message the sell agent
+              </label>
+              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                <textarea
+                  className="min-h-20 resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-100"
                   disabled={disabled}
-                  key={option.value}
-                  onClick={() => onGoalSelect(option.value)}
+                  id="seller-message"
+                  placeholder="Tell the agent anything useful: bought last semester, minor scratches, includes charger, need to sell before move-out."
+                  value={freeText}
+                  onChange={(event) => setFreeText(event.target.value)}
+                />
+                <button
+                  aria-label="Send message"
+                  className="inline-flex h-full min-h-11 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 transition hover:border-emerald-500 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
+                  disabled={disabled || !freeText.trim()}
+                  onClick={onSendFreeText}
                   type="button"
                 >
-                  <span className="block text-sm font-semibold">{option.label}</span>
-                  <span className="mt-1 block text-xs text-slate-500">{option.hint}</span>
+                  <SendIcon />
                 </button>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+            </div>
 
-        {activeClue ? (
-          <ClueInputPanel
-            activeClue={activeClue}
-            activeValue={activeValue}
-            disabled={disabled}
-            onCancel={onCancelClue}
-            onSave={onSaveClue}
-            setActiveValue={setActiveValue}
-          />
-        ) : null}
+            {error ? (
+              <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
+                {error}
+              </p>
+            ) : null}
 
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <label className="sr-only" htmlFor="seller-message">
-            Message the sell agent
-          </label>
-          <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-            <textarea
-              className="min-h-20 resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-100"
-              disabled={disabled}
-              id="seller-message"
-              placeholder="Tell the agent anything useful: bought last semester, minor scratches, includes charger, need to sell before move-out."
-              value={freeText}
-              onChange={(event) => setFreeText(event.target.value)}
-            />
             <button
-              aria-label="Send message"
-              className="inline-flex h-full min-h-11 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 transition hover:border-emerald-500 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
-              disabled={disabled || !freeText.trim()}
-              onClick={onSendFreeText}
+              className="w-full rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              disabled={disabled || !canGenerate || isGenerating}
+              onClick={onGenerateDraft}
               type="button"
             >
-              <SendIcon />
+              {isGenerating ? "Generating AI draft…" : draft ? "Regenerate AI draft" : "Generate AI draft"}
             </button>
           </div>
-        </div>
-
-        {error ? (
-          <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
-            {error}
-          </p>
-        ) : null}
-
-        <button
-          className="w-full rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-          disabled={disabled || !canGenerate || isGenerating}
-          onClick={onGenerateDraft}
-          type="button"
-        >
-          {isGenerating ? "Generating AI draft..." : draft ? "Regenerate AI draft" : "Generate AI draft"}
-        </button>
-      </div>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -1811,12 +1906,14 @@ function EditableNumber({
 
 function EditableSelect({
   allowEmpty = false,
+  emptyLabel = "Not specified",
   label,
   value,
   options,
   onChange,
 }: Readonly<{
   allowEmpty?: boolean;
+  emptyLabel?: string;
   label: string;
   value: string;
   options: readonly { value: string; label: string }[];
@@ -1830,7 +1927,7 @@ function EditableSelect({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
-        {allowEmpty ? <option value="">Not specified</option> : null}
+        {allowEmpty ? <option value="">{emptyLabel}</option> : null}
         {options.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
@@ -1935,22 +2032,24 @@ function PublishProgress({
         })}
       </div>
       {phase === "timeout" ? (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          The listing is published and AI enrichment is still running.
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+          <p className="font-semibold">Your listing is published and live on UM Nexus Trade.</p>
+          <p className="mt-1">AI enrichment is still running in the background — this does not affect your listing visibility.</p>
           {listingId ? (
             <button
-              className="ml-2 font-semibold underline"
+              className="mt-2 font-semibold underline underline-offset-2"
               onClick={onOpenListing}
               type="button"
             >
-              Open listing while analysis continues
+              View your listing →
             </button>
           ) : null}
         </div>
       ) : null}
       {phase === "failed" ? (
-        <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-          The listing was created, but one AI step failed. You can retry enrichment from the listing page.
+        <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          Your listing was created successfully. One AI step could not complete — this does not affect visibility.
+          You can retry AI enrichment from the listing page.
         </p>
       ) : null}
     </div>
@@ -1975,16 +2074,22 @@ function hasManualMinimum(payload: ListingPayload): boolean {
   return Boolean(payload.title.trim() && payload.description?.trim() && payload.category && payload.condition_label);
 }
 
-function prepareListingPayload(payload: ListingPayload): ListingPayload {
-  const pickupLocation = payload.pickup_location || payload.pickup_area || "kk1";
-  const category = payload.category || "others";
+function prepareListingPayload(payload: ListingPayload, mode: "draft" | "publish" = "draft"): ListingPayload {
+  const isDraft = mode === "draft";
+  const pickupLocation = isDraft
+    ? (payload.pickup_location || payload.pickup_area || "kk1")
+    : (payload.pickup_location || payload.pickup_area || "");
+  const category = isDraft ? (payload.category || "others") : (payload.category || "");
+  const conditionLabel = isDraft
+    ? (payload.condition_label || payload.condition || "good")
+    : (payload.condition_label || payload.condition || "");
   const contactMethod = payload.contact_method || "in_app";
   return {
     ...payload,
     title: payload.title.trim(),
     description: payload.description?.trim(),
     category,
-    condition_label: payload.condition_label || payload.condition || "good",
+    condition_label: conditionLabel,
     price: category === "free_items" ? 0 : Number(payload.price || 0),
     currency: payload.currency || "MYR",
     pickup_location: pickupLocation,
@@ -1995,7 +2100,7 @@ function prepareListingPayload(payload: ListingPayload): ListingPayload {
 }
 
 function validateManualListing(payload: ListingPayload, profile: CurrentProfile | null): string | null {
-  const prepared = prepareListingPayload(payload);
+  const prepared = prepareListingPayload(payload, "publish");
   if (!isProfileComplete(profile)) {
     return "Complete your trade profile before publishing.";
   }
@@ -2006,13 +2111,13 @@ function validateManualListing(payload: ListingPayload, profile: CurrentProfile 
     return "Description must be 10 to 2000 characters.";
   }
   if (!prepared.category) {
-    return "Choose a category.";
+    return "Choose a category before publishing.";
   }
   if (!prepared.condition_label) {
-    return "Choose a condition.";
+    return "Choose a condition before publishing.";
   }
   if (!prepared.pickup_location) {
-    return "Choose a pickup location.";
+    return "Choose a pickup location before publishing.";
   }
   if (prepared.price < 0) {
     return "Price must be 0 or more.";
