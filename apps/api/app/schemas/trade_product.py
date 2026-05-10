@@ -7,7 +7,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.ai_trade import TradeMatchRead
 from app.schemas.listing import ListingFavoriteRead, ListingRead, ListingReportRead
-from app.schemas.wanted_post import WantedPostRead
+from app.schemas.wanted_post import WantedPostRead, WantedResponseRead
 from app.services.trade_policy import normalize_contact_method, normalize_listing_status, normalize_user_report_reason
 from app.trade.constants import ContactMethod, ListingStatus, UserReportReason, UserStatus
 
@@ -111,6 +111,8 @@ class TradeDashboardResponse(BaseModel):
     transactions: list[TradeTransactionRead]
     contact_requests_received: list[ContactRequestRead] = Field(default_factory=list)
     contact_requests_sent: list[ContactRequestRead] = Field(default_factory=list)
+    wanted_responses_received: list[WantedResponseRead] = Field(default_factory=list)
+    wanted_responses_sent: list[WantedResponseRead] = Field(default_factory=list)
     metrics: TradeDashboardMetrics = Field(default_factory=TradeDashboardMetrics)
 
 

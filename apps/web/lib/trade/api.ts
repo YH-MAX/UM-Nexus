@@ -93,6 +93,35 @@ export type WantedPost = {
   updated_at: string;
 };
 
+export type WantedPostPage = {
+  items: WantedPost[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+};
+
+export type WantedResponse = {
+  id: string;
+  wanted_post_id: string;
+  seller_id: string;
+  buyer_id: string;
+  listing_id: string | null;
+  message: string | null;
+  seller_contact_method: string;
+  seller_contact_value: string | null;
+  contact_reveal_blocked_reason: string | null;
+  status: string;
+  buyer_response: string | null;
+  accepted_at: string | null;
+  rejected_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  wanted_post: WantedPost | null;
+  listing: Listing | null;
+};
+
 export type MatchCandidate = {
   wanted_post_id: string;
   title: string;
@@ -456,6 +485,24 @@ export type WantedPostPayload = {
   residential_college?: string;
 };
 
+export type WantedPostFilters = {
+  search?: string;
+  category?: string;
+  pickup_area?: string;
+  max_budget?: string;
+  status?: string;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export type WantedResponsePayload = {
+  message?: string;
+  seller_contact_method: string;
+  seller_contact_value?: string;
+  listing_id?: string;
+};
+
 export type ListingReport = {
   id: string;
   listing_id: string;
@@ -540,6 +587,8 @@ export type TradeDashboard = {
   transactions: TradeTransaction[];
   contact_requests_received: ContactRequest[];
   contact_requests_sent: ContactRequest[];
+  wanted_responses_received: WantedResponse[];
+  wanted_responses_sent: WantedResponse[];
   metrics: {
     recommendations_accepted: number;
     decision_feedback_count: number;
@@ -1149,8 +1198,51 @@ export async function createWantedPost(
   });
 }
 
+export async function listWantedPosts(filters: WantedPostFilters = {}): Promise<WantedPostPage> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value === undefined || value === null || value === "") continue;
+    params.set(key, String(value));
+  }
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return fetchJson<WantedPostPage>(`/wanted-posts${query}`);
+}
+
 export async function getWantedPost(id: string): Promise<WantedPost> {
   return fetchJson<WantedPost>(`/wanted-posts/${id}`);
+}
+
+export async function updateWantedPostStatus(id: string, status: "active" | "closed"): Promise<WantedPost> {
+  return fetchJson<WantedPost>(`/wanted-posts/${id}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function createWantedResponse(
+  id: string,
+  payload: WantedResponsePayload,
+): Promise<WantedResponse> {
+  return fetchJson<WantedResponse>(`/wanted-posts/${id}/responses`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateWantedResponse(
+  id: string,
+  payload: { status: "accepted" | "rejected"; buyer_response?: string },
+): Promise<WantedResponse> {
+  return fetchJson<WantedResponse>(`/wanted-posts/responses/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function cancelWantedResponse(id: string): Promise<WantedResponse> {
+  return fetchJson<WantedResponse>(`/wanted-posts/responses/${id}/cancel`, {
+    method: "PATCH",
+  });
 }
 
 export async function getWantedPostRecommendations(

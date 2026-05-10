@@ -70,6 +70,7 @@ from app.services.trade_service import (
     update_ai_settings,
     update_trade_category,
     update_trade_transaction,
+    wanted_response_read,
 )
 
 
@@ -267,6 +268,14 @@ def trade_dashboard_endpoint(
         contact_requests_sent=[
             contact_request_read(contact_request, current_user)
             for contact_request in dashboard["contact_requests_sent"]
+        ],
+        wanted_responses_received=[
+            wanted_response_read(wanted_response, current_user)
+            for wanted_response in dashboard["wanted_responses_received"]
+        ],
+        wanted_responses_sent=[
+            wanted_response_read(wanted_response, current_user)
+            for wanted_response in dashboard["wanted_responses_sent"]
         ],
         metrics=dashboard["metrics"],
     )

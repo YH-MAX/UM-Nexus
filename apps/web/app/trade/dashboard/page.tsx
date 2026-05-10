@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Heart, Inbox, PackageCheck, PlusCircle, Store } from "lucide-react";
+import { Heart, Inbox, Megaphone, PlusCircle, Store } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -15,26 +15,30 @@ import { StatusPill, statusTone } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   cancelContactRequest,
+  cancelWantedResponse,
   formatMoney,
   formatPickupLocation,
   formatRelativeTime,
   getTradeDashboard,
   resolveContactRequest,
   updateContactRequest,
+  updateWantedResponse,
   updateTradeTransaction,
   type ContactRequest,
   type Listing,
   type TradeDashboard,
   type TradeTransaction,
+  type WantedResponse,
 } from "@/lib/trade/api";
 
-type DashboardTab = "overview" | "listings" | "received" | "sent" | "drafts" | "sold";
+type DashboardTab = "overview" | "listings" | "received" | "sent" | "wanted" | "drafts" | "sold";
 
 const tabs: Array<{ id: DashboardTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "listings", label: "My Listings" },
   { id: "received", label: "Buyer Requests" },
   { id: "sent", label: "My Requests" },
+  { id: "wanted", label: "Wanted" },
   { id: "drafts", label: "Drafts" },
   { id: "sold", label: "Sold" },
 ];
@@ -46,6 +50,7 @@ export default function TradeDashboardPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
   const [highlightedRequestId, setHighlightedRequestId] = useState<string | null>(null);
   const [highlightedListingId, setHighlightedListingId] = useState<string | null>(null);
+  const [highlightedWantedResponseId, setHighlightedWantedResponseId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState<string | null>(null);
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, { agreedPrice: string; followedAi: boolean }>>({});
@@ -100,8 +105,11 @@ export default function TradeDashboardPage() {
     const tab = searchParams.get("tab");
     const requestId = searchParams.get("request_id");
     const listingId = searchParams.get("listing_id");
+    const wantedResponseId = searchParams.get("wanted_response_id");
     if (isDashboardTab(tab)) {
       setActiveTab(tab);
+    } else if (wantedResponseId) {
+      setActiveTab("wanted");
     } else if (requestId && dashboard?.contact_requests_received.some((request) => request.id === requestId)) {
       setActiveTab("received");
     } else if (requestId && dashboard?.contact_requests_sent.some((request) => request.id === requestId)) {
@@ -111,6 +119,7 @@ export default function TradeDashboardPage() {
     }
     setHighlightedRequestId(requestId);
     setHighlightedListingId(listingId);
+    setHighlightedWantedResponseId(wantedResponseId);
   }, [dashboard, searchParams]);
 
   useEffect(() => {
@@ -140,15 +149,29 @@ export default function TradeDashboardPage() {
   }, [activeTab, dashboard, highlightedListingId]);
 
   useEffect(() => {
-    if (!highlightedRequestId && !highlightedListingId) {
+    if (!dashboard || !highlightedWantedResponseId) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      document.getElementById(`wanted-response-${highlightedWantedResponseId}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 100);
+    return () => window.clearTimeout(timeout);
+  }, [activeTab, dashboard, highlightedWantedResponseId]);
+
+  useEffect(() => {
+    if (!highlightedRequestId && !highlightedListingId && !highlightedWantedResponseId) {
       return;
     }
     const timeout = window.setTimeout(() => {
       setHighlightedRequestId(null);
       setHighlightedListingId(null);
+      setHighlightedWantedResponseId(null);
     }, 60_000);
     return () => window.clearTimeout(timeout);
-  }, [highlightedRequestId, highlightedListingId]);
+  }, [highlightedRequestId, highlightedListingId, highlightedWantedResponseId]);
 
   const stats = useMemo(() => {
     const listings = dashboard?.listings ?? [];
@@ -158,6 +181,10 @@ export default function TradeDashboardPage() {
         ...(dashboard?.contact_requests_received ?? []),
         ...(dashboard?.contact_requests_sent ?? []),
       ].filter((request) => request.status === "pending").length,
+      pendingWantedResponses: [
+        ...(dashboard?.wanted_responses_received ?? []),
+        ...(dashboard?.wanted_responses_sent ?? []),
+      ].filter((response) => response.status === "pending").length,
       savedItems: dashboard?.favorites.length ?? 0,
       soldItems: listings.filter((listing) => listing.status === "sold").length,
     };
@@ -302,6 +329,41 @@ export default function TradeDashboardPage() {
     }
   }
 
+  async function answerWantedResponse(response: WantedResponse, status: "accepted" | "rejected") {
+    setIsUpdating(response.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await updateWantedResponse(response.id, {
+        status,
+        buyer_response: status === "accepted" ? "Accepted. Contact details are now visible." : "Rejected by buyer.",
+      });
+      setNotice(status === "accepted" ? "Offer accepted. Seller contact is visible now." : "Offer rejected. The seller has been notified.");
+      await loadDashboard();
+      notifyAlertStateChanged();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update wanted response.");
+    } finally {
+      setIsUpdating(null);
+    }
+  }
+
+  async function cancelSentWantedResponse(response: WantedResponse) {
+    setIsUpdating(response.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await cancelWantedResponse(response.id);
+      setNotice("Offer cancelled. The buyer has been notified.");
+      await loadDashboard();
+      notifyAlertStateChanged();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to cancel wanted response.");
+    } finally {
+      setIsUpdating(null);
+    }
+  }
+
   return (
     <TradeShell
       title="My Trade"
@@ -335,8 +397,8 @@ export default function TradeDashboardPage() {
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <DashboardStatCard detail="Available or reserved" icon={Store} label="Active listings" value={stats.activeListings} />
             <DashboardStatCard detail="Awaiting response" icon={Inbox} label="Pending requests" value={stats.pendingRequests} />
+            <DashboardStatCard detail="Wanted offers" icon={Megaphone} label="Wanted responses" value={stats.pendingWantedResponses} />
             <DashboardStatCard detail="Saved for later" icon={Heart} label="Saved items" value={stats.savedItems} />
-            <DashboardStatCard detail="Marked sold" icon={PackageCheck} label="Sold items" value={stats.soldItems} />
           </section>
 
           <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
@@ -379,7 +441,7 @@ export default function TradeDashboardPage() {
               onAnswer={answerContactRequest}
               onResolve={resolveSellerRequest}
             />
-          ) : (
+          ) : activeTab === "sent" ? (
             <RequestList
               emptyText="No sent requests yet."
               isUpdating={isUpdating}
@@ -388,6 +450,16 @@ export default function TradeDashboardPage() {
               role="buyer"
               onAnswer={answerContactRequest}
               onCancel={cancelSentRequest}
+            />
+          ) : (
+            <WantedResponsesTab
+              highlightedWantedResponseId={highlightedWantedResponseId}
+              isUpdating={isUpdating}
+              listings={dashboard.listings}
+              received={dashboard.wanted_responses_received}
+              sent={dashboard.wanted_responses_sent}
+              onAnswer={answerWantedResponse}
+              onCancel={cancelSentWantedResponse}
             />
           )}
 
@@ -559,6 +631,163 @@ function RequestList({
         />
       ))}
     </section>
+  );
+}
+
+function WantedResponsesTab({
+  highlightedWantedResponseId,
+  isUpdating,
+  listings,
+  received,
+  sent,
+  onAnswer,
+  onCancel,
+}: Readonly<{
+  highlightedWantedResponseId: string | null;
+  isUpdating: string | null;
+  listings: Listing[];
+  received: WantedResponse[];
+  sent: WantedResponse[];
+  onAnswer: (response: WantedResponse, status: "accepted" | "rejected") => Promise<void>;
+  onCancel: (response: WantedResponse) => Promise<void>;
+}>) {
+  const listingsFromWanted = listings.filter((listing) => listing.source_wanted_post_id);
+  return (
+    <section className="grid gap-5 lg:grid-cols-2">
+      <Panel title="Incoming wanted offers">
+        {received.length === 0 ? (
+          <EmptyState
+            actionHref="/trade/want"
+            actionLabel="Post wanted request"
+            description="Seller offers for your wanted posts will appear here."
+            title="No incoming offers"
+          />
+        ) : (
+          received.map((response) => (
+            <WantedResponseCard
+              isHighlighted={highlightedWantedResponseId === response.id}
+              isUpdating={isUpdating === response.id}
+              key={response.id}
+              response={response}
+              role="buyer"
+              onAnswer={onAnswer}
+            />
+          ))
+        )}
+      </Panel>
+      <Panel title="My sent offers">
+        {sent.length === 0 ? (
+          <EmptyState
+            actionHref="/trade/want"
+            actionLabel="Browse wanted board"
+            description="Respond to buyer demand when you have the right item."
+            title="No sent offers"
+          />
+        ) : (
+          sent.map((response) => (
+            <WantedResponseCard
+              isHighlighted={highlightedWantedResponseId === response.id}
+              isUpdating={isUpdating === response.id}
+              key={response.id}
+              response={response}
+              role="seller"
+              onCancel={onCancel}
+            />
+          ))
+        )}
+      </Panel>
+      <Panel title="Listings created from wanted posts">
+        {listingsFromWanted.length === 0 ? (
+          <EmptyState
+            actionHref="/trade/want"
+            actionLabel="Browse wanted board"
+            description="Listings you create from a wanted request will appear here for quick follow-up."
+            title="No wanted-linked listings"
+          />
+        ) : (
+          listingsFromWanted.map((listing) => <ListingRow key={listing.id} listing={listing} />)
+        )}
+      </Panel>
+    </section>
+  );
+}
+
+function WantedResponseCard({
+  isHighlighted = false,
+  isUpdating = false,
+  response,
+  role,
+  onAnswer,
+  onCancel,
+}: Readonly<{
+  isHighlighted?: boolean;
+  isUpdating?: boolean;
+  response: WantedResponse;
+  role: "buyer" | "seller";
+  onAnswer?: (response: WantedResponse, status: "accepted" | "rejected") => Promise<void>;
+  onCancel?: (response: WantedResponse) => Promise<void>;
+}>) {
+  const wantedTitle = response.wanted_post?.title ?? "Wanted request";
+  return (
+    <article
+      className={`rounded-2xl border border-slate-200 bg-white p-4 transition ${
+        isHighlighted ? "border-emerald-300 ring-4 ring-emerald-100" : ""
+      }`}
+      data-highlighted={isHighlighted ? "true" : "false"}
+      id={`wanted-response-${response.id}`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <Link className="font-semibold text-slate-950 transition hover:text-emerald-800" href={`/wanted-posts/${response.wanted_post_id}`}>
+            {wantedTitle}
+          </Link>
+          <p className="mt-1 text-sm leading-6 text-slate-600">{response.message ?? "No offer message provided."}</p>
+          <p className="mt-2 text-xs text-slate-500">{formatRelativeTime(response.created_at)}</p>
+        </div>
+        <StatusPill tone={statusTone(response.status)}>{response.status}</StatusPill>
+      </div>
+
+      {response.listing ? (
+        <Link className="mt-3 block rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm transition hover:border-emerald-200 hover:bg-emerald-50" href={`/trade/${response.listing.id}`}>
+          <span className="font-semibold text-slate-950">{response.listing.title}</span>
+          <span className="mt-1 block text-slate-600">
+            {formatMoney(response.listing.price, response.listing.currency)} · {formatPickupLocation(response.listing.pickup_location ?? response.listing.pickup_area)}
+          </span>
+        </Link>
+      ) : null}
+
+      {response.status === "accepted" ? (
+        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+          Seller contact: {formatContactLine(response.seller_contact_method, response.seller_contact_value)}
+          {response.contact_reveal_blocked_reason ? (
+            <p className="mt-1 text-xs font-semibold text-emerald-800">{response.contact_reveal_blocked_reason}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {response.buyer_response ? (
+        <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          Buyer note: {response.buyer_response}
+        </p>
+      ) : null}
+
+      {role === "buyer" && response.status === "pending" && onAnswer ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button className="trade-button-primary" disabled={isUpdating} onClick={() => void onAnswer(response, "accepted")} type="button">
+            {isUpdating ? "Updating..." : "Accept offer"}
+          </button>
+          <button className="trade-button-secondary border-rose-200 text-rose-700 hover:bg-rose-50" disabled={isUpdating} onClick={() => void onAnswer(response, "rejected")} type="button">
+            Reject
+          </button>
+        </div>
+      ) : null}
+
+      {role === "seller" && response.status === "pending" && onCancel ? (
+        <button className="trade-button-secondary mt-3" disabled={isUpdating} onClick={() => void onCancel(response)} type="button">
+          {isUpdating ? "Cancelling..." : "Cancel offer"}
+        </button>
+      ) : null}
+    </article>
   );
 }
 

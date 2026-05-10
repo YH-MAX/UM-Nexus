@@ -49,7 +49,7 @@ export function UserActionModal({
 
         {isHighRisk ? (
           <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <span className="font-semibold">Warning:</span> This action will restrict the user's access to UM Nexus Trade.
+            <span className="font-semibold">Warning:</span> This action will restrict the user&apos;s access to UM Nexus Trade.
           </div>
         ) : null}
 

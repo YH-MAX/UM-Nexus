@@ -4,7 +4,7 @@ const publicRoutes = [
   { path: "/", heading: /Buy smarter|UM Nexus Trade/i },
   { path: "/trade", heading: /Browse UM Listings/i },
   { path: "/trade/sell", heading: /Sell an item/i },
-  { path: "/trade/want", heading: /Looking for something/i },
+  { path: "/trade/want", heading: /Wanted board/i },
   { path: "/trade/saved", heading: /Saved listings/i },
   { path: "/trade/dashboard", heading: /My Trade/i },
   { path: "/trade/notifications", heading: /Trade alerts/i },

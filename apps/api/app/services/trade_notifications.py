@@ -34,6 +34,10 @@ TRADE_NOTIFICATION_DEFINITIONS: dict[str, NotificationDefinition] = {
     "listing_reported": NotificationDefinition(priority="high", group="safety", dedupe_window_minutes=24 * 60),
     "report_reviewed": NotificationDefinition(group="safety", dedupe_window_minutes=24 * 60),
     "wanted_match_listing_created": NotificationDefinition(priority="high", group="wanted", dedupe_window_minutes=24 * 60),
+    "wanted_response_received": NotificationDefinition(priority="high", group="wanted"),
+    "wanted_response_accepted": NotificationDefinition(priority="high", group="wanted"),
+    "wanted_response_rejected": NotificationDefinition(group="wanted"),
+    "wanted_response_cancelled": NotificationDefinition(group="wanted"),
 }
 
 TRADE_NOTIFICATION_TYPES = frozenset(TRADE_NOTIFICATION_DEFINITIONS)

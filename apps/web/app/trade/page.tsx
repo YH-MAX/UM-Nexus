@@ -468,7 +468,7 @@ function FilterPanel({
   onUpdate: <K extends keyof ListingFilters>(key: K, value: ListingFilters[K]) => void;
 }>) {
   return (
-    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
+    <div className="grid min-w-0 gap-3 md:grid-cols-2 lg:grid-cols-6">
       <SelectField label="Condition" value={filters.condition} onChange={(value) => onUpdate("condition", value)}>
         <option value="">Any condition</option>
         {conditionOptions.map((item) => (
@@ -486,7 +486,7 @@ function FilterPanel({
           <option key={item.value} value={item.value}>{item.label}</option>
         ))}
       </SelectField>
-      <div className="grid gap-1.5">
+      <div className="grid min-w-0 gap-1.5">
         <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Min RM</span>
         <input
           className={`trade-input ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
@@ -497,7 +497,7 @@ function FilterPanel({
           onChange={(event) => onUpdate("min_price", event.target.value)}
         />
       </div>
-      <div className="grid gap-1.5">
+      <div className="grid min-w-0 gap-1.5">
         <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Max RM</span>
         <input
           className={`trade-input ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
@@ -545,7 +545,7 @@ function SelectField({
   onChange: (value: string) => void;
 }>) {
   return (
-    <label className="grid gap-1.5">
+    <label className="grid min-w-0 gap-1.5">
       <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</span>
       <select
         className="trade-input"

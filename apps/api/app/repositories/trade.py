@@ -32,6 +32,7 @@ from app.models import (
     UserReport,
     WantedPost,
     WantedPostEmbedding,
+    WantedResponse,
 )
 from app.trade.constants import PUBLIC_LISTING_STATUSES
 
@@ -273,9 +274,52 @@ class TradeRepository:
         )
         return int(self.db.scalar(stmt) or 0)
 
-    def list_wanted_posts(self, status: str = "active") -> Sequence[WantedPost]:
-        stmt = select(WantedPost).where(WantedPost.status == status).order_by(desc(WantedPost.created_at))
-        return self.db.scalars(stmt).all()
+    def list_wanted_posts(
+        self,
+        status: str | None = "active",
+        *,
+        search: str | None = None,
+        category: str | None = None,
+        pickup_area: str | None = None,
+        max_budget: float | None = None,
+        sort: str = "latest",
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[Sequence[WantedPost], int]:
+        stmt = select(WantedPost)
+        count_stmt = select(func.count()).select_from(WantedPost)
+        filters = []
+        if status:
+            filters.append(WantedPost.status == status)
+        if category:
+            filters.append(WantedPost.category == category)
+        if pickup_area:
+            filters.append(WantedPost.preferred_pickup_area == pickup_area)
+        if max_budget is not None:
+            filters.append(or_(WantedPost.max_budget.is_(None), WantedPost.max_budget <= max_budget))
+        if search:
+            pattern = f"%{search.strip()}%"
+            filters.append(
+                or_(
+                    WantedPost.title.ilike(pattern),
+                    WantedPost.description.ilike(pattern),
+                    WantedPost.desired_item_name.ilike(pattern),
+                )
+            )
+        for condition in filters:
+            stmt = stmt.where(condition)
+            count_stmt = count_stmt.where(condition)
+        if sort == "budget_high":
+            stmt = stmt.order_by(desc(WantedPost.max_budget), desc(WantedPost.created_at))
+        elif sort == "budget_low":
+            stmt = stmt.order_by(asc(WantedPost.max_budget), desc(WantedPost.created_at))
+        else:
+            stmt = stmt.order_by(desc(WantedPost.created_at))
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        return self.db.scalars(stmt).all(), int(self.db.scalar(count_stmt) or 0)
 
     def list_wanted_posts_by_buyer(self, buyer_id: str) -> Sequence[WantedPost]:
         stmt = select(WantedPost).where(WantedPost.buyer_id == buyer_id).order_by(desc(WantedPost.created_at))
@@ -296,6 +340,81 @@ class TradeRepository:
     def get_wanted_post_or_none(self, wanted_post_id: str) -> WantedPost | None:
         stmt = select(WantedPost).where(WantedPost.id == wanted_post_id)
         return self.db.scalar(stmt)
+
+    def update_wanted_post(self, wanted_post: WantedPost, values: dict) -> WantedPost:
+        for field_name, value in values.items():
+            setattr(wanted_post, field_name, value)
+        self.db.add(wanted_post)
+        self.db.commit()
+        self.db.refresh(wanted_post)
+        return wanted_post
+
+    def create_wanted_response(self, values: dict) -> WantedResponse:
+        wanted_response = WantedResponse(**values)
+        self.db.add(wanted_response)
+        self.db.commit()
+        return self.get_wanted_response_or_none(wanted_response.id) or wanted_response
+
+    def get_wanted_response_or_none(self, wanted_response_id: str) -> WantedResponse | None:
+        stmt = (
+            select(WantedResponse)
+            .options(selectinload(WantedResponse.wanted_post), selectinload(WantedResponse.listing))
+            .where(WantedResponse.id == wanted_response_id)
+        )
+        return self.db.scalar(stmt)
+
+    def get_active_wanted_response_for_seller(self, wanted_post_id: str, seller_id: str) -> WantedResponse | None:
+        stmt = (
+            select(WantedResponse)
+            .where(
+                WantedResponse.wanted_post_id == wanted_post_id,
+                WantedResponse.seller_id == seller_id,
+                WantedResponse.status.in_(("pending", "accepted")),
+            )
+        )
+        return self.db.scalar(stmt)
+
+    def list_wanted_responses_received(self, buyer_id: str) -> Sequence[WantedResponse]:
+        stmt = (
+            select(WantedResponse)
+            .options(selectinload(WantedResponse.wanted_post), selectinload(WantedResponse.listing))
+            .where(WantedResponse.buyer_id == buyer_id)
+            .order_by(desc(WantedResponse.updated_at), desc(WantedResponse.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
+    def list_wanted_responses_sent(self, seller_id: str) -> Sequence[WantedResponse]:
+        stmt = (
+            select(WantedResponse)
+            .options(selectinload(WantedResponse.wanted_post), selectinload(WantedResponse.listing))
+            .where(WantedResponse.seller_id == seller_id)
+            .order_by(desc(WantedResponse.updated_at), desc(WantedResponse.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
+    def list_wanted_responses_for_post(self, wanted_post_id: str) -> Sequence[WantedResponse]:
+        stmt = (
+            select(WantedResponse)
+            .options(selectinload(WantedResponse.wanted_post), selectinload(WantedResponse.listing))
+            .where(WantedResponse.wanted_post_id == wanted_post_id)
+            .order_by(desc(WantedResponse.updated_at), desc(WantedResponse.created_at))
+        )
+        return self.db.scalars(stmt).all()
+
+    def count_wanted_responses_by_user_since(self, seller_id: str, since: datetime) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(WantedResponse)
+            .where(WantedResponse.seller_id == seller_id, WantedResponse.created_at >= since)
+        )
+        return int(self.db.scalar(stmt) or 0)
+
+    def update_wanted_response(self, wanted_response: WantedResponse, values: dict) -> WantedResponse:
+        for field_name, value in values.items():
+            setattr(wanted_response, field_name, value)
+        self.db.add(wanted_response)
+        self.db.commit()
+        return self.get_wanted_response_or_none(wanted_response.id) or wanted_response
 
     def upsert_trade_match(
         self,

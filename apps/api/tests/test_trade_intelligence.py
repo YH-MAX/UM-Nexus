@@ -512,6 +512,24 @@ def test_wanted_post_recommendations_rank_strong_listing(client, db_session) -> 
     assert "risk" in recommendations[0]["risk_note"].lower()
 
 
+def test_wanted_post_recommendations_exclude_closed_wanted_posts(client, db_session) -> None:
+    seed_historical_sales(db_session)
+    listing = create_listing(client)
+    add_image(client, listing["id"])
+    wanted_post = create_wanted_post(client)
+    closed = client.patch(
+        f"/api/v1/wanted-posts/{wanted_post['id']}/status",
+        headers=AUTH_HEADERS,
+        json={"status": "closed"},
+    )
+
+    response = client.get(f"/api/v1/wanted-posts/{wanted_post['id']}/recommended-listings")
+
+    assert closed.status_code == 200
+    assert response.status_code == 200
+    assert response.json() == []
+
+
 def test_listing_matches_endpoint_supports_limit_and_min_score(client, db_session) -> None:
     seed_historical_sales(db_session)
     listing = create_listing(client)

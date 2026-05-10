@@ -340,6 +340,8 @@ def recommend_listings_for_wanted_post(
     wanted_post = repo.get_wanted_post_or_none(wanted_post_id)
     if wanted_post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted post not found")
+    if wanted_post.status != "active":
+        return []
 
     historical_sales = list(repo.list_historical_sales_for_category(wanted_post.category))
     listing_pricing_pairs = [

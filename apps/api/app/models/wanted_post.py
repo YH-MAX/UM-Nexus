@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.trade_match import TradeMatch
     from app.models.user import User
     from app.models.wanted_post_embedding import WantedPostEmbedding
+    from app.models.wanted_response import WantedResponse
 
 
 class WantedPost(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -43,4 +44,8 @@ class WantedPost(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="wanted_post",
         cascade="all, delete-orphan",
         uselist=False,
+    )
+    responses: Mapped[list["WantedResponse"]] = relationship(
+        back_populates="wanted_post",
+        cascade="all, delete-orphan",
     )

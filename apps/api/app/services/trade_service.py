@@ -20,6 +20,7 @@ from app.models import (
     User,
     UserReport,
     WantedPost,
+    WantedResponse,
 )
 from app.repositories.trade import TradeRepository
 from app.schemas.listing import (
@@ -50,7 +51,14 @@ from app.schemas.trade_product import (
     TradeCategoryUpdate,
     UserReportCreate,
 )
-from app.schemas.wanted_post import WantedPostCreate
+from app.schemas.wanted_post import (
+    WantedPostCreate,
+    WantedPostRead,
+    WantedPostStatusUpdate,
+    WantedResponseCreate,
+    WantedResponseDecision,
+    WantedResponseRead,
+)
 from app.services.demo_user import get_or_create_demo_user
 from app.services.storage_service import store_listing_image_upload
 from app.services.trade_policy import (
@@ -397,9 +405,37 @@ def create_wanted_post(db: Session, payload: WantedPostCreate, current_user: Use
     return wanted_post
 
 
-def list_wanted_posts(db: Session) -> list[WantedPost]:
+def list_wanted_posts(
+    db: Session,
+    *,
+    search: str | None = None,
+    category: str | None = None,
+    pickup_area: str | None = None,
+    max_budget: float | None = None,
+    status_filter: str | None = "active",
+    sort: str = "latest",
+    limit: int = 24,
+    offset: int = 0,
+) -> dict:
     repo = TradeRepository(db)
-    return list(repo.list_wanted_posts())
+    resolved_status = None if status_filter in {None, "all"} else status_filter
+    items, total = repo.list_wanted_posts(
+        resolved_status,
+        search=search,
+        category=normalize_category(category) if category else None,
+        pickup_area=normalize_pickup_location(pickup_area) if pickup_area else None,
+        max_budget=max_budget,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "items": list(items),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": offset + len(items) < total,
+    }
 
 
 def get_wanted_post(db: Session, wanted_post_id: str) -> WantedPost:
@@ -408,6 +444,158 @@ def get_wanted_post(db: Session, wanted_post_id: str) -> WantedPost:
     if wanted_post is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted post not found")
     return wanted_post
+
+
+def update_wanted_post_status(
+    db: Session,
+    wanted_post_id: str,
+    payload: WantedPostStatusUpdate,
+    current_user: User,
+) -> WantedPost:
+    repo = TradeRepository(db)
+    wanted_post = repo.get_wanted_post_or_none(wanted_post_id)
+    if wanted_post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted post not found")
+    if wanted_post.buyer_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the buyer can update this wanted post.")
+    return repo.update_wanted_post(wanted_post, {"status": payload.status})
+
+
+def create_wanted_response(
+    db: Session,
+    wanted_post_id: str,
+    payload: WantedResponseCreate,
+    current_user: User,
+) -> WantedResponse:
+    repo = TradeRepository(db)
+    wanted_post = repo.get_wanted_post_or_none(wanted_post_id)
+    if wanted_post is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted post not found")
+    if wanted_post.status != "active":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This wanted post is closed.")
+    if wanted_post.buyer_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot respond to your own wanted post.")
+    _ensure_profile_ready(current_user)
+    if repo.get_active_wanted_response_for_seller(wanted_post.id, current_user.id) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You already have an active response for this wanted post.")
+    _ensure_daily_limit(
+        repo.count_wanted_responses_by_user_since(current_user.id, _daily_limit_start()),
+        get_settings().trade_contact_request_daily_limit,
+        "You reached today's response limit. Try again tomorrow.",
+    )
+    listing = None
+    if payload.listing_id:
+        listing = repo.get_listing_or_none(payload.listing_id)
+        if listing is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Listing not found")
+        if listing.seller_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only your own listings can be attached.")
+        if listing.status not in {"available", "reserved"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only available or reserved listings can be attached.")
+
+    contact_method = payload.seller_contact_method
+    contact_value = (payload.seller_contact_value or "").strip()
+    if contact_method == "email" and not contact_value:
+        contact_value = current_user.email
+    if contact_method in {"telegram", "whatsapp"} and not contact_value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contact value is required for this method.")
+    if contact_method == "in_app":
+        contact_value = None
+
+    wanted_response = repo.create_wanted_response(
+        {
+            "wanted_post_id": wanted_post.id,
+            "seller_id": current_user.id,
+            "buyer_id": wanted_post.buyer_id,
+            "listing_id": listing.id if listing is not None else None,
+            "message": payload.message,
+            "seller_contact_method": contact_method,
+            "seller_contact_value": contact_value,
+            "status": "pending",
+        }
+    )
+    _notify(
+        repo,
+        user_id=wanted_post.buyer_id,
+        actor_id=current_user.id,
+        notification_type="wanted_response_received",
+        title="Seller responded to your wanted post",
+        body=f"A seller responded to your wanted request: {wanted_post.title}.",
+        action_url=f"/trade/dashboard?tab=wanted&wanted_response_id={wanted_response.id}",
+        entity_type="wanted_response",
+        entity_id=wanted_response.id,
+        metadata={"wanted_post_id": wanted_post.id, "wanted_response_id": wanted_response.id},
+    )
+    return wanted_response
+
+
+def decide_wanted_response(
+    db: Session,
+    wanted_response_id: str,
+    payload: WantedResponseDecision,
+    current_user: User,
+) -> WantedResponse:
+    repo = TradeRepository(db)
+    wanted_response = repo.get_wanted_response_or_none(wanted_response_id)
+    if wanted_response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted response not found")
+    if wanted_response.buyer_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the buyer can answer this response.")
+    if wanted_response.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending wanted responses can be answered.")
+    now = datetime.now(UTC)
+    values = {"status": payload.status, "buyer_response": payload.buyer_response}
+    if payload.status == "accepted":
+        values["accepted_at"] = now
+    else:
+        values["rejected_at"] = now
+    updated = repo.update_wanted_response(wanted_response, values)
+    notification_type = "wanted_response_accepted" if updated.status == "accepted" else "wanted_response_rejected"
+    _notify(
+        repo,
+        user_id=updated.seller_id,
+        actor_id=current_user.id,
+        notification_type=notification_type,
+        title="Wanted response accepted" if updated.status == "accepted" else "Wanted response rejected",
+        body=(
+            f"The buyer accepted your response to {updated.wanted_post.title}."
+            if updated.status == "accepted"
+            else f"The buyer rejected your response to {updated.wanted_post.title}."
+        ),
+        action_url=f"/trade/dashboard?tab=wanted&wanted_response_id={updated.id}",
+        entity_type="wanted_response",
+        entity_id=updated.id,
+        metadata={"wanted_post_id": updated.wanted_post_id, "wanted_response_id": updated.id},
+    )
+    return updated
+
+
+def cancel_wanted_response(db: Session, wanted_response_id: str, current_user: User) -> WantedResponse:
+    repo = TradeRepository(db)
+    wanted_response = repo.get_wanted_response_or_none(wanted_response_id)
+    if wanted_response is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted response not found")
+    if wanted_response.seller_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the seller can cancel this response.")
+    if wanted_response.status != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only pending wanted responses can be cancelled.")
+    updated = repo.update_wanted_response(
+        wanted_response,
+        {"status": "cancelled", "cancelled_at": datetime.now(UTC)},
+    )
+    _notify(
+        repo,
+        user_id=updated.buyer_id,
+        actor_id=current_user.id,
+        notification_type="wanted_response_cancelled",
+        title="Seller cancelled a wanted response",
+        body=f"A seller cancelled their response to your wanted request: {updated.wanted_post.title}.",
+        action_url=f"/trade/dashboard?tab=wanted&wanted_response_id={updated.id}",
+        entity_type="wanted_response",
+        entity_id=updated.id,
+        metadata={"wanted_post_id": updated.wanted_post_id, "wanted_response_id": updated.id},
+    )
+    return updated
 
 
 def create_listing_report(
@@ -807,6 +995,36 @@ def contact_request_read(contact_request: TradeContactRequest, viewer: User) -> 
     )
 
 
+def wanted_response_read(wanted_response: WantedResponse, viewer: User) -> WantedResponseRead:
+    is_buyer = viewer.id == wanted_response.buyer_id
+    is_seller = viewer.id == wanted_response.seller_id
+    is_party = is_buyer or is_seller
+    seller_contact_reveal = is_party and wanted_response.status == "accepted" and _profile_ready(viewer)
+    blocked_reason = None
+    if is_buyer and wanted_response.status == "accepted" and not _profile_ready(viewer):
+        blocked_reason = "Complete your profile before viewing seller contact details."
+    return WantedResponseRead(
+        id=wanted_response.id,
+        wanted_post_id=wanted_response.wanted_post_id,
+        seller_id=wanted_response.seller_id,
+        buyer_id=wanted_response.buyer_id,
+        listing_id=wanted_response.listing_id,
+        message=wanted_response.message,
+        seller_contact_method=wanted_response.seller_contact_method,
+        seller_contact_value=wanted_response.seller_contact_value if seller_contact_reveal else None,
+        contact_reveal_blocked_reason=blocked_reason,
+        status=wanted_response.status,
+        buyer_response=wanted_response.buyer_response,
+        accepted_at=wanted_response.accepted_at,
+        rejected_at=wanted_response.rejected_at,
+        cancelled_at=wanted_response.cancelled_at,
+        created_at=wanted_response.created_at,
+        updated_at=wanted_response.updated_at,
+        wanted_post=WantedPostRead.model_validate(wanted_response.wanted_post) if wanted_response.wanted_post else None,
+        listing=ListingRead.model_validate(wanted_response.listing) if wanted_response.listing else None,
+    )
+
+
 def create_user_report(
     db: Session,
     reported_user_id: str,
@@ -1118,6 +1336,8 @@ def trade_dashboard(db: Session, current_user: User) -> dict:
     transactions = list(repo.list_transactions_for_user(current_user.id))
     contact_requests_received = list(repo.list_contact_requests_received(current_user.id))
     contact_requests_sent = list(repo.list_contact_requests_sent(current_user.id))
+    wanted_responses_received = list(repo.list_wanted_responses_received(current_user.id))
+    wanted_responses_sent = list(repo.list_wanted_responses_sent(current_user.id))
     feedback = list(repo.list_decision_feedback_for_user(current_user.id))
     return {
         "listings": listings,
@@ -1127,6 +1347,8 @@ def trade_dashboard(db: Session, current_user: User) -> dict:
         "transactions": transactions,
         "contact_requests_received": contact_requests_received,
         "contact_requests_sent": contact_requests_sent,
+        "wanted_responses_received": wanted_responses_received,
+        "wanted_responses_sent": wanted_responses_sent,
         "metrics": _dashboard_metrics(listings, transactions, feedback),
     }
 

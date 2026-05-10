@@ -28,6 +28,21 @@ def listing_payload(**overrides):
     return payload
 
 
+def wanted_payload(**overrides):
+    payload = {
+        "title": "Looking for Casio scientific calculator",
+        "description": "Need a calculator for exams and can meet around FSKTM.",
+        "category": "electronics",
+        "desired_item_name": "scientific calculator",
+        "max_budget": 60,
+        "currency": "MYR",
+        "preferred_pickup_area": "fsktm",
+        "residential_college": "KK12",
+    }
+    payload.update(overrides)
+    return payload
+
+
 def complete_profile(client) -> None:
     response = client.patch(
         "/api/v1/users/me/profile",
@@ -44,6 +59,13 @@ def complete_profile(client) -> None:
 def create_published_listing(client, **overrides) -> dict:
     complete_profile(client)
     response = client.post("/api/v1/listings?publish=true", headers=AUTH_HEADERS, json=listing_payload(**overrides))
+    assert response.status_code == 201
+    return response.json()
+
+
+def create_wanted_post(client, **overrides) -> dict:
+    complete_profile(client)
+    response = client.post("/api/v1/wanted-posts", headers=AUTH_HEADERS, json=wanted_payload(**overrides))
     assert response.status_code == 201
     return response.json()
 
@@ -760,6 +782,142 @@ def test_listing_created_from_wanted_post_notifies_wanted_owner(client, token_ve
     assert listing["source_wanted_post_id"] == wanted.json()["id"]
     assert notifications.status_code == 200
     assert notifications.json()[0]["type"] == "wanted_match_listing_created"
+
+
+def test_wanted_board_filters_pagination_and_owner_status_controls(client, token_verifier) -> None:
+    owner_claims = token_verifier.claims
+    first = create_wanted_post(client)
+    create_wanted_post(
+        client,
+        title="Need a compact desk lamp",
+        description="Small lamp for dorm desk.",
+        category="dorm_room",
+        desired_item_name="desk lamp",
+        max_budget=25,
+        preferred_pickup_area="kk",
+    )
+
+    filtered = client.get(
+        "/api/v1/wanted-posts?search=casio&category=electronics&pickup_area=fsktm&max_budget=80&limit=1",
+        headers=AUTH_HEADERS,
+    )
+    closed = client.patch(f"/api/v1/wanted-posts/{first['id']}/status", headers=AUTH_HEADERS, json={"status": "closed"})
+    active_after_close = client.get("/api/v1/wanted-posts?status=active", headers=AUTH_HEADERS)
+    all_after_close = client.get("/api/v1/wanted-posts?status=all", headers=AUTH_HEADERS)
+
+    token_verifier.claims = owner_claims.model_copy(update={"sub": uuid4(), "email": "other-seller@siswa.um.edu.my"})
+    complete_profile(client)
+    forbidden = client.patch(f"/api/v1/wanted-posts/{first['id']}/status", headers=AUTH_HEADERS, json={"status": "active"})
+
+    token_verifier.claims = owner_claims
+    reopened = client.patch(f"/api/v1/wanted-posts/{first['id']}/status", headers=AUTH_HEADERS, json={"status": "active"})
+
+    assert filtered.status_code == 200
+    assert filtered.json()["total"] == 1
+    assert filtered.json()["items"][0]["id"] == first["id"]
+    assert filtered.json()["has_more"] is False
+    assert closed.status_code == 200
+    assert closed.json()["status"] == "closed"
+    assert first["id"] not in {item["id"] for item in active_after_close.json()["items"]}
+    assert first["id"] in {item["id"] for item in all_after_close.json()["items"]}
+    assert forbidden.status_code == 403
+    assert reopened.status_code == 200
+    assert reopened.json()["status"] == "active"
+
+
+def test_wanted_response_lifecycle_hides_contact_until_buyer_accepts(client, token_verifier) -> None:
+    buyer_claims = token_verifier.claims
+    wanted = create_wanted_post(client)
+
+    seller_claims = buyer_claims.model_copy(update={"sub": uuid4(), "email": "wanted-seller@siswa.um.edu.my"})
+    token_verifier.claims = seller_claims
+    complete_profile(client)
+    response = client.post(
+        f"/api/v1/wanted-posts/{wanted['id']}/responses",
+        headers=AUTH_HEADERS,
+        json={
+            "message": "I have a clean FX-570EX and can meet at FSKTM.",
+            "seller_contact_method": "telegram",
+            "seller_contact_value": "@seller_fx",
+        },
+    )
+    duplicate = client.post(
+        f"/api/v1/wanted-posts/{wanted['id']}/responses",
+        headers=AUTH_HEADERS,
+        json={
+            "message": "Second offer should be blocked.",
+            "seller_contact_method": "telegram",
+            "seller_contact_value": "@seller_fx",
+        },
+    )
+
+    token_verifier.claims = buyer_claims
+    buyer_dashboard = client.get("/api/v1/users/me/trade-dashboard", headers=AUTH_HEADERS)
+    accepted = client.patch(
+        f"/api/v1/wanted-posts/responses/{response.json()['id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "accepted", "buyer_response": "Accepted, please message me."},
+    )
+    buyer_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    token_verifier.claims = seller_claims
+    seller_dashboard = client.get("/api/v1/users/me/trade-dashboard", headers=AUTH_HEADERS)
+    cancel_after_accept = client.patch(f"/api/v1/wanted-posts/responses/{response.json()['id']}/cancel", headers=AUTH_HEADERS)
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "pending"
+    assert response.json()["seller_contact_value"] is None
+    assert duplicate.status_code == 409
+    assert buyer_dashboard.status_code == 200
+    assert buyer_dashboard.json()["wanted_responses_received"][0]["seller_contact_value"] is None
+    assert buyer_notifications.json()[0]["type"] == "wanted_response_received"
+    assert accepted.status_code == 200
+    assert accepted.json()["seller_contact_value"] == "@seller_fx"
+    assert accepted.json()["status"] == "accepted"
+    assert seller_dashboard.status_code == 200
+    assert seller_dashboard.json()["wanted_responses_sent"][0]["seller_contact_value"] == "@seller_fx"
+    assert cancel_after_accept.status_code == 409
+
+
+def test_wanted_response_reject_and_cancel_notifications(client, token_verifier) -> None:
+    buyer_claims = token_verifier.claims
+    rejected_wanted = create_wanted_post(client)
+    cancelled_wanted = create_wanted_post(client, title="Looking for a monitor", desired_item_name="monitor")
+
+    seller_claims = buyer_claims.model_copy(update={"sub": uuid4(), "email": "wanted-response@siswa.um.edu.my"})
+    token_verifier.claims = seller_claims
+    complete_profile(client)
+    rejected_response = client.post(
+        f"/api/v1/wanted-posts/{rejected_wanted['id']}/responses",
+        headers=AUTH_HEADERS,
+        json={"message": "I have one.", "seller_contact_method": "email"},
+    )
+    cancelled_response = client.post(
+        f"/api/v1/wanted-posts/{cancelled_wanted['id']}/responses",
+        headers=AUTH_HEADERS,
+        json={"message": "Actually unavailable soon.", "seller_contact_method": "email"},
+    )
+    cancelled = client.patch(f"/api/v1/wanted-posts/responses/{cancelled_response.json()['id']}/cancel", headers=AUTH_HEADERS)
+
+    token_verifier.claims = buyer_claims
+    rejected = client.patch(
+        f"/api/v1/wanted-posts/responses/{rejected_response.json()['id']}",
+        headers=AUTH_HEADERS,
+        json={"status": "rejected", "buyer_response": "Found another item."},
+    )
+    buyer_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    token_verifier.claims = seller_claims
+    seller_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
+
+    assert rejected_response.status_code == 201
+    assert cancelled_response.status_code == 201
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+    assert "wanted_response_cancelled" in [notification["type"] for notification in buyer_notifications.json()]
+    assert "wanted_response_rejected" in [notification["type"] for notification in seller_notifications.json()]
 
 
 def test_duplicate_report_prevention_and_threshold_auto_hide(client, db_session, token_verifier) -> None:

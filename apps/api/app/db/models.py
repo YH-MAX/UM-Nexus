@@ -28,3 +28,4 @@ from app.models.user import User  # noqa: F401
 from app.models.user_report import UserReport  # noqa: F401
 from app.models.wanted_post import WantedPost  # noqa: F401
 from app.models.wanted_post_embedding import WantedPostEmbedding  # noqa: F401
+from app.models.wanted_response import WantedResponse  # noqa: F401

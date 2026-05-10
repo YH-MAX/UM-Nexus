@@ -29,6 +29,7 @@ from app.models.user import User
 from app.models.user_report import UserReport
 from app.models.wanted_post import WantedPost
 from app.models.wanted_post_embedding import WantedPostEmbedding
+from app.models.wanted_response import WantedResponse
 
 __all__ = [
     "AgentOutput",
@@ -62,4 +63,5 @@ __all__ = [
     "UserReport",
     "WantedPost",
     "WantedPostEmbedding",
+    "WantedResponse",
 ]

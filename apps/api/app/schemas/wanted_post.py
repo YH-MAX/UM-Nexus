@@ -1,9 +1,12 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.listing import ListingRead
 from app.services.trade_policy import normalize_category, normalize_pickup_location
-from app.trade.constants import PickupArea, TradeCategory
+from app.services.trade_policy import normalize_contact_method
+from app.trade.constants import ContactMethod, PickupArea, TradeCategory
 
 
 class WantedPostCreate(BaseModel):
@@ -43,3 +46,53 @@ class WantedPostRead(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class WantedPostPage(BaseModel):
+    items: list[WantedPostRead]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class WantedPostStatusUpdate(BaseModel):
+    status: Literal["active", "closed"]
+
+
+class WantedResponseCreate(BaseModel):
+    message: str | None = Field(default=None, max_length=2000)
+    seller_contact_method: ContactMethod
+    seller_contact_value: str | None = Field(default=None, max_length=255)
+    listing_id: str | None = Field(default=None, max_length=64)
+
+    @field_validator("seller_contact_method", mode="before")
+    @classmethod
+    def normalize_contact_method_value(cls, value: object) -> object:
+        return normalize_contact_method(value) or value
+
+
+class WantedResponseDecision(BaseModel):
+    status: Literal["accepted", "rejected"]
+    buyer_response: str | None = Field(default=None, max_length=2000)
+
+
+class WantedResponseRead(BaseModel):
+    id: str
+    wanted_post_id: str
+    seller_id: str
+    buyer_id: str
+    listing_id: str | None = None
+    message: str | None = None
+    seller_contact_method: str
+    seller_contact_value: str | None = None
+    contact_reveal_blocked_reason: str | None = None
+    status: str
+    buyer_response: str | None = None
+    accepted_at: datetime | None = None
+    rejected_at: datetime | None = None
+    cancelled_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    wanted_post: WantedPostRead | None = None
+    listing: ListingRead | None = None

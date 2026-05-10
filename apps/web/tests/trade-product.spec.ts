@@ -21,7 +21,7 @@ test.describe("guest marketplace behavior", () => {
     await expect(page.getByPlaceholder(/Search textbooks/i)).toHaveValue("calculator");
 
     await page.getByRole("button", { name: "Electronics" }).click();
-    await expect(page.getByText(/Active filters/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Clear all filters/i })).toBeVisible();
   });
 
   test("sell page keeps manual listing available without AI", async ({ page }) => {

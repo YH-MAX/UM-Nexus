@@ -43,6 +43,9 @@ const baseListing = {
   recommendation_applied_at: null,
   ai_explanation_cache: null,
   is_ai_enriched: false,
+  source_wanted_post_id: null,
+  sold_source: null,
+  sold_contact_request_id: null,
   created_at: now,
   updated_at: now,
   images: [
@@ -120,6 +123,50 @@ const pendingRequest = {
   seller_contact_value: null,
 };
 
+const wantedPost = {
+  id: "wanted-1",
+  buyer_id: "buyer-1",
+  title: "Looking for Casio calculator",
+  description: "Need a scientific calculator before finals.",
+  category: "electronics",
+  desired_item_name: "scientific calculator",
+  max_budget: 60,
+  currency: "MYR",
+  preferred_pickup_area: "fsktm",
+  residential_college: "KK12",
+  status: "active",
+  created_at: now,
+  updated_at: now,
+};
+
+const wantedLinkedListing = {
+  ...baseListing,
+  id: "listing-from-wanted",
+  title: "Calculator from wanted request",
+  source_wanted_post_id: "wanted-1",
+};
+
+const sentWantedResponse = {
+  id: "wanted-response-1",
+  wanted_post_id: "wanted-1",
+  seller_id: "seller-1",
+  buyer_id: "buyer-1",
+  listing_id: "listing-1",
+  message: "I have an FX-570EX in good condition and can meet at FSKTM.",
+  seller_contact_method: "telegram",
+  seller_contact_value: null,
+  contact_reveal_blocked_reason: null,
+  status: "pending",
+  buyer_response: null,
+  accepted_at: null,
+  rejected_at: null,
+  cancelled_at: null,
+  created_at: now,
+  updated_at: now,
+  wanted_post: wantedPost,
+  listing: baseListing,
+};
+
 test.describe("authenticated Trade product workflows", () => {
   test("buyer can save, request contact, and report from listing detail", async ({ page }) => {
     await loginAs(page, buyerUser);
@@ -150,11 +197,14 @@ test.describe("authenticated Trade product workflows", () => {
     await page.goto("/trade/sell");
     await page.getByLabel("Title").fill("Desk lamp near KK12");
     await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Category").selectOption("dorm_room");
+    await page.getByLabel("Condition").selectOption("good");
+    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
     await page.getByLabel("Contact value").fill("@aina_um");
     await page.getByRole("button", { name: /Publish Listing/i }).click();
     await expect(page.getByRole("heading", { name: /Ready to publish/i })).toBeVisible();
-    await page.getByRole("button", { name: /Publish Anyway/i }).click();
+    await page.getByRole("button", { name: "Publish with Warnings" }).click();
 
     await expect(page).toHaveURL(/\/trade\/listing-new$/);
     expect(state.publishedListingCreated).toBe(true);
@@ -165,14 +215,15 @@ test.describe("authenticated Trade product workflows", () => {
     const state = await mockTradeApi(page);
 
     await page.goto("/trade/dashboard");
-    await page.getByRole("button", { name: "Received Requests" }).click();
+    await page.getByRole("button", { name: "Buyer Requests" }).click();
     await expect(page.getByText(/Can I pick this up today/i)).toBeVisible();
     await expect(page.getByText("Sent", { exact: true }).last()).toBeVisible();
 
-    await page.getByRole("button", { name: "Accept" }).dispatchEvent("click");
+    await page.getByRole("button", { name: "Accept" }).click();
+    await page.getByRole("button", { name: "Accept Request" }).click();
     await expect.poll(() => state.acceptedRequests).toBe(1);
 
-    await page.getByRole("button", { name: "Sent Requests" }).click();
+    await page.getByRole("button", { name: "My Requests" }).click();
     await expect(page.getByText(/Seller: telegram @aina_um/i)).toBeVisible();
   });
 
@@ -182,7 +233,7 @@ test.describe("authenticated Trade product workflows", () => {
 
     await page.goto("/trade/dashboard?request_id=contact-pending");
 
-    await expect(page.getByRole("button", { name: "Received Requests" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Buyer Requests" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#request-contact-pending")).toHaveAttribute("data-highlighted", "true");
   });
 
@@ -202,7 +253,7 @@ test.describe("authenticated Trade product workflows", () => {
 
     await page.getByRole("link", { name: /Open/i }).first().click();
     await expect(page).toHaveURL(/\/trade\/dashboard\?tab=received&request_id=contact-pending/);
-    await expect(page.getByRole("button", { name: "Received Requests" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Buyer Requests" })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator("#request-contact-pending")).toHaveAttribute("data-highlighted", "true");
     await expect.poll(() => state.notifications.filter((notification) => !notification.is_read).length).toBe(1);
   });
@@ -224,6 +275,42 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page.getByText("You're all caught up.")).toBeVisible();
   });
 
+  test("seller can browse wanted demand and send a direct offer", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    const state = await mockTradeApi(page);
+
+    await page.goto("/trade/want");
+    await expect(page.getByRole("heading", { name: /Wanted board/i })).toBeVisible();
+    await expect(page.getByText(/Looking for Casio calculator/i)).toBeVisible();
+
+    await page.getByRole("button", { name: /Send direct offer/i }).click();
+    await page.getByLabel(/Offer message/i).fill("I have an FX-570EX in good condition and can meet at FSKTM.");
+    await page.getByLabel(/Contact method/i).selectOption("telegram");
+    await page.getByLabel(/Contact value/i).fill("@aina_um");
+    await page.getByLabel(/Attach one of your listings/i).selectOption("listing-1");
+    await page.getByRole("button", { name: /^Send offer$/i }).click();
+
+    await expect(page.getByText(/Direct offer sent/i)).toBeVisible();
+    expect(state.wantedResponseCreated).toBe(true);
+    expect(state.lastWantedResponseListingId).toBe("listing-1");
+  });
+
+  test("wanted detail shows seller response status and wanted-linked listings", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+
+    await page.goto("/wanted-posts/wanted-1");
+    await expect(page.getByRole("heading", { level: 1, name: /Looking for Casio calculator/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Your response status/i })).toBeVisible();
+    await expect(page.getByText(/I have an FX-570EX/i)).toBeVisible();
+    await expect(page.getByText("pending").first()).toBeVisible();
+
+    await page.goto("/trade/dashboard");
+    await page.getByRole("button", { name: "Wanted" }).click();
+    await expect(page.getByRole("heading", { name: /Listings created from wanted posts/i })).toBeVisible();
+    await expect(page.getByText(/Calculator from wanted request/i)).toBeVisible();
+  });
+
   test("dashboard highlights a listing from a listing alert link", async ({ page }) => {
     await loginAs(page, sellerUser);
     await mockTradeApi(page);
@@ -238,8 +325,7 @@ test.describe("authenticated Trade product workflows", () => {
     await loginAs(page, sellerUser);
     const state = await mockTradeApi(page);
 
-    await page.goto("/trade/listing-1");
-    await page.getByRole("link", { name: /Edit Listing/i }).click();
+    await page.goto("/trade/listing-1/edit");
     await expect(page.getByRole("heading", { name: /Edit listing/i })).toBeVisible();
 
     await page.getByLabel("Title").fill("Casio Calculator - Good Condition");
@@ -260,7 +346,9 @@ test.describe("authenticated Trade product workflows", () => {
 
     await page.goto("/trade/moderation");
     await expect(page.getByRole("heading", { name: /Trust review queue/i })).toBeVisible();
-    await page.getByRole("button", { name: "Reject" }).click();
+    await page.getByRole("button", { name: "Reject and hide" }).click();
+    await page.getByLabel(/Reason for rejection/i).fill("Duplicate report checked against seller history.");
+    await page.getByRole("button", { name: "Reject and hide listing" }).click();
 
     await expect.poll(() => state.moderationReason).toContain("Duplicate report checked");
   });
@@ -278,6 +366,8 @@ async function mockTradeApi(page: Page) {
     contactRequestCreated: false,
     reportCreated: false,
     publishedListingCreated: false,
+    wantedResponseCreated: false,
+    lastWantedResponseListingId: "",
     acceptedRequests: 0,
     lastUpdatedTitle: "",
     moderationReason: "",
@@ -310,6 +400,35 @@ async function mockTradeApi(page: Page) {
 
     if (method === "GET" && path === "/listings") {
       return json(route, { items: [baseListing], total: 1, limit: 24, offset: 0, has_more: false });
+    }
+
+    if (method === "GET" && path === "/wanted-posts") {
+      return json(route, { items: [wantedPost], total: 1, limit: 24, offset: 0, has_more: false });
+    }
+
+    if (method === "GET" && path === "/wanted-posts/wanted-1") {
+      return json(route, wantedPost);
+    }
+
+    if (method === "GET" && path === "/wanted-posts/wanted-1/recommended-listings") {
+      return json(route, []);
+    }
+
+    if (method === "POST" && path === "/wanted-posts/wanted-1/responses") {
+      state.wantedResponseCreated = true;
+      const payload = requestJson(request);
+      state.lastWantedResponseListingId = String(payload.listing_id ?? "");
+      return json(
+        route,
+        {
+          ...sentWantedResponse,
+          listing_id: payload.listing_id ?? null,
+          message: payload.message ?? null,
+          seller_contact_method: payload.seller_contact_method ?? "telegram",
+          listing: payload.listing_id === "listing-1" ? baseListing : null,
+        },
+        201,
+      );
     }
 
     if (method === "POST" && path === "/listings") {
@@ -513,13 +632,15 @@ function requestJson(request: Request): Record<string, unknown> {
 
 function dashboardPayload() {
   return {
-    listings: [baseListing, { ...baseListing, id: "sold-1", title: "Sold monitor", status: "sold" }],
+    listings: [baseListing, wantedLinkedListing, { ...baseListing, id: "sold-1", title: "Sold monitor", status: "sold" }],
     favorites: [],
     wanted_posts: [],
     matches: [],
     transactions: [],
     contact_requests_received: [pendingRequest],
     contact_requests_sent: [acceptedRequest],
+    wanted_responses_received: [],
+    wanted_responses_sent: [sentWantedResponse],
     metrics: {
       recommendations_accepted: 0,
       decision_feedback_count: 0,
