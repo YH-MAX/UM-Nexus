@@ -648,6 +648,7 @@ export type NotificationType =
   | "listing_marked_reserved"
   | "listing_marked_sold"
   | "listing_hidden_by_moderation"
+  | "listing_restored_by_moderation"
   | "listing_reported"
   | "report_reviewed"
   | "wanted_match_listing_created"
@@ -1486,6 +1487,34 @@ export async function getTradeEvaluationSummary(): Promise<BenchmarkSummary> {
 
 export async function getTradeEvaluationCases(): Promise<BenchmarkCaseDetail[]> {
   return fetchJson<BenchmarkCaseDetail[]>("/ai/trade/evaluation/cases");
+}
+
+export type LaunchChecklistItem = {
+  key: string;
+  label: string;
+  section: string;
+  value: number | string;
+  status: "green" | "amber" | "red";
+  detail: string;
+};
+
+export type LaunchChecklist = {
+  items: LaunchChecklistItem[];
+  active_listings: number;
+  listings_without_photo: number;
+  listings_missing_pickup_or_contact: number;
+  active_users: number;
+  pending_reports: number;
+  open_moderation_items: number;
+  ai_provider_status: string;
+  failed_ai_calls_24h: number;
+  total_ai_calls_24h: number;
+  contact_requests_sent: number;
+  contact_requests_accepted: number;
+};
+
+export async function getLaunchChecklist(): Promise<LaunchChecklist> {
+  return fetchJson<LaunchChecklist>("/admin/launch-checklist");
 }
 
 function recommendationQuery(options: RecommendationOptions): string {

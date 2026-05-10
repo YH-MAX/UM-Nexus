@@ -30,6 +30,7 @@ TRADE_NOTIFICATION_DEFINITIONS: dict[str, NotificationDefinition] = {
     "listing_marked_reserved": NotificationDefinition(priority="high", group="listing", dedupe_window_minutes=24 * 60),
     "listing_marked_sold": NotificationDefinition(priority="high", group="listing", dedupe_window_minutes=24 * 60),
     "listing_hidden_by_moderation": NotificationDefinition(priority="urgent", group="safety", dedupe_window_minutes=24 * 60),
+    "listing_restored_by_moderation": NotificationDefinition(priority="high", group="safety", dedupe_window_minutes=24 * 60),
     "listing_reported": NotificationDefinition(priority="high", group="safety", dedupe_window_minutes=24 * 60),
     "report_reviewed": NotificationDefinition(group="safety", dedupe_window_minutes=24 * 60),
     "wanted_match_listing_created": NotificationDefinition(priority="high", group="wanted", dedupe_window_minutes=24 * 60),

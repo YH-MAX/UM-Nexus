@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
+import { ModerationActionModal } from "@/components/trade/moderation-action-modal";
 import { StatusPill } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
+import { UserActionModal } from "@/components/trade/user-action-modal";
 import {
   createAdminCategory,
   formatCategory,
@@ -27,6 +29,15 @@ import {
 
 type ModerationTab = "reports" | "high_risk" | "hidden" | "recent_actions";
 
+type ModerationModal =
+  | { kind: "approve"; listingId: string; title: string }
+  | { kind: "reject"; listingId: string; title: string }
+  | { kind: "hide"; listingId: string; title: string }
+  | { kind: "restore"; listingId: string; title: string }
+  | { kind: "delete"; listingId: string; title: string }
+  | { kind: "user-status"; userId: string; name: string; newStatus: "active" | "suspended" | "banned" }
+  | { kind: "user-role"; userId: string; name: string; newRole: "student" | "moderator" | "admin" };
+
 const moderationTabs: Array<{ id: ModerationTab; label: string }> = [
   { id: "reports", label: "Reports" },
   { id: "high_risk", label: "High-risk listings" },
@@ -43,6 +54,7 @@ export default function TradeModerationPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<ModerationModal | null>(null);
 
   async function loadQueue() {
     const [nextItems, nextSummary, nextAdminDashboard] = await Promise.all([
@@ -78,22 +90,14 @@ export default function TradeModerationPage() {
     };
   }, [isAuthLoading, user]);
 
-  async function review(id: string, moderationStatus: "approved" | "rejected") {
-    const reason = window.prompt(
-      moderationStatus === "approved"
-        ? "Reason for approving this listing?"
-        : "Reason for rejecting or actioning this listing?",
-    );
-    if (!reason?.trim()) {
-      return;
-    }
+  async function review(id: string, moderationStatus: "approved" | "rejected", reason: string) {
     setReviewingId(id);
     setError(null);
     try {
       await reviewModerationListing(id, {
         status: moderationStatus === "approved" ? "reviewed" : "action_taken",
         moderation_status: moderationStatus,
-        resolution: reason.trim(),
+        resolution: reason,
       });
       await loadQueue();
     } catch (nextError) {
@@ -103,19 +107,15 @@ export default function TradeModerationPage() {
     }
   }
 
-  async function setListingStatus(id: string, status: "available" | "hidden" | "deleted") {
-    const reason = window.prompt(`Reason for changing this listing to ${status}?`);
-    if (!reason?.trim()) {
-      return;
-    }
+  async function setListingStatus(id: string, status: "available" | "hidden" | "deleted", reason: string) {
     setReviewingId(id);
     setError(null);
     try {
       await updateAdminListing(id, {
         status,
         moderation_status: status === "deleted" ? "rejected" : status === "available" ? "approved" : undefined,
-        resolution: reason.trim(),
-        reason: reason.trim(),
+        resolution: reason,
+        reason,
       });
       await loadQueue();
     } catch (nextError) {
@@ -125,18 +125,48 @@ export default function TradeModerationPage() {
     }
   }
 
-  async function setUserStatus(id: string, status: "active" | "suspended" | "banned") {
-    const reason = window.prompt(`Reason for changing this user to ${status}?`);
-    if (!reason?.trim()) {
-      return;
-    }
+  async function setUserStatus(id: string, status: "active" | "suspended" | "banned", reason: string) {
     setReviewingId(id);
     setError(null);
     try {
-      await updateAdminUserStatus(id, { status, reason: reason.trim() });
+      await updateAdminUserStatus(id, { status, reason });
       await loadQueue();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update user status.");
+    } finally {
+      setReviewingId(null);
+    }
+  }
+
+  function handleModalConfirm(reason: string, notifySeller?: boolean) {
+    if (!modal) return;
+    setModal(null);
+    if (modal.kind === "approve") {
+      void review(modal.listingId, "approved", reason);
+    } else if (modal.kind === "reject") {
+      void review(modal.listingId, "rejected", reason);
+    } else if (modal.kind === "hide") {
+      void setListingStatus(modal.listingId, "hidden", reason);
+    } else if (modal.kind === "restore") {
+      void setListingStatus(modal.listingId, "available", reason);
+    } else if (modal.kind === "delete") {
+      void setListingStatus(modal.listingId, "deleted", reason);
+    } else if (modal.kind === "user-status") {
+      void setUserStatus(modal.userId, modal.newStatus, reason);
+    } else if (modal.kind === "user-role") {
+      void handleSetUserRole(modal.userId, modal.newRole, reason);
+    }
+    void notifySeller;
+  }
+
+  async function handleSetUserRole(id: string, appRole: "student" | "moderator" | "admin", reason: string) {
+    setReviewingId(`${id}-${appRole}`);
+    setError(null);
+    try {
+      await updateAdminUserRole(id, { app_role: appRole, reason });
+      await loadQueue();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Unable to update user role.");
     } finally {
       setReviewingId(null);
     }
@@ -147,6 +177,15 @@ export default function TradeModerationPage() {
       title="Trust review queue"
       description="Review high-risk listings and user reports before suspicious items reduce marketplace trust."
     >
+      {modal ? (
+        <ModalRenderer
+          modal={modal}
+          isBusy={reviewingId !== null}
+          onConfirm={handleModalConfirm}
+          onCancel={() => setModal(null)}
+        />
+      ) : null}
+
       {error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           {error}
@@ -171,9 +210,8 @@ export default function TradeModerationPage() {
           <div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
             {moderationTabs.map((tab) => (
               <button
-                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                  activeTab === tab.id ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
-                }`}
+                className={`shrink-0 rounded-xl px-4 py-2 text-sm font-semibold transition ${activeTab === tab.id ? "bg-slate-950 text-white" : "text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                  }`}
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 type="button"
@@ -212,7 +250,7 @@ export default function TradeModerationPage() {
                           <button
                             className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
                             disabled={reviewingId === listing.id}
-                            onClick={() => void setListingStatus(listing.id, "available")}
+                            onClick={() => setModal({ kind: "restore", listingId: listing.id, title: listing.title })}
                             type="button"
                           >
                             Restore
@@ -225,93 +263,207 @@ export default function TradeModerationPage() {
             </div>
           ) : null}
           {activeTab !== "recent_actions" && activeTab !== "hidden" ? (
-          <>
-          {adminDashboard ? (
-            <AdminOverview
-              dashboard={adminDashboard}
-              disabledId={reviewingId}
-              onListingStatus={setListingStatus}
-              onReload={loadQueue}
-              onUserStatus={setUserStatus}
-            />
-          ) : null}
-          {summary ? (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Metric label="High risk" value={summary.high_risk_count} />
-              <Metric label="Pending review" value={summary.pending_review_count} />
-              <Metric label="Rejected" value={summary.rejected_count} />
-              <Metric label="Approved" value={summary.approved_count} />
-            </div>
-          ) : null}
-          {items.map(({ listing, reports }) => (
-            <article className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm" key={listing.id}>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <div className="flex flex-wrap gap-2">
-                    <StatusPill>{formatCategory(listing.category)}</StatusPill>
-                    <StatusPill tone={listing.risk_level === "high" ? "danger" : "warn"}>
-                      {listing.risk_level ?? "unscored"} risk
-                    </StatusPill>
-                    <StatusPill tone="warn">{listing.moderation_status.replaceAll("_", " ")}</StatusPill>
-                  </div>
-                  <h2 className="mt-3 text-xl font-semibold text-slate-950">{listing.title}</h2>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                    {listing.description ?? "No description provided."}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-slate-900">
-                    {formatMoney(listing.price, listing.currency)}
-                  </p>
+            <>
+              {adminDashboard ? (
+                <AdminOverview
+                  dashboard={adminDashboard}
+                  disabledId={reviewingId}
+                  onModal={setModal}
+                  onReload={loadQueue}
+                />
+              ) : null}
+              {summary ? (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <Metric label="High risk" value={summary.high_risk_count} />
+                  <Metric label="Pending review" value={summary.pending_review_count} />
+                  <Metric label="Rejected" value={summary.rejected_count} />
+                  <Metric label="Approved" value={summary.approved_count} />
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                    disabled={reviewingId === listing.id}
-                    onClick={() => void review(listing.id, "approved")}
-                    type="button"
-                  >
-                    Approve
-                  </button>
-                  <button
-                    className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-                    disabled={reviewingId === listing.id}
-                    onClick={() => void review(listing.id, "rejected")}
-                    type="button"
-                  >
-                    Reject
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <h3 className="text-sm font-semibold text-slate-950">Risk evidence</h3>
-                  <RiskCards evidence={listing.risk_evidence} />
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                  <h3 className="text-sm font-semibold text-slate-950">Reports</h3>
-                  {reports.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-600">No user reports; queued by risk score.</p>
-                  ) : (
-                    <div className="mt-2 space-y-2">
-                      {reports.map((report) => (
-                        <div className="rounded-lg bg-white p-3 text-sm text-slate-700" key={report.id}>
-                          <p className="font-semibold text-slate-950">{report.report_type}</p>
-                          <p className="mt-1">{report.reason ?? "No reason provided."}</p>
-                          <p className="mt-1 text-xs text-slate-500">{report.status}</p>
-                        </div>
-                      ))}
+              ) : null}
+              {items.map(({ listing, reports }) => (
+                <article className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm" key={listing.id}>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap gap-2">
+                        <StatusPill>{formatCategory(listing.category)}</StatusPill>
+                        <StatusPill tone={listing.risk_level === "high" ? "danger" : "warn"}>
+                          {listing.risk_level ?? "unscored"} risk
+                        </StatusPill>
+                        <StatusPill tone="warn">{listing.moderation_status.replaceAll("_", " ")}</StatusPill>
+                      </div>
+                      <h2 className="mt-3 text-xl font-semibold text-slate-950">{listing.title}</h2>
+                      <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                        {listing.description ?? "No description provided."}
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900">
+                        {formatMoney(listing.price, listing.currency)}
+                      </p>
                     </div>
-                  )}
-                </div>
-              </div>
-            </article>
-          ))}
-          </>
+                    <div className="flex gap-2">
+                      <button
+                        className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                        disabled={reviewingId === listing.id}
+                        onClick={() => setModal({ kind: "approve", listingId: listing.id, title: listing.title })}
+                        type="button"
+                      >
+                        Approve listing
+                      </button>
+                      <button
+                        className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-rose-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                        disabled={reviewingId === listing.id}
+                        onClick={() => setModal({ kind: "reject", listingId: listing.id, title: listing.title })}
+                        type="button"
+                      >
+                        Reject and hide
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <h3 className="text-sm font-semibold text-slate-950">Risk evidence</h3>
+                      <RiskCards evidence={listing.risk_evidence} />
+                    </div>
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <h3 className="text-sm font-semibold text-slate-950">Reports</h3>
+                      {reports.length === 0 ? (
+                        <p className="mt-2 text-sm text-slate-600">No user reports; queued by risk score.</p>
+                      ) : (
+                        <div className="mt-2 space-y-2">
+                          {reports.map((report) => (
+                            <div className="rounded-lg bg-white p-3 text-sm text-slate-700" key={report.id}>
+                              <p className="font-semibold text-slate-950">{report.report_type}</p>
+                              <p className="mt-1">{report.reason ?? "No reason provided."}</p>
+                              <p className="mt-1 text-xs text-slate-500">{report.status}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </>
           ) : null}
         </section>
       ) : null}
     </TradeShell>
   );
+}
+
+function ModalRenderer({
+  modal,
+  isBusy,
+  onConfirm,
+  onCancel,
+}: Readonly<{
+  modal: ModerationModal;
+  isBusy: boolean;
+  onConfirm: (reason: string, notifySeller?: boolean) => void;
+  onCancel: () => void;
+}>) {
+  if (modal.kind === "approve") {
+    return (
+      <ModerationActionModal
+        title="Approve listing"
+        description={`Approve "${modal.title}" — it will be marked as reviewed and remain visible.`}
+        reasonLabel="Reason for approval"
+        reasonRequired
+        confirmLabel="Approve listing"
+        confirmTone="safe"
+        isBusy={isBusy}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (modal.kind === "reject") {
+    return (
+      <ModerationActionModal
+        title="Reject and hide listing"
+        description={`Hide "${modal.title}" and mark it as rejected. The seller will be notified.`}
+        reasonLabel="Reason for rejection"
+        reasonRequired
+        confirmLabel="Reject and hide listing"
+        confirmTone="danger"
+        isBusy={isBusy}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (modal.kind === "hide") {
+    return (
+      <ModerationActionModal
+        title="Hide listing"
+        description={`Hide "${modal.title}" from the marketplace while the review continues.`}
+        reasonLabel="Reason for hiding"
+        reasonRequired
+        confirmLabel="Hide listing"
+        confirmTone="warn"
+        showNotifySeller
+        isBusy={isBusy}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (modal.kind === "restore") {
+    return (
+      <ModerationActionModal
+        title="Restore listing"
+        description={`Restore "${modal.title}" to available. The seller will be notified.`}
+        reasonLabel="Reason for restoring"
+        reasonRequired
+        confirmLabel="Restore listing"
+        confirmTone="safe"
+        isBusy={isBusy}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (modal.kind === "delete") {
+    return (
+      <ModerationActionModal
+        title="Delete listing"
+        description={`Permanently remove "${modal.title}" from UM Nexus Trade. The seller will be notified.`}
+        reasonLabel="Reason for deletion"
+        reasonRequired
+        confirmLabel="Delete listing"
+        confirmTone="danger"
+        isBusy={isBusy}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (modal.kind === "user-status") {
+    return (
+      <UserActionModal
+        userName={modal.name}
+        actionLabel="Change user status"
+        newValue={modal.newStatus}
+        isHighRisk={modal.newStatus === "suspended" || modal.newStatus === "banned"}
+        isBusy={isBusy}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+  }
+  if (modal.kind === "user-role") {
+    return (
+      <UserActionModal
+        userName={modal.name}
+        actionLabel="Change user role"
+        newValue={modal.newRole}
+        isBusy={isBusy}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    );
+  }
+  return null;
 }
 
 function Metric({ label, value }: Readonly<{ label: string; value: number }>) {
@@ -326,15 +478,13 @@ function Metric({ label, value }: Readonly<{ label: string; value: number }>) {
 function AdminOverview({
   dashboard,
   disabledId,
-  onListingStatus,
+  onModal,
   onReload,
-  onUserStatus,
 }: Readonly<{
   dashboard: AdminDashboard;
   disabledId: string | null;
-  onListingStatus: (id: string, status: "available" | "hidden" | "deleted") => Promise<void>;
+  onModal: (modal: ModerationModal) => void;
   onReload: () => Promise<void>;
-  onUserStatus: (id: string, status: "active" | "suspended" | "banned") => Promise<void>;
 }>) {
   const stats = dashboard.statistics;
   return (
@@ -369,7 +519,7 @@ function AdminOverview({
                     <button
                       className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
                       disabled={disabledId === listing.id}
-                      onClick={() => void onListingStatus(listing.id, "available")}
+                      onClick={() => onModal({ kind: "restore", listingId: listing.id, title: listing.title })}
                       type="button"
                     >
                       Restore
@@ -377,7 +527,7 @@ function AdminOverview({
                     <button
                       className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 disabled:cursor-not-allowed disabled:text-slate-400"
                       disabled={disabledId === listing.id}
-                      onClick={() => void onListingStatus(listing.id, "hidden")}
+                      onClick={() => onModal({ kind: "hide", listingId: listing.id, title: listing.title })}
                       type="button"
                     >
                       Hide
@@ -385,7 +535,7 @@ function AdminOverview({
                     <button
                       className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-sm font-semibold text-rose-800 disabled:cursor-not-allowed disabled:text-slate-400"
                       disabled={disabledId === listing.id}
-                      onClick={() => void onListingStatus(listing.id, "deleted")}
+                      onClick={() => onModal({ kind: "delete", listingId: listing.id, title: listing.title })}
                       type="button"
                     >
                       Delete
@@ -431,7 +581,14 @@ function AdminOverview({
                           className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
                           disabled={disabledId === user.id || user.status === status}
                           key={status}
-                          onClick={() => void onUserStatus(user.id, status)}
+                          onClick={() =>
+                            onModal({
+                              kind: "user-status",
+                              userId: user.id,
+                              name: user.display_name ?? user.full_name ?? user.email,
+                              newStatus: status,
+                            })
+                          }
                           type="button"
                         >
                           {status}
@@ -446,7 +603,7 @@ function AdminOverview({
         </div>
       </section>
 
-      <AdminLaunchOps dashboard={dashboard} disabledId={disabledId} onReload={onReload} />
+      <AdminLaunchOps dashboard={dashboard} disabledId={disabledId} onModal={onModal} onReload={onReload} />
     </div>
   );
 }
@@ -454,10 +611,12 @@ function AdminOverview({
 function AdminLaunchOps({
   dashboard,
   disabledId,
+  onModal,
   onReload,
 }: Readonly<{
   dashboard: AdminDashboard;
   disabledId: string | null;
+  onModal: (modal: ModerationModal) => void;
   onReload: () => Promise<void>;
 }>) {
   const [categoryDraft, setCategoryDraft] = useState({ slug: "", label: "" });
@@ -529,26 +688,6 @@ function AdminLaunchOps({
       await onReload();
     } catch (nextError) {
       setLocalError(nextError instanceof Error ? nextError.message : "Unable to update AI settings.");
-    } finally {
-      setBusyKey(null);
-    }
-  }
-
-  async function setUserRole(id: string, appRole: "student" | "organizer" | "moderator" | "admin") {
-    const reason = window.prompt(`Reason for changing this user role to ${appRole}?`);
-    if (!reason?.trim()) {
-      return;
-    }
-    setBusyKey(`${id}-${appRole}`);
-    setLocalError(null);
-    try {
-      await updateAdminUserRole(id, {
-        app_role: appRole,
-        reason: reason.trim(),
-      });
-      await onReload();
-    } catch (nextError) {
-      setLocalError(nextError instanceof Error ? nextError.message : "Unable to update user role.");
     } finally {
       setBusyKey(null);
     }
@@ -671,9 +810,16 @@ function AdminLaunchOps({
                 {(["student", "moderator", "admin"] as const).map((role) => (
                   <button
                     className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-800 disabled:cursor-not-allowed disabled:text-slate-400"
-                    disabled={disabledId === user.id || busyKey === `${user.id}-${role}` || user.app_role === role}
+                    disabled={disabledId === user.id || user.app_role === role}
                     key={role}
-                    onClick={() => void setUserRole(user.id, role)}
+                    onClick={() =>
+                      onModal({
+                        kind: "user-role",
+                        userId: user.id,
+                        name: user.display_name ?? user.full_name ?? user.email,
+                        newRole: role,
+                      })
+                    }
                     type="button"
                   >
                     {role}

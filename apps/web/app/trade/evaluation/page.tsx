@@ -8,6 +8,7 @@ import { TradeShell } from "@/components/trade/trade-shell";
 import {
   formatCategory,
   formatMoney,
+  getCurrentUser,
   getTradeEvaluationSummary,
   getTradeProviderStatus,
   runTradeEvaluation,
@@ -16,10 +17,13 @@ import {
   type TradeProviderStatus,
 } from "@/lib/trade/api";
 
+const OPERATOR_ROLES = ["admin", "moderator"];
+
 export default function TradeEvaluationPage() {
   const { isLoading: isAuthLoading, user } = useAuth();
   const [summary, setSummary] = useState<BenchmarkSummary | null>(null);
   const [providerStatus, setProviderStatus] = useState<TradeProviderStatus | null>(null);
+  const [appRole, setAppRole] = useState<string | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,11 +40,12 @@ export default function TradeEvaluationPage() {
     let isMounted = true;
     setIsLoadingSummary(true);
 
-    void Promise.all([getTradeEvaluationSummary(), getTradeProviderStatus()])
-      .then(([nextSummary, status]) => {
+    void Promise.all([getTradeEvaluationSummary(), getTradeProviderStatus(), getCurrentUser()])
+      .then(([nextSummary, status, currentUser]) => {
         if (isMounted) {
           setSummary(nextSummary);
           setProviderStatus(status);
+          setAppRole(currentUser.profile.app_role);
         }
       })
       .catch((nextError) => {
@@ -58,6 +63,8 @@ export default function TradeEvaluationPage() {
       isMounted = false;
     };
   }, [isAuthLoading, user]);
+
+  const isAuthorized = appRole ? OPERATOR_ROLES.includes(appRole) : false;
 
   async function handleRunEvaluation() {
     setIsRunning(true);
@@ -81,90 +88,113 @@ export default function TradeEvaluationPage() {
         <RequireAuthCard description="Sign in with an admin UM account to run release quality checks." />
       ) : null}
 
-      {user ? (
-      <>
-      <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-950">Quality gate run</h2>
+      {user && !isLoadingSummary && !isAuthorized ? (
+        <section className="rounded-lg border border-slate-200 bg-white p-8 shadow-sm">
+          <div className="mx-auto max-w-sm text-center">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+              <svg className="h-6 w-6 text-slate-500" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                <path d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-semibold text-slate-950">Access restricted</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Compare the AI decision engine against simple manual heuristics before changing prompts, data, or provider settings.
+              This page is restricted to UM Nexus operators. Sign in with an authorized account.
             </p>
           </div>
-          <button
-            className="rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-            disabled={isRunning}
-            onClick={() => void handleRunEvaluation()}
-            type="button"
-          >
-            {isRunning ? "Running..." : "Run quality gate"}
-          </button>
-        </div>
-
-        {error ? (
-          <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-            {error}
-          </p>
-        ) : null}
-      </section>
-
-      {isLoadingSummary ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
-          Loading quality controls...
-        </div>
+        </section>
       ) : null}
 
-      {summary ? (
+      {user && (isLoadingSummary || isAuthorized) ? (
         <>
-          <section className="grid gap-4 lg:grid-cols-[1fr_2fr]">
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">GLM status</p>
-              <p className="mt-2 text-lg font-semibold text-slate-950">
-                {providerStatus?.provider ?? "loading"} · {providerStatus?.status ?? ""}
-              </p>
-              <p className="mt-1 text-sm text-slate-600">
-                Model {providerStatus?.model ?? "unknown"} with {providerStatus?.fallback_mode ?? "deterministic"} fallback.
-              </p>
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500">
+            <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>Internal · Operator-only · Not visible to students</span>
+          </div>
+
+          <section className="rounded-lg border border-slate-300 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-slate-950">Quality gate run</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Compare the AI decision engine against simple manual heuristics before changing prompts, data, or provider settings.
+                </p>
+              </div>
+              <button
+                className="rounded-lg bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                disabled={isRunning}
+                onClick={() => void handleRunEvaluation()}
+                type="button"
+              >
+                {isRunning ? "Running..." : "Run quality gate"}
+              </button>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Methodology</p>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Manual heuristics use category averages, budget overlap, and simple risk keywords. AI uses GLM output
-                plus item text, public image URLs when available, historical comparables, candidate demand,
-                location context, and risk signals. These checks stay internal until completed transactions
-                provide enough live marketplace evidence.
+
+            {error ? (
+              <p className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                {error}
               </p>
-            </div>
+            ) : null}
           </section>
 
-          <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric label="AI score" value={`${summary.ai_overall_score}/100`} detail={`Heuristic ${summary.baseline_overall_score}/100`} />
-            <Metric label="Pricing lift" value={formatDelta(summary.price_accuracy_delta)} detail={`${percent(summary.ai_pricing_accuracy_rate)} AI accuracy`} />
-            <Metric label="Risk lift" value={formatDelta(summary.risk_detection_delta)} detail={`${percent(summary.ai_risk_detection_rate)} risk agreement`} />
-            <Metric label="Time proxy saved" value={`${summary.time_to_sale_delta_days} days`} detail="Scenario average" />
-          </section>
-
-          <section className="grid gap-4 lg:grid-cols-4">
-            <ComparisonMetric label="Pricing accuracy" ai={summary.ai_pricing_accuracy_rate} baseline={summary.baseline_pricing_accuracy_rate} />
-            <ComparisonMetric label="Risk detection" ai={summary.ai_risk_detection_rate} baseline={summary.baseline_risk_detection_rate} />
-            <ComparisonMetric label="Match quality" ai={summary.ai_match_quality_rate} baseline={summary.baseline_match_quality_rate} />
-            <ComparisonMetric label="Action agreement" ai={summary.ai_action_agreement_rate} baseline={summary.baseline_action_agreement_rate} />
-          </section>
-
-          <section className="rounded-lg border border-slate-300 bg-white shadow-sm">
-            <div className="border-b border-slate-200 p-5">
-              <h2 className="text-xl font-semibold text-slate-950">Quality cases</h2>
-              <p className="mt-2 text-sm text-slate-600">{summary.metrics_note}</p>
+          {isLoadingSummary ? (
+            <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
+              Loading quality controls...
             </div>
-            <div className="divide-y divide-slate-100">
-              {summary.cases.map((item) => (
-                <CaseRow detail={item} key={item.case.id} />
-              ))}
-            </div>
-          </section>
+          ) : null}
+
+          {summary ? (
+            <>
+              <section className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">GLM status</p>
+                  <p className="mt-2 text-lg font-semibold text-slate-950">
+                    {providerStatus?.provider ?? "loading"} · {providerStatus?.status ?? ""}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Model {providerStatus?.model ?? "unknown"} with {providerStatus?.fallback_mode ?? "deterministic"} fallback.
+                  </p>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">Methodology</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Manual heuristics use category averages, budget overlap, and simple risk keywords. AI uses GLM output
+                    plus item text, public image URLs when available, historical comparables, candidate demand,
+                    location context, and risk signals. These checks stay internal until completed transactions
+                    provide enough live marketplace evidence.
+                  </p>
+                </div>
+              </section>
+
+              <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <Metric label="AI score" value={`${summary.ai_overall_score}/100`} detail={`Heuristic ${summary.baseline_overall_score}/100`} />
+                <Metric label="Pricing lift" value={formatDelta(summary.price_accuracy_delta)} detail={`${percent(summary.ai_pricing_accuracy_rate)} AI accuracy`} />
+                <Metric label="Risk lift" value={formatDelta(summary.risk_detection_delta)} detail={`${percent(summary.ai_risk_detection_rate)} risk agreement`} />
+                <Metric label="Time proxy saved" value={`${summary.time_to_sale_delta_days} days`} detail="Scenario average" />
+              </section>
+
+              <section className="grid gap-4 lg:grid-cols-4">
+                <ComparisonMetric label="Pricing accuracy" ai={summary.ai_pricing_accuracy_rate} baseline={summary.baseline_pricing_accuracy_rate} />
+                <ComparisonMetric label="Risk detection" ai={summary.ai_risk_detection_rate} baseline={summary.baseline_risk_detection_rate} />
+                <ComparisonMetric label="Match quality" ai={summary.ai_match_quality_rate} baseline={summary.baseline_match_quality_rate} />
+                <ComparisonMetric label="Action agreement" ai={summary.ai_action_agreement_rate} baseline={summary.baseline_action_agreement_rate} />
+              </section>
+
+              <section className="rounded-lg border border-slate-300 bg-white shadow-sm">
+                <div className="border-b border-slate-200 p-5">
+                  <h2 className="text-xl font-semibold text-slate-950">Quality cases</h2>
+                  <p className="mt-2 text-sm text-slate-600">{summary.metrics_note}</p>
+                </div>
+                <div className="divide-y divide-slate-100">
+                  {summary.cases.map((item) => (
+                    <CaseRow detail={item} key={item.case.id} />
+                  ))}
+                </div>
+              </section>
+            </>
+          ) : null}
         </>
-      ) : null}
-      </>
       ) : null}
     </TradeShell>
   );

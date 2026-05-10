@@ -53,6 +53,7 @@ from app.services.trade_service import (
     create_trade_category,
     decide_contact_request,
     get_ai_settings,
+    launch_checklist,
     list_admin_actions,
     list_ai_usage_logs,
     list_contact_requests_for_user,
@@ -365,6 +366,14 @@ def admin_update_category_endpoint(
     admin=Depends(require_app_role(AppRole.ADMIN)),
 ) -> TradeCategoryRead:
     return TradeCategoryRead.model_validate(update_trade_category(db, str(category_id), payload, admin))
+
+
+@router.get("/admin/launch-checklist")
+def admin_launch_checklist_endpoint(
+    db: Session = Depends(get_db),
+    _admin=Depends(require_app_role(AppRole.MODERATOR)),
+) -> dict:
+    return launch_checklist(db)
 
 
 @router.get("/admin/ai-settings", response_model=AISettingsRead)

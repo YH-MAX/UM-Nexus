@@ -1225,6 +1225,25 @@ def admin_update_listing(
                 "moderation_status": updated.moderation_status,
             },
         )
+    elif updated.status == "available" and old_status in {"hidden", "deleted"}:
+        _notify(
+            repo,
+            user_id=updated.seller_id,
+            actor_id=moderator.id,
+            notification_type="listing_restored_by_moderation",
+            title="Listing restored",
+            body=f"Your listing is available again on UM Nexus Trade.",
+            action_url=f"/trade/dashboard?tab=listings&listing_id={updated.id}",
+            entity_type="listing",
+            entity_id=updated.id,
+            metadata={
+                "listing_id": updated.id,
+                "listing_title": updated.title,
+                "old_listing_status": old_status,
+                "new_listing_status": updated.status,
+                "moderation_status": updated.moderation_status,
+            },
+        )
     if payload.resolution:
         now = datetime.now(UTC)
         for report in repo.list_reports_for_listing(listing.id):
@@ -1270,6 +1289,189 @@ def admin_update_listing(
         }
     )
     return updated
+
+
+def launch_checklist(db: Session) -> dict:
+    from app.services.trade_intelligence import get_trade_provider_status
+
+    repo = TradeRepository(db)
+    day_ago = datetime.now(UTC) - timedelta(hours=24)
+
+    stats = repo.marketplace_statistics()
+    mod = moderation_summary(db)
+
+    active_listings: int = stats["active_listings"]
+    total_users: int = stats["total_users"]
+    pending_reports: int = mod["pending_review_count"]
+    open_moderation_items: int = mod["high_risk_count"]
+    contact_requests_sent: int = stats["contact_requests_sent"]
+    contact_requests_accepted: int = stats["contact_requests_accepted"]
+
+    total_ai_24h = repo.count_ai_usage_logs(statuses=("succeeded", "failed", "denied"), since=day_ago)
+    failed_ai_24h = repo.count_ai_usage_logs(statuses=("failed",), since=day_ago)
+
+    from sqlalchemy import func, select
+    from app.models import Listing, ListingImage
+
+    listings_without_photo = int(
+        db.scalar(
+            select(func.count(Listing.id))
+            .outerjoin(ListingImage, ListingImage.listing_id == Listing.id)
+            .where(Listing.status == "available")
+            .where(ListingImage.id.is_(None))
+        )
+        or 0
+    )
+    listings_missing_pickup_or_contact = int(
+        db.scalar(
+            select(func.count()).select_from(Listing).where(
+                Listing.status == "available",
+                Listing.pickup_location.is_(None),
+                Listing.pickup_area.is_(None),
+                Listing.contact_method.is_(None),
+            )
+        )
+        or 0
+    )
+
+    try:
+        provider = get_trade_provider_status(db)
+        ai_provider_status = provider.status if provider.status else "unknown"
+    except Exception:
+        ai_provider_status = "unknown"
+
+    ai_failure_pct = (failed_ai_24h / total_ai_24h) if total_ai_24h > 0 else 0.0
+    conversion_rate = (contact_requests_accepted / contact_requests_sent) if contact_requests_sent > 0 else 0.0
+    photo_missing_pct = (listings_without_photo / active_listings) if active_listings > 0 else 0.0
+
+    def _status(value, green_cond, amber_cond) -> str:
+        if green_cond(value):
+            return "green"
+        if amber_cond(value):
+            return "amber"
+        return "red"
+
+    items = [
+        {
+            "key": "active_listings",
+            "section": "Content",
+            "label": "Seed listings",
+            "value": active_listings,
+            "status": _status(
+                active_listings,
+                lambda v: v >= 10,
+                lambda v: 5 <= v < 10,
+            ),
+            "detail": "≥10 green · 5–9 amber · <5 red",
+        },
+        {
+            "key": "listings_without_photo",
+            "section": "Content",
+            "label": "Listings without a photo",
+            "value": f"{round(photo_missing_pct * 100)}%",
+            "status": _status(
+                photo_missing_pct,
+                lambda v: v < 0.20,
+                lambda v: v <= 0.40,
+            ),
+            "detail": "<20% green · 20–40% amber · >40% red",
+        },
+        {
+            "key": "listings_missing_pickup_or_contact",
+            "section": "Content",
+            "label": "Listings missing pickup or contact",
+            "value": listings_missing_pickup_or_contact,
+            "status": _status(
+                listings_missing_pickup_or_contact,
+                lambda v: v == 0,
+                lambda v: v <= 3,
+            ),
+            "detail": "0 green · 1–3 amber · >3 red",
+        },
+        {
+            "key": "active_users",
+            "section": "Users",
+            "label": "Active users",
+            "value": total_users,
+            "status": "green" if total_users >= 1 else "red",
+            "detail": "≥1 registered user required",
+        },
+        {
+            "key": "pending_reports",
+            "section": "Safety",
+            "label": "Pending reports",
+            "value": pending_reports,
+            "status": _status(
+                pending_reports,
+                lambda v: v == 0,
+                lambda v: v <= 2,
+            ),
+            "detail": "0 green · 1–2 amber · ≥3 red",
+        },
+        {
+            "key": "open_moderation_items",
+            "section": "Safety",
+            "label": "Open moderation items (high risk)",
+            "value": open_moderation_items,
+            "status": _status(
+                open_moderation_items,
+                lambda v: v == 0,
+                lambda v: v <= 5,
+            ),
+            "detail": "0 green · 1–5 amber · >5 red",
+        },
+        {
+            "key": "ai_provider_status",
+            "section": "AI",
+            "label": "AI provider status",
+            "value": ai_provider_status,
+            "status": (
+                "green" if ai_provider_status == "ok"
+                else "amber" if ai_provider_status == "fallback"
+                else "red"
+            ),
+            "detail": "ok = green · fallback = amber · other = red",
+        },
+        {
+            "key": "failed_ai_calls_24h",
+            "section": "AI",
+            "label": "Failed AI calls (last 24 h)",
+            "value": f"{round(ai_failure_pct * 100)}% ({failed_ai_24h}/{total_ai_24h})",
+            "status": _status(
+                ai_failure_pct,
+                lambda v: v < 0.10,
+                lambda v: v <= 0.25,
+            ),
+            "detail": "<10% green · 10–25% amber · >25% red",
+        },
+        {
+            "key": "contact_conversion",
+            "section": "Engagement",
+            "label": "Contact request conversion",
+            "value": f"{round(conversion_rate * 100)}% ({contact_requests_accepted}/{contact_requests_sent})",
+            "status": _status(
+                conversion_rate,
+                lambda v: v >= 0.20,
+                lambda v: v >= 0.10,
+            ),
+            "detail": "≥20% green · 10–19% amber · <10% red",
+        },
+    ]
+
+    return {
+        "items": items,
+        "active_listings": active_listings,
+        "listings_without_photo": listings_without_photo,
+        "listings_missing_pickup_or_contact": listings_missing_pickup_or_contact,
+        "active_users": total_users,
+        "pending_reports": pending_reports,
+        "open_moderation_items": open_moderation_items,
+        "ai_provider_status": ai_provider_status,
+        "failed_ai_calls_24h": failed_ai_24h,
+        "total_ai_calls_24h": total_ai_24h,
+        "contact_requests_sent": contact_requests_sent,
+        "contact_requests_accepted": contact_requests_accepted,
+    }
 
 
 def admin_update_user_status(
