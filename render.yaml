@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: um-nexus-api
+    runtime: docker
+    dockerContext: ./apps/api
+    dockerfilePath: ./apps/api/Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: CELERY_TASK_ALWAYS_EAGER
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        value: redis://localhost:6379/0
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: listing-images
+      - key: ALLOWED_EMAIL_DOMAINS
+        value: siswa.um.edu.my,um.edu.my
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: GLM_PROVIDER
+        value: demo
+      - key: ZAI_BASE_URL
+        value: https://api.z.ai/api/paas/v4
+      - key: ZAI_MODEL
+        value: glm-4.6v
+      - key: ZAI_TIMEOUT_SECONDS
+        value: "60"
+      - key: ZAI_MAX_RETRIES
+        value: "2"
+      - key: MAX_UPLOAD_FILE_SIZE_BYTES
+        value: "5242880"
