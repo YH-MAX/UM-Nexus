@@ -2,10 +2,11 @@ services:
   - type: web
     name: um-nexus-api
     runtime: docker
+    plan: free
     dockerContext: ./apps/api
     dockerfilePath: ./apps/api/Dockerfile
     healthCheckPath: /health
-    autoDeployTrigger: off
+    autoDeploy: false
     envVars:
       - key: APP_ENV
         value: production
