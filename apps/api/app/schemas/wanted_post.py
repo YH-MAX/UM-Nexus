@@ -44,6 +44,7 @@ class WantedPostRead(BaseModel):
     preferred_pickup_area: str | None
     residential_college: str | None
     status: str
+    response_count: int = 0
     created_at: datetime
     updated_at: datetime
 

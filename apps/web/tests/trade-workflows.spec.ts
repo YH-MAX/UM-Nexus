@@ -135,6 +135,7 @@ const wantedPost = {
   preferred_pickup_area: "fsktm",
   residential_college: "KK12",
   status: "active",
+  response_count: 0,
   created_at: now,
   updated_at: now,
 };
@@ -275,7 +276,7 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page.getByText("You're all caught up.")).toBeVisible();
   });
 
-  test("seller can browse wanted demand and send a direct offer", async ({ page }) => {
+  test("seller can browse wanted demand and send an offer", async ({ page }) => {
     await loginAs(page, sellerUser);
     const state = await mockTradeApi(page);
 
@@ -283,12 +284,12 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page.getByRole("heading", { name: /Wanted board/i })).toBeVisible();
     await expect(page.getByText(/Looking for Casio calculator/i)).toBeVisible();
 
-    await page.getByRole("button", { name: /Send direct offer/i }).click();
+    await page.getByRole("button", { name: /^Send Offer$/i }).first().click();
     await page.getByLabel(/Offer message/i).fill("I have an FX-570EX in good condition and can meet at FSKTM.");
     await page.getByLabel(/Contact method/i).selectOption("telegram");
     await page.getByLabel(/Contact value/i).fill("@aina_um");
     await page.getByLabel(/Attach one of your listings/i).selectOption("listing-1");
-    await page.getByRole("button", { name: /^Send offer$/i }).click();
+    await page.getByRole("button", { name: /^Send Offer$/i }).last().click();
 
     await expect(page.getByText(/Direct offer sent/i)).toBeVisible();
     expect(state.wantedResponseCreated).toBe(true);
@@ -307,7 +308,7 @@ test.describe("authenticated Trade product workflows", () => {
 
     await page.goto("/trade/dashboard");
     await page.getByRole("button", { name: "Wanted" }).click();
-    await expect(page.getByRole("heading", { name: /Listings created from wanted posts/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Listings From Wanted/i })).toBeVisible();
     await expect(page.getByText(/Calculator from wanted request/i)).toBeVisible();
   });
 

@@ -186,7 +186,7 @@ export function WantedPostDetailClient({
     <TradeShell
       eyebrow="UM Nexus Wanted Post"
       title={wantedPost?.title ?? "Wanted post detail"}
-      description="Wanted posts act as demand signals for the Trade Intelligence match engine."
+      description="Post what you need, review seller offers, and find possible matches from UM students."
     >
       {error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
@@ -218,7 +218,7 @@ export function WantedPostDetailClient({
             <div>
               <div className="flex flex-wrap gap-2">
                 <StatusPill>{formatCategory(wantedPost.category)}</StatusPill>
-                <StatusPill tone="good">{wantedPost.status}</StatusPill>
+                <StatusPill tone={wantedPost.status === "active" ? "good" : "warn"}>{wantedStatusLabel(wantedPost.status)}</StatusPill>
               </div>
               <h2 className="mt-4 text-3xl font-semibold text-slate-950">
                 {wantedPost.title}
@@ -243,6 +243,15 @@ export function WantedPostDetailClient({
             <Fact label="College" value={wantedPost.residential_college ?? "TBD"} />
             <Fact label="Currency" value={wantedPost.currency} />
           </div>
+          <p className={`mt-5 rounded-lg border px-3 py-2 text-sm ${wantedPost.status === "active" ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+            {wantedPost.status === "active" ? "Active · sellers can send offers" : "Closed · no new offers"}
+          </p>
+          {isOwner && wantedPost.status === "active" && isWantedStale(wantedPost.created_at) ? (
+            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+              <p className="font-semibold">This request has been active for 14+ days.</p>
+              <p className="mt-1">Close this request when you no longer need the item.</p>
+            </div>
+          ) : null}
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
@@ -255,7 +264,7 @@ export function WantedPostDetailClient({
               className="inline-flex rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
               href={`/trade/sell?wanted_id=${wantedPost.id}`}
             >
-              I have this item
+              I Have This Item
             </Link>
             {!isOwner ? (
               <button
@@ -264,7 +273,7 @@ export function WantedPostDetailClient({
                 type="button"
               >
                 <Send aria-hidden="true" className="h-4 w-4" />
-                Send direct offer
+                Send Offer
               </button>
             ) : (
               <button
@@ -273,7 +282,7 @@ export function WantedPostDetailClient({
                 onClick={() => void changeWantedStatus(wantedPost.status === "active" ? "closed" : "active")}
                 type="button"
               >
-                {wantedPost.status === "active" ? "Close request" : "Reopen request"}
+                {wantedPost.status === "active" ? "Close Request" : "Reopen Request"}
               </button>
             )}
           </div>
@@ -308,9 +317,9 @@ export function WantedPostDetailClient({
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-slate-950">Recommended products</h2>
+              <h2 className="text-xl font-semibold text-slate-950">Possible matches</h2>
               <p className="mt-2 text-sm text-slate-600">
-                Ranked by buyer need fit, budget compatibility, pickup convenience, risk, and listing quality.
+                These listings may match what you are looking for.
               </p>
             </div>
             <StatusPill tone={recommendations.length > 0 ? "good" : "warn"}>
@@ -319,7 +328,7 @@ export function WantedPostDetailClient({
           </div>
           {recommendations.length === 0 ? (
             <p className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-              No strong product recommendation yet. The engine suppresses weak matches so buyers do not waste time.
+              No strong matches yet. Check back later as new UM listings are posted.
             </p>
           ) : (
             <div className="mt-4 grid gap-3">
@@ -344,14 +353,14 @@ export function WantedPostDetailClient({
                     </div>
                   </div>
                   <div className="mt-3 grid gap-2 text-sm leading-5 text-slate-600 md:grid-cols-2">
-                    <p>Need fit: {item.item_fit_summary}</p>
-                    <p>Budget fit: {item.price_fit_summary}</p>
-                    <p>Pickup fit: {item.location_fit_summary}</p>
+                    <p>{item.item_fit_summary}</p>
+                    <p>{item.price_fit_summary}</p>
+                    <p>{item.location_fit_summary}</p>
                     <p>{item.risk_note}</p>
                   </div>
-                  <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
-                    Next action: {item.recommended_action.replaceAll("_", " ")}
-                  </p>
+                  <span className="mt-3 inline-flex rounded-lg border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-800">
+                    View Listing
+                  </span>
                 </Link>
               ))}
             </div>
@@ -366,9 +375,11 @@ export function WantedPostDetailClient({
           <form className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onSubmit={sendWantedResponse}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Direct offer</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Send Offer</p>
                 <h2 className="mt-2 text-xl font-semibold text-slate-950">{wantedPost.title}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Your contact stays hidden until the buyer accepts this response.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Your message and selected contact method will be shown to the buyer. Your contact details are only revealed if the buyer accepts your offer.
+                </p>
               </div>
               <button aria-label="Close" className="rounded-full p-2 text-slate-500 hover:bg-slate-100" onClick={() => setIsResponseOpen(false)} type="button">
                 <X aria-hidden="true" className="h-5 w-5" />
@@ -388,10 +399,16 @@ export function WantedPostDetailClient({
                   <option value="email">Email</option>
                 </select>
               </label>
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold text-slate-800">Contact value</span>
-                <input className="trade-input" value={responseForm.seller_contact_value} onChange={(event) => setResponseForm((current) => ({ ...current, seller_contact_value: event.target.value }))} />
-              </label>
+              {responseForm.seller_contact_method === "in_app" ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                  You can start in-app first. No contact value is needed.
+                </div>
+              ) : (
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-slate-800">{responseForm.seller_contact_method === "email" ? "Contact value (optional)" : "Contact value"}</span>
+                  <input className="trade-input" value={responseForm.seller_contact_value} onChange={(event) => setResponseForm((current) => ({ ...current, seller_contact_value: event.target.value }))} />
+                </label>
+              )}
             </div>
             {sellerListings.length > 0 ? (
               <label className="mt-4 grid gap-2">
@@ -406,9 +423,17 @@ export function WantedPostDetailClient({
                 </select>
               </label>
             ) : null}
+            {sellerListings.length === 0 ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                You can also create a listing from this wanted request.
+                <Link className="ml-1 font-semibold text-emerald-800 underline underline-offset-2" href={`/trade/sell?wanted_id=${wantedPost.id}`}>
+                  Start a listing
+                </Link>
+              </div>
+            ) : null}
             <button className="trade-button-primary mt-5 w-full" disabled={isUpdating} type="submit">
               <Send aria-hidden="true" className="h-4 w-4" />
-              {isUpdating ? "Sending..." : "Send offer"}
+              {isUpdating ? "Sending..." : "Send Offer"}
             </button>
           </form>
         </div>
@@ -439,6 +464,7 @@ function WantedResponseStatusCard({
         </div>
         <StatusPill tone={statusTone(response.status)}>{response.status}</StatusPill>
       </div>
+      <OfferStatusTimeline status={response.status} />
       {response.listing ? (
         <Link className="mt-3 block rounded-lg border border-slate-200 bg-white p-3 text-sm transition hover:border-emerald-200 hover:bg-emerald-50" href={`/trade/${response.listing.id}`}>
           <span className="font-semibold text-slate-950">{response.listing.title}</span>
@@ -475,6 +501,30 @@ function WantedResponseStatusCard({
   );
 }
 
+function OfferStatusTimeline({ status }: Readonly<{ status: string }>) {
+  const terminalLabel =
+    status === "accepted"
+      ? "Accepted"
+      : status === "rejected"
+        ? "Rejected"
+        : status === "cancelled"
+          ? "Cancelled"
+          : "Accepted / Rejected / Cancelled";
+  const steps = ["Offer sent", "Buyer reviewing", terminalLabel];
+  const activeIndex = status === "pending" ? 1 : 2;
+
+  return (
+    <div className="mt-3 grid gap-2 rounded-lg border border-slate-200 bg-white p-3 sm:grid-cols-3">
+      {steps.map((step, index) => (
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600" key={step}>
+          <span className={`h-2.5 w-2.5 rounded-full ${index <= activeIndex ? "bg-emerald-600" : "bg-slate-300"}`} />
+          <span className={index <= activeIndex ? "text-slate-950" : ""}>{step}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Fact({ label, value }: Readonly<{ label: string; value: string }>) {
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -494,4 +544,19 @@ function formatContactLine(method: string | null | undefined, value: string | nu
     return "In-app request only";
   }
   return value ? `${method} ${value}` : `${method} not provided`;
+}
+
+function wantedStatusLabel(status: string): string {
+  if (status === "active") {
+    return "Active";
+  }
+  if (status === "closed") {
+    return "Closed";
+  }
+  return status;
+}
+
+function isWantedStale(createdAt: string): boolean {
+  const age = Date.now() - new Date(createdAt).getTime();
+  return age >= 14 * 24 * 60 * 60 * 1000;
 }

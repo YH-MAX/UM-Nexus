@@ -89,6 +89,7 @@ export type WantedPost = {
   preferred_pickup_area: string | null;
   residential_college: string | null;
   status: string;
+  response_count: number;
   created_at: string;
   updated_at: string;
 };

@@ -15,6 +15,7 @@ import {
   formatCategory,
   formatMoney,
   formatPickupLocation,
+  formatRelativeTime,
   getCurrentUser,
   getTradeDashboard,
   isProfileComplete,
@@ -250,6 +251,29 @@ export default function WantPage() {
 
       {user ? (
         <div className="grid gap-5">
+          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+              <div>
+                <p className="text-sm font-semibold text-emerald-800">Looking for something?</p>
+                <h2 className="mt-2 text-2xl font-semibold text-slate-950">Post what you need, and UM students who have it can send you an offer.</h2>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
+                  Wanted requests help sellers understand real campus demand before they create a listing.
+                </p>
+              </div>
+              <div className="grid gap-2 text-sm text-slate-700">
+                {[
+                  "Looking for a used monitor under RM200",
+                  "Need a Data Structures textbook",
+                  "Looking for a rice cooker near KK12",
+                ].map((example) => (
+                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" key={example}>
+                    {example}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </section>
+
           <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -264,7 +288,7 @@ export default function WantPage() {
                 onClick={() => setMode("post")}
                 type="button"
               >
-                Post Wanted
+                Post Wanted Request
               </button>
             </div>
             <p className="px-3 text-sm text-slate-500">
@@ -325,7 +349,7 @@ export default function WantPage() {
                   <p className="mt-2 text-sm text-slate-600">Try clearing filters or post the first request for this category.</p>
                   <button className="trade-button-primary mt-5" onClick={() => setMode("post")} type="button">
                     <Megaphone aria-hidden="true" className="h-4 w-4" />
-                    Post wanted request
+                    Post Wanted Request
                   </button>
                 </div>
               ) : (
@@ -354,6 +378,9 @@ export default function WantPage() {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Wanted request</p>
                   <h2 className="mt-2 text-xl font-semibold text-slate-950">Tell sellers what you need</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Keep it concrete: item, budget, pickup area, urgency, and acceptable alternatives.
+                  </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
                   <TextField label="Title" required value={form.title} onChange={(value) => updateField("title", value)} />
@@ -369,15 +396,15 @@ export default function WantPage() {
                 </label>
                 <button className="trade-button-primary w-full md:w-fit" disabled={isSubmitting || !profileReady} type="submit">
                   <Megaphone aria-hidden="true" className="h-4 w-4" />
-                  {isSubmitting ? "Creating..." : "Create wanted post"}
+                  {isSubmitting ? "Posting..." : "Post Wanted Request"}
                 </button>
               </form>
 
               <aside className="trade-card h-fit p-5">
                 <h2 className="text-lg font-semibold text-slate-950">What sellers see</h2>
                 <div className="mt-4 grid gap-3 text-sm text-slate-700">
-                  {["Your request appears on the signed-in Wanted board.", "Sellers can create a listing from your request.", "Direct offers hide seller contact until you accept."].map((example) => (
-                    <p className="rounded-2xl border border-slate-200 bg-slate-50 p-3" key={example}>{example}</p>
+                  {["Your request appears on the signed-in Wanted board.", "Sellers can send you an offer or create a listing from your request.", "Seller contact details stay hidden until you accept an offer."].map((example) => (
+                    <p className="rounded-lg border border-slate-200 bg-slate-50 p-3" key={example}>{example}</p>
                   ))}
                 </div>
               </aside>
@@ -390,9 +417,11 @@ export default function WantPage() {
               <form className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onSubmit={sendWantedResponse}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Direct offer</p>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Send Offer</p>
                     <h2 className="mt-2 text-xl font-semibold text-slate-950">{responsePost.title}</h2>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">Your contact stays hidden until the buyer accepts this response.</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      Your message and selected contact method will be shown to the buyer. Your contact details are only revealed if the buyer accepts your offer.
+                    </p>
                   </div>
                   <button aria-label="Close" className="rounded-full p-2 text-slate-500 hover:bg-slate-100" onClick={() => setResponsePost(null)} type="button">
                     <X aria-hidden="true" className="h-5 w-5" />
@@ -404,7 +433,17 @@ export default function WantPage() {
                 </label>
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <SelectField label="Contact method" value={responseForm.seller_contact_method} options={contactMethods} onChange={(value) => setResponseForm((current) => ({ ...current, seller_contact_method: value }))} />
-                  <TextField label="Contact value" value={responseForm.seller_contact_value} onChange={(value) => setResponseForm((current) => ({ ...current, seller_contact_value: value }))} />
+                  {responseForm.seller_contact_method === "in_app" ? (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                      You can start in-app first. No contact value is needed.
+                    </div>
+                  ) : (
+                    <TextField
+                      label={responseForm.seller_contact_method === "email" ? "Contact value (optional)" : "Contact value"}
+                      value={responseForm.seller_contact_value}
+                      onChange={(value) => setResponseForm((current) => ({ ...current, seller_contact_value: value }))}
+                    />
+                  )}
                 </div>
                 {sellerListings.length > 0 ? (
                   <div className="mt-4">
@@ -422,9 +461,17 @@ export default function WantPage() {
                     />
                   </div>
                 ) : null}
+                {sellerListings.length === 0 ? (
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+                    You can also create a listing from this wanted request.
+                    <Link className="ml-1 font-semibold text-emerald-800 underline underline-offset-2" href={`/trade/sell?wanted_id=${responsePost.id}`}>
+                      Start a listing
+                    </Link>
+                  </div>
+                ) : null}
                 <button className="trade-button-primary mt-5 w-full" disabled={isSubmitting} type="submit">
                   <Send aria-hidden="true" className="h-4 w-4" />
-                  {isSubmitting ? "Sending..." : "Send offer"}
+                  {isSubmitting ? "Sending..." : "Send Offer"}
                 </button>
               </form>
             </div>
@@ -448,47 +495,82 @@ function WantedCard({
   onRespond: () => void;
   onStatusChange: (post: WantedPost, status: "active" | "closed") => Promise<void>;
 }>) {
+  const isActive = post.status === "active";
+  const isStale = isMine && isActive && isWantedStale(post.created_at);
+  const responseCount = post.response_count ?? 0;
+
   return (
     <article className="trade-card grid gap-4 p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap gap-2">
             <StatusPill>{formatCategory(post.category)}</StatusPill>
-            <StatusPill tone={post.status === "active" ? "good" : "warn"}>{post.status}</StatusPill>
+            <StatusPill tone={isActive ? "good" : "warn"}>{wantedStatusLabel(post.status)}</StatusPill>
             {isMine ? <StatusPill>yours</StatusPill> : null}
           </div>
           <Link className="mt-3 block text-lg font-semibold text-slate-950 transition hover:text-emerald-800" href={`/wanted-posts/${post.id}`}>
             {post.title}
           </Link>
           <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{post.description ?? "No description provided."}</p>
+          <p className="mt-2 text-xs font-semibold text-slate-500">
+            Posted by UM student · {formatRelativeTime(post.created_at)}
+          </p>
         </div>
-        <div className="shrink-0 rounded-2xl bg-emerald-50 px-3 py-2 text-right">
+        <div className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-right">
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-emerald-700">Budget</p>
           <p className="text-base font-bold text-emerald-900">{formatMoney(post.max_budget, post.currency)}</p>
         </div>
       </div>
-      <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
-        <span>Item: {post.desired_item_name ?? "Flexible"}</span>
-        <span>Pickup: {formatPickupLocation(post.preferred_pickup_area)}</span>
-        <span>College: {post.residential_college ?? "TBD"}</span>
+      <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
+        <span>Item: <strong className="font-semibold text-slate-800">{post.desired_item_name ?? "Flexible"}</strong></span>
+        <span>Pickup: <strong className="font-semibold text-slate-800">{formatPickupLocation(post.preferred_pickup_area)}</strong></span>
+        <span>College: <strong className="font-semibold text-slate-800">{post.residential_college ?? "TBD"}</strong></span>
+        <span>Offers: <strong className="font-semibold text-slate-800">{responseCount}</strong></span>
       </div>
+      <p className={`rounded-lg border px-3 py-2 text-sm ${isActive ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+        {isActive ? "Active · sellers can send offers" : "Closed · no new offers"}
+      </p>
+      {isStale ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+          <p className="font-semibold">This request has been active for 14+ days.</p>
+          <p className="mt-1">Close this request when you no longer need the item.</p>
+          <button className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100" disabled={isUpdating} onClick={() => void onStatusChange(post, "closed")} type="button">
+            Close Request
+          </button>
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         <Link className="trade-button-primary" href={`/trade/sell?wanted_id=${post.id}`}>
-          I have this item
+          I Have This Item
         </Link>
         {!isMine ? (
           <button className="trade-button-secondary" onClick={onRespond} type="button">
             <Send aria-hidden="true" className="h-4 w-4" />
-            Send direct offer
+            Send Offer
           </button>
         ) : (
           <button className="trade-button-secondary" disabled={isUpdating} onClick={() => void onStatusChange(post, post.status === "active" ? "closed" : "active")} type="button">
-            {post.status === "active" ? "Close request" : "Reopen request"}
+            {post.status === "active" ? "Close Request" : "Reopen Request"}
           </button>
         )}
       </div>
     </article>
   );
+}
+
+function wantedStatusLabel(status: string): string {
+  if (status === "active") {
+    return "Active";
+  }
+  if (status === "closed") {
+    return "Closed";
+  }
+  return status;
+}
+
+function isWantedStale(createdAt: string): boolean {
+  const age = Date.now() - new Date(createdAt).getTime();
+  return age >= 14 * 24 * 60 * 60 * 1000;
 }
 
 function TextField({

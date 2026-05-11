@@ -28,6 +28,7 @@ import {
   type Listing,
   type TradeDashboard,
   type TradeTransaction,
+  type WantedPost,
   type WantedResponse,
 } from "@/lib/trade/api";
 
@@ -458,6 +459,7 @@ export default function TradeDashboardPage() {
               listings={dashboard.listings}
               received={dashboard.wanted_responses_received}
               sent={dashboard.wanted_responses_sent}
+              wantedPosts={dashboard.wanted_posts}
               onAnswer={answerWantedResponse}
               onCancel={cancelSentWantedResponse}
             />
@@ -640,6 +642,7 @@ function WantedResponsesTab({
   listings,
   received,
   sent,
+  wantedPosts,
   onAnswer,
   onCancel,
 }: Readonly<{
@@ -648,17 +651,48 @@ function WantedResponsesTab({
   listings: Listing[];
   received: WantedResponse[];
   sent: WantedResponse[];
+  wantedPosts: WantedPost[];
   onAnswer: (response: WantedResponse, status: "accepted" | "rejected") => Promise<void>;
   onCancel: (response: WantedResponse) => Promise<void>;
 }>) {
   const listingsFromWanted = listings.filter((listing) => listing.source_wanted_post_id);
   return (
     <section className="grid gap-5 lg:grid-cols-2">
-      <Panel title="Incoming wanted offers">
+      <Panel title="My Wanted Posts">
+        {wantedPosts.length === 0 ? (
+          <EmptyState
+            actionHref="/trade/want"
+            actionLabel="Post Wanted Request"
+            description="Post what you need so UM students can send offers."
+            title="No wanted posts"
+          />
+        ) : (
+          wantedPosts.map((post) => (
+            <Link className="block rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-emerald-200 hover:bg-emerald-50" href={`/wanted-posts/${post.id}`} key={post.id}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="font-semibold text-slate-950">{post.title}</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {post.desired_item_name ?? "Flexible item"} · {formatMoney(post.max_budget, post.currency)} · {formatPickupLocation(post.preferred_pickup_area)}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">{formatRelativeTime(post.created_at)}</p>
+                </div>
+                <StatusPill tone={post.status === "active" ? "good" : "warn"}>
+                  {post.status === "active" ? "Active · sellers can send offers" : "Closed · no new offers"}
+                </StatusPill>
+              </div>
+              <span className="mt-3 inline-flex rounded-lg border border-emerald-200 px-3 py-2 text-sm font-semibold text-emerald-800">
+                View Offers
+              </span>
+            </Link>
+          ))
+        )}
+      </Panel>
+      <Panel title="Incoming Offers">
         {received.length === 0 ? (
           <EmptyState
             actionHref="/trade/want"
-            actionLabel="Post wanted request"
+            actionLabel="Post Wanted Request"
             description="Seller offers for your wanted posts will appear here."
             title="No incoming offers"
           />
@@ -675,7 +709,7 @@ function WantedResponsesTab({
           ))
         )}
       </Panel>
-      <Panel title="My sent offers">
+      <Panel title="My Sent Offers">
         {sent.length === 0 ? (
           <EmptyState
             actionHref="/trade/want"
@@ -696,7 +730,7 @@ function WantedResponsesTab({
           ))
         )}
       </Panel>
-      <Panel title="Listings created from wanted posts">
+      <Panel title="Listings From Wanted">
         {listingsFromWanted.length === 0 ? (
           <EmptyState
             actionHref="/trade/want"
@@ -746,6 +780,7 @@ function WantedResponseCard({
         </div>
         <StatusPill tone={statusTone(response.status)}>{response.status}</StatusPill>
       </div>
+      <OfferStatusTimeline status={response.status} />
 
       {response.listing ? (
         <Link className="mt-3 block rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm transition hover:border-emerald-200 hover:bg-emerald-50" href={`/trade/${response.listing.id}`}>
@@ -788,6 +823,30 @@ function WantedResponseCard({
         </button>
       ) : null}
     </article>
+  );
+}
+
+function OfferStatusTimeline({ status }: Readonly<{ status: string }>) {
+  const terminalLabel =
+    status === "accepted"
+      ? "Accepted"
+      : status === "rejected"
+        ? "Rejected"
+        : status === "cancelled"
+          ? "Cancelled"
+          : "Accepted / Rejected / Cancelled";
+  const steps = ["Offer sent", "Buyer reviewing", terminalLabel];
+  const activeIndex = status === "pending" ? 1 : 2;
+
+  return (
+    <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+      {steps.map((step, index) => (
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600" key={step}>
+          <span className={`h-2.5 w-2.5 rounded-full ${index <= activeIndex ? "bg-emerald-600" : "bg-slate-300"}`} />
+          <span className={index <= activeIndex ? "text-slate-950" : ""}>{step}</span>
+        </div>
+      ))}
+    </div>
   );
 }
 

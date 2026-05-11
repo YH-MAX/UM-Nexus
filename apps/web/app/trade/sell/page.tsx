@@ -39,6 +39,7 @@ import {
   type ListingPayload,
   type SellAgentDraft,
   type SellAgentSellerContext,
+  type WantedPost,
 } from "@/lib/trade/api";
 
 type PreviewFile = {
@@ -168,6 +169,7 @@ export default function SellPage() {
   const [qualityReviewMode, setQualityReviewMode] = useState<"manual" | "ai" | null>(null);
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [wantedContext, setWantedContext] = useState<WantedPost | null>(null);
 
   useEffect(() => {
     return () => {
@@ -226,12 +228,13 @@ export default function SellPage() {
         if (!isMounted) {
           return;
         }
+        setWantedContext(wantedPost);
         setEditableDraft((current) => ({
           ...current,
-          title: current.title || `Offer for: ${wantedPost.title}`,
+          title: current.title || suggestedListingTitle(wantedPost),
           description:
             current.description ||
-            `Created from a UM Nexus wanted request.\n\nBuyer wanted: ${wantedPost.description ?? wantedPost.title}`,
+            `Listing created from a UM Nexus wanted request.\n\nBuyer wanted: ${wantedPost.description ?? wantedPost.title}`,
           category: wantedPost.category || current.category,
           item_name: wantedPost.desired_item_name ?? current.item_name,
           price: wantedPost.max_budget ? Math.min(current.price || wantedPost.max_budget, wantedPost.max_budget) : current.price,
@@ -240,7 +243,14 @@ export default function SellPage() {
           residential_college: wantedPost.residential_college ?? current.residential_college,
           source_wanted_post_id: wantedPost.id,
         }));
-        setNotice("Wanted request context added. Create the listing manually and publish when ready.");
+        setSellerContext((current) => ({
+          ...current,
+          product_name: current.product_name || wantedPost.desired_item_name || wantedPost.title,
+          pickup_area: current.pickup_area || wantedPost.preferred_pickup_area || undefined,
+          residential_college: current.residential_college || wantedPost.residential_college || undefined,
+          free_text: [current.free_text, `Buyer wanted: ${wantedPost.description ?? wantedPost.title}`].filter(Boolean).join("\n"),
+        }));
+        setNotice("Wanted request context added. Review the listing details, then publish when ready.");
       })
       .catch((nextError) => {
         if (isMounted) {
@@ -564,6 +574,21 @@ export default function SellPage() {
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           {notice}
         </p>
+      ) : null}
+
+      {wantedContext ? (
+        <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+          <p className="text-sm font-semibold">Creating listing for wanted request:</p>
+          <h2 className="mt-1 text-xl font-semibold">{wantedContext.title}</h2>
+          <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
+            <span>Suggested price: {formatMoney(wantedContext.max_budget, wantedContext.currency)}</span>
+            <span>Pickup: {formatPickupLocation(wantedContext.preferred_pickup_area)}</span>
+            <span>Item: {wantedContext.desired_item_name ?? "Flexible"}</span>
+          </div>
+          <p className="mt-3 text-sm leading-6 text-emerald-900">
+            The wanted post is used as context. Adjust the title, condition, photos, and price so the listing sounds natural.
+          </p>
+        </section>
       ) : null}
 
       {qualityReviewMode ? (
@@ -2169,6 +2194,22 @@ function CloseIcon() {
       <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
     </svg>
   );
+}
+
+function suggestedListingTitle(wantedPost: WantedPost): string {
+  const source =
+    wantedPost.desired_item_name ||
+    wantedPost.title
+      .replace(/looking for/gi, "")
+      .replace(/need/gi, "")
+      .replace(/under\s+rm?\s*\d+/gi, "")
+      .trim();
+  const cleaned = source || formatCategory(wantedPost.category);
+  const words = cleaned
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1));
+  return `${words.join(" ")} for Sale`;
 }
 
 function sleep(milliseconds: number) {

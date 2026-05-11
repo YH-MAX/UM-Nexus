@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Numeric, String, Text, Uuid
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -34,6 +35,9 @@ class WantedPost(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     preferred_pickup_area: Mapped[str | None] = mapped_column(String(64), nullable=True)
     residential_college: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", server_default="active")
+    closed_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    closed_reason_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     buyer: Mapped["User"] = relationship()
     matches: Mapped[list["TradeMatch"]] = relationship(
@@ -49,3 +53,7 @@ class WantedPost(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="wanted_post",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def response_count(self) -> int:
+        return len(self.responses)
