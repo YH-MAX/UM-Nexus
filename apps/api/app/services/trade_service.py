@@ -2158,7 +2158,10 @@ def _notify_recommended_wanted_matches_for_listing(db: Session, listing: Listing
 def _notify_wanted_posts_expiring_soon(repo: TradeRepository, current_user: User, wanted_posts: list[WantedPost]) -> None:
     reminder_cutoff = datetime.now(UTC) - timedelta(days=14)
     for wanted_post in wanted_posts:
-        if wanted_post.status != "active" or wanted_post.created_at > reminder_cutoff:
+        created_at = wanted_post.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        if wanted_post.status != "active" or created_at > reminder_cutoff:
             continue
         _notify(
             repo,

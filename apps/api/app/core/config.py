@@ -13,6 +13,8 @@ ZAI_PROVIDER_NAMES = {"zai", "z.ai", "zai-glm", "zai_glm"}
 DEFAULT_CORS_ALLOWED_ORIGINS = (
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+    "http://localhost:3100",
+    "http://127.0.0.1:3100",
     "http://localhost:3001",
     "http://127.0.0.1:3001",
 )

@@ -895,6 +895,9 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}
     if (error instanceof DOMException && error.name === "AbortError") {
       throw new Error("The API request timed out. Check that the backend service is running.");
     }
+    if (error instanceof TypeError) {
+      throw new Error("Unable to reach the UM Nexus API. Check your connection and try again.");
+    }
     throw error;
   } finally {
     window.clearTimeout(timeoutId);
