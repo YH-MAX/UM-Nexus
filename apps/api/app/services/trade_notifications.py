@@ -34,6 +34,8 @@ TRADE_NOTIFICATION_DEFINITIONS: dict[str, NotificationDefinition] = {
     "listing_reported": NotificationDefinition(priority="high", group="safety", dedupe_window_minutes=24 * 60),
     "report_reviewed": NotificationDefinition(group="safety", dedupe_window_minutes=24 * 60),
     "wanted_match_listing_created": NotificationDefinition(priority="high", group="wanted", dedupe_window_minutes=24 * 60),
+    "wanted_recommended_listing": NotificationDefinition(priority="high", group="wanted", dedupe_window_minutes=24 * 60),
+    "wanted_post_expiring_soon": NotificationDefinition(priority="normal", group="wanted", dedupe_window_minutes=7 * 24 * 60),
     "wanted_response_received": NotificationDefinition(priority="high", group="wanted"),
     "wanted_response_accepted": NotificationDefinition(priority="high", group="wanted"),
     "wanted_response_rejected": NotificationDefinition(group="wanted"),

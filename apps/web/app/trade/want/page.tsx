@@ -56,6 +56,13 @@ const contactMethods = [
   { value: "email", label: "Email" },
 ] as const;
 
+const closeReasons = [
+  { value: "found_on_um_nexus", label: "I found the item on UM Nexus" },
+  { value: "found_elsewhere", label: "I found it elsewhere" },
+  { value: "no_longer_needed", label: "I no longer need it" },
+  { value: "other", label: "Other" },
+] as const;
+
 export default function WantPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -69,6 +76,7 @@ export default function WantPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUpdatingPost, setIsUpdatingPost] = useState<string | null>(null);
   const [responsePost, setResponsePost] = useState<WantedPost | null>(null);
+  const [closePost, setClosePost] = useState<WantedPost | null>(null);
   const [sellerListings, setSellerListings] = useState<Listing[]>([]);
   const [responseForm, setResponseForm] = useState({
     message: "",
@@ -76,6 +84,7 @@ export default function WantPage() {
     seller_contact_value: "",
     listing_id: "",
   });
+  const [closeForm, setCloseForm] = useState({ closed_reason: "", closed_reason_note: "" });
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -202,19 +211,34 @@ export default function WantPage() {
     }
   }
 
-  async function changeWantedStatus(post: WantedPost, status: "active" | "closed") {
+  async function changeWantedStatus(
+    post: WantedPost,
+    status: "active" | "closed",
+    closeDetails: { closed_reason?: string; closed_reason_note?: string } = {},
+  ) {
     setIsUpdatingPost(post.id);
     setError(null);
     setNotice(null);
     try {
-      await updateWantedPostStatus(post.id, status);
-      setPosts((current) => current.map((item) => (item.id === post.id ? { ...item, status } : item)));
+      const updated = await updateWantedPostStatus(post.id, status, closeDetails);
+      setPosts((current) => current.map((item) => (item.id === post.id ? updated : item)));
+      setClosePost(null);
+      setCloseForm({ closed_reason: "", closed_reason_note: "" });
       setNotice(status === "closed" ? "Wanted post closed." : "Wanted post reopened.");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to update wanted post.");
     } finally {
       setIsUpdatingPost(null);
     }
+  }
+
+  async function submitCloseReason(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!closePost) return;
+    await changeWantedStatus(closePost, "closed", {
+      closed_reason: closeForm.closed_reason || undefined,
+      closed_reason_note: closeForm.closed_reason_note || undefined,
+    });
   }
 
   async function sendWantedResponse(event: React.FormEvent<HTMLFormElement>) {
@@ -361,6 +385,7 @@ export default function WantPage() {
                       key={post.id}
                       post={post}
                       onRespond={() => setResponsePost(post)}
+                      onRequestClose={setClosePost}
                       onStatusChange={changeWantedStatus}
                     />
                   ))}
@@ -476,6 +501,37 @@ export default function WantPage() {
               </form>
             </div>
           ) : null}
+
+          {closePost ? (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+              <button aria-label="Close close-request form" className="absolute inset-0 bg-slate-950/40" onClick={() => setClosePost(null)} type="button" />
+              <form className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onSubmit={submitCloseReason}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Close Request</p>
+                    <h2 className="mt-2 text-xl font-semibold text-slate-950">{closePost.title}</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">Why are you closing this request? This is optional, but helps UM Nexus understand whether Wanted is working.</p>
+                  </div>
+                  <button aria-label="Close" className="rounded-full p-2 text-slate-500 hover:bg-slate-100" onClick={() => setClosePost(null)} type="button">
+                    <X aria-hidden="true" className="h-5 w-5" />
+                  </button>
+                </div>
+                <SelectField
+                  label="Close reason"
+                  value={closeForm.closed_reason}
+                  options={[{ value: "", label: "Prefer not to say" }, ...closeReasons]}
+                  onChange={(value) => setCloseForm((current) => ({ ...current, closed_reason: value }))}
+                />
+                <label className="mt-4 grid gap-2">
+                  <span className="text-sm font-semibold text-slate-800">Note</span>
+                  <textarea className="trade-input min-h-24" value={closeForm.closed_reason_note} onChange={(event) => setCloseForm((current) => ({ ...current, closed_reason_note: event.target.value }))} />
+                </label>
+                <button className="trade-button-primary mt-5 w-full" disabled={isUpdatingPost === closePost.id} type="submit">
+                  {isUpdatingPost === closePost.id ? "Closing..." : "Close Request"}
+                </button>
+              </form>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </TradeShell>
@@ -487,12 +543,14 @@ function WantedCard({
   isUpdating,
   post,
   onRespond,
+  onRequestClose,
   onStatusChange,
 }: Readonly<{
   isMine: boolean;
   isUpdating: boolean;
   post: WantedPost;
   onRespond: () => void;
+  onRequestClose: (post: WantedPost) => void;
   onStatusChange: (post: WantedPost, status: "active" | "closed") => Promise<void>;
 }>) {
   const isActive = post.status === "active";
@@ -534,7 +592,7 @@ function WantedCard({
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
           <p className="font-semibold">This request has been active for 14+ days.</p>
           <p className="mt-1">Close this request when you no longer need the item.</p>
-          <button className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100" disabled={isUpdating} onClick={() => void onStatusChange(post, "closed")} type="button">
+          <button className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100" disabled={isUpdating} onClick={() => onRequestClose(post)} type="button">
             Close Request
           </button>
         </div>
@@ -549,7 +607,7 @@ function WantedCard({
             Send Offer
           </button>
         ) : (
-          <button className="trade-button-secondary" disabled={isUpdating} onClick={() => void onStatusChange(post, post.status === "active" ? "closed" : "active")} type="button">
+          <button className="trade-button-secondary" disabled={isUpdating} onClick={() => (post.status === "active" ? onRequestClose(post) : void onStatusChange(post, "active"))} type="button">
             {post.status === "active" ? "Close Request" : "Reopen Request"}
           </button>
         )}

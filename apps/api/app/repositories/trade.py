@@ -286,7 +286,7 @@ class TradeRepository:
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[Sequence[WantedPost], int]:
-        stmt = select(WantedPost)
+        stmt = select(WantedPost).options(selectinload(WantedPost.responses))
         count_stmt = select(func.count()).select_from(WantedPost)
         filters = []
         if status:
@@ -322,7 +322,12 @@ class TradeRepository:
         return self.db.scalars(stmt).all(), int(self.db.scalar(count_stmt) or 0)
 
     def list_wanted_posts_by_buyer(self, buyer_id: str) -> Sequence[WantedPost]:
-        stmt = select(WantedPost).where(WantedPost.buyer_id == buyer_id).order_by(desc(WantedPost.created_at))
+        stmt = (
+            select(WantedPost)
+            .options(selectinload(WantedPost.responses))
+            .where(WantedPost.buyer_id == buyer_id)
+            .order_by(desc(WantedPost.created_at))
+        )
         return self.db.scalars(stmt).all()
 
     def list_wanted_posts_by_category(self, category: str, status: str = "active") -> Sequence[WantedPost]:
@@ -338,7 +343,7 @@ class TradeRepository:
         return self.db.scalars(stmt).all()
 
     def get_wanted_post_or_none(self, wanted_post_id: str) -> WantedPost | None:
-        stmt = select(WantedPost).where(WantedPost.id == wanted_post_id)
+        stmt = select(WantedPost).options(selectinload(WantedPost.responses)).where(WantedPost.id == wanted_post_id)
         return self.db.scalar(stmt)
 
     def update_wanted_post(self, wanted_post: WantedPost, values: dict) -> WantedPost:

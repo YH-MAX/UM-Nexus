@@ -117,6 +117,7 @@ def create_listing(
     if publish:
         _notify_wanted_source_owner(db, listing)
         _refresh_matches_for_listing(db, listing.id)
+        _notify_recommended_wanted_matches_for_listing(db, listing)
     return listing
 
 
@@ -233,6 +234,7 @@ def publish_listing(db: Session, listing_id: str, current_user: User) -> Listing
     updated = repo.update_listing(listing, values)
     _notify_wanted_source_owner(db, updated)
     _refresh_matches_for_listing(db, updated.id)
+    _notify_recommended_wanted_matches_for_listing(db, updated)
     return updated
 
 
@@ -458,7 +460,16 @@ def update_wanted_post_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wanted post not found")
     if wanted_post.buyer_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the buyer can update this wanted post.")
-    return repo.update_wanted_post(wanted_post, {"status": payload.status})
+    values: dict = {"status": payload.status}
+    if payload.status == "closed":
+        values["closed_reason"] = payload.closed_reason
+        values["closed_reason_note"] = payload.closed_reason_note
+        values["closed_at"] = datetime.now(UTC)
+    else:
+        values["closed_reason"] = None
+        values["closed_reason_note"] = None
+        values["closed_at"] = None
+    return repo.update_wanted_post(wanted_post, values)
 
 
 def create_wanted_response(
@@ -1332,6 +1343,7 @@ def trade_dashboard(db: Session, current_user: User) -> dict:
     listings = list(repo.list_listings_by_seller(current_user.id))
     favorites = list(repo.list_favorites_for_user(current_user.id))
     wanted_posts = list(repo.list_wanted_posts_by_buyer(current_user.id))
+    _notify_wanted_posts_expiring_soon(repo, current_user, wanted_posts)
     matches = list(repo.list_matches_for_user(current_user.id))
     transactions = list(repo.list_transactions_for_user(current_user.id))
     contact_requests_received = list(repo.list_contact_requests_received(current_user.id))
@@ -2113,6 +2125,53 @@ def _notify_wanted_source_owner(db: Session, listing: Listing) -> None:
             "seller_id": listing.seller_id,
         },
     )
+
+
+def _notify_recommended_wanted_matches_for_listing(db: Session, listing: Listing) -> None:
+    repo = TradeRepository(db)
+    for match in repo.list_matches_for_listing(listing.id, min_score=74.0, limit=5):
+        wanted_post = match.wanted_post
+        if wanted_post is None or wanted_post.buyer_id == listing.seller_id:
+            continue
+        if listing.source_wanted_post_id and wanted_post.id == listing.source_wanted_post_id:
+            continue
+        _notify(
+            repo,
+            user_id=wanted_post.buyer_id,
+            actor_id=listing.seller_id,
+            notification_type="wanted_recommended_listing",
+            title="A listing may match your wanted request",
+            body=f"{listing.title} looks like a match for your wanted request: {wanted_post.title}.",
+            action_url=f"/trade/{listing.id}",
+            entity_type="listing",
+            entity_id=listing.id,
+            metadata={
+                "listing_id": listing.id,
+                "listing_title": listing.title,
+                "wanted_post_id": wanted_post.id,
+                "trade_match_id": match.id,
+                "match_score": float(match.match_score),
+            },
+        )
+
+
+def _notify_wanted_posts_expiring_soon(repo: TradeRepository, current_user: User, wanted_posts: list[WantedPost]) -> None:
+    reminder_cutoff = datetime.now(UTC) - timedelta(days=14)
+    for wanted_post in wanted_posts:
+        if wanted_post.status != "active" or wanted_post.created_at > reminder_cutoff:
+            continue
+        _notify(
+            repo,
+            user_id=current_user.id,
+            actor_id=None,
+            notification_type="wanted_post_expiring_soon",
+            title="Do you still need this item?",
+            body=f"Your wanted request has been active for 14 days: {wanted_post.title}.",
+            action_url=f"/wanted-posts/{wanted_post.id}",
+            entity_type="wanted_post",
+            entity_id=wanted_post.id,
+            metadata={"wanted_post_id": wanted_post.id},
+        )
 
 
 def _listing_payload_for_validation(listing: Listing) -> dict:

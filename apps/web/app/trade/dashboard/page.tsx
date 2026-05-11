@@ -523,7 +523,7 @@ function Overview({
       </Panel>
       <Panel title="Wanted posts">
         {dashboard.wanted_posts.length === 0 ? (
-          <EmptyState actionHref="/trade/want" actionLabel="Post wanted request" description="Tell UM sellers what you are looking for." title="No wanted posts" />
+          <EmptyState actionHref="/trade/want" actionLabel="Post Wanted Request" description="Tell UM sellers what you are looking for." title="No wanted posts" />
         ) : (
           dashboard.wanted_posts.slice(0, 4).map((post) => (
             <Link className="block rounded-2xl border border-slate-200 p-4 transition hover:border-emerald-200 hover:bg-emerald-50" href={`/wanted-posts/${post.id}`} key={post.id}>

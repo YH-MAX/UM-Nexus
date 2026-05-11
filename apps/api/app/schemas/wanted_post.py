@@ -44,6 +44,9 @@ class WantedPostRead(BaseModel):
     preferred_pickup_area: str | None
     residential_college: str | None
     status: str
+    closed_reason: str | None = None
+    closed_reason_note: str | None = None
+    closed_at: datetime | None = None
     response_count: int = 0
     created_at: datetime
     updated_at: datetime
@@ -59,6 +62,8 @@ class WantedPostPage(BaseModel):
 
 class WantedPostStatusUpdate(BaseModel):
     status: Literal["active", "closed"]
+    closed_reason: Literal["found_on_um_nexus", "found_elsewhere", "no_longer_needed", "other"] | None = None
+    closed_reason_note: str | None = Field(default=None, max_length=500)
 
 
 class WantedResponseCreate(BaseModel):

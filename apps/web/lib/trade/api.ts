@@ -89,6 +89,9 @@ export type WantedPost = {
   preferred_pickup_area: string | null;
   residential_college: string | null;
   status: string;
+  closed_reason: string | null;
+  closed_reason_note: string | null;
+  closed_at: string | null;
   response_count: number;
   created_at: string;
   updated_at: string;
@@ -1213,10 +1216,14 @@ export async function getWantedPost(id: string): Promise<WantedPost> {
   return fetchJson<WantedPost>(`/wanted-posts/${id}`);
 }
 
-export async function updateWantedPostStatus(id: string, status: "active" | "closed"): Promise<WantedPost> {
+export async function updateWantedPostStatus(
+  id: string,
+  status: "active" | "closed",
+  closeDetails: { closed_reason?: string; closed_reason_note?: string } = {},
+): Promise<WantedPost> {
   return fetchJson<WantedPost>(`/wanted-posts/${id}/status`, {
     method: "PATCH",
-    body: JSON.stringify({ status }),
+    body: JSON.stringify({ status, ...closeDetails }),
   });
 }
 
