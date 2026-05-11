@@ -214,6 +214,35 @@ test.describe("authenticated Trade product workflows", () => {
     expect(state.publishedListingCreated).toBe(true);
   });
 
+  test("seller uploaded photo appears on the published listing", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    const state = await mockTradeApi(page);
+
+    await page.goto("/trade/sell");
+    await page.locator('input[type="file"]').first().setInputFiles({
+      name: "desk-lamp.jpg",
+      mimeType: "image/jpeg",
+      buffer: Buffer.from("fake-image-bytes"),
+    });
+    await page.getByLabel("Title").fill("Desk lamp near KK12");
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Category").selectOption("dorm_room");
+    await page.getByLabel("Condition").selectOption("good");
+    await page.getByLabel("Pickup location").selectOption("kk1");
+    await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
+    await page.getByLabel("Contact value").fill("@aina_um");
+    await page.getByRole("button", { name: /Publish Listing/i }).click();
+    const publishReview = page.locator("section").filter({
+      has: page.getByRole("heading", { name: /Ready to publish/i }),
+    });
+    await publishReview.getByRole("button", { name: "Publish Listing" }).click();
+
+    await expect(page).toHaveURL(/\/trade\/listing-new$/);
+    await expect(page.locator('img[alt="Desk lamp near KK12"]').first()).toBeVisible();
+    await expect(page.getByText("No photo yet")).toHaveCount(0);
+    expect(state.uploadedImages).toHaveLength(1);
+  });
+
   test("seller dashboard exposes request timeline and accept/reject actions", async ({ page }) => {
     await loginAs(page, sellerUser);
     const state = await mockTradeApi(page);
@@ -370,6 +399,7 @@ async function mockTradeApi(page: Page) {
     contactRequestCreated: false,
     reportCreated: false,
     publishedListingCreated: false,
+    uploadedImages: [] as typeof baseListing.images,
     wantedResponseCreated: false,
     lastWantedResponseListingId: "",
     acceptedRequests: 0,
@@ -450,8 +480,28 @@ async function mockTradeApi(page: Page) {
       });
     }
 
+    if (method === "POST" && path === "/listings/listing-new/images") {
+      const image = {
+        id: `image-${state.uploadedImages.length + 1}`,
+        listing_id: "listing-new",
+        storage_path: "listings/listing-new/desk-lamp.jpg",
+        public_url: "data:image/gif;base64,R0lGODlhAQABAAAAACw=",
+        content_hash: "fake-hash",
+        sort_order: state.uploadedImages.length,
+        is_primary: state.uploadedImages.length === 0,
+        created_at: now,
+      };
+      state.uploadedImages.push(image);
+      return json(route, image, 201);
+    }
+
     if (method === "GET" && (path === "/listings/listing-1" || path === "/listings/listing-new")) {
-      return json(route, path.endsWith("listing-new") ? { ...baseListing, id: "listing-new", title: "Desk lamp near KK12" } : baseListing);
+      return json(
+        route,
+        path.endsWith("listing-new")
+          ? { ...baseListing, id: "listing-new", title: "Desk lamp near KK12", images: state.uploadedImages }
+          : baseListing,
+      );
     }
 
     if (method === "PATCH" && path === "/listings/listing-1") {

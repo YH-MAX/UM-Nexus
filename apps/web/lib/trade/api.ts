@@ -838,8 +838,12 @@ export const pickupAreas = [
   { value: "other", label: "Other" },
 ] as const;
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001/api/v1";
+function readApiBaseUrl(): string {
+  const rawValue = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8001/api/v1";
+  return rawValue.replace(/^NEXT_PUBLIC_API_BASE_URL=/, "").replace(/\/+$/, "");
+}
+
+const API_BASE_URL = readApiBaseUrl();
 const API_REQUEST_TIMEOUT_MS = readPositiveNumber(
   process.env.NEXT_PUBLIC_API_TIMEOUT_MS,
   20_000,
@@ -1145,7 +1149,11 @@ export async function uploadListingImage(
     throw new Error(getApiErrorMessage(body, response.status));
   }
 
-  return response.json() as Promise<ListingImage>;
+  const image = (await response.json()) as ListingImage;
+  if (!image.public_url) {
+    throw new Error("The image uploaded, but the API did not return a display URL.");
+  }
+  return image;
 }
 
 export async function removeListingImage(listingId: string, imageId: string): Promise<void> {

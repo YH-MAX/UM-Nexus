@@ -532,15 +532,24 @@ export default function SellPage() {
 
   async function uploadSelectedImages(listingId: string): Promise<number> {
     let failedCount = 0;
+    let uploadedCount = 0;
+    let firstError = "";
     for (const [index, image] of images.entries()) {
       try {
         await uploadListingImage(listingId, image.file, {
           sortOrder: index,
           isPrimary: index === 0,
         });
-      } catch {
+        uploadedCount++;
+      } catch (nextError) {
+        if (!firstError) {
+          firstError = nextError instanceof Error ? nextError.message : "Unable to upload the selected photo.";
+        }
         failedCount++;
       }
+    }
+    if (images.length > 0 && uploadedCount === 0) {
+      throw new Error(`Listing was created, but none of the selected photos uploaded. ${firstError}`);
     }
     return failedCount;
   }
