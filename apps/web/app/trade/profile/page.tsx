@@ -128,21 +128,26 @@ export default function TradeProfilePage() {
   return (
     <TradeShell title="Trade profile" description="UM identity, campus location, and preferred contact for marketplace actions.">
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>
+        <div className="trade-alert trade-alert-danger">{error}</div>
       ) : null}
       {notice ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">{notice}</div>
+        <div className="trade-alert trade-alert-success">{notice}</div>
       ) : null}
 
       {!user ? <RequireAuthCard description="Sign in with your UM account to manage your trade profile." /> : null}
 
       {user && isLoading ? (
-        <div className="trade-card p-5 text-sm text-slate-600">Loading profile...</div>
+        <div className="trade-card p-5" aria-busy="true" role="status">
+          <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
+            <span className="trade-loading-block h-10 w-10 shrink-0" />
+            Loading profile...
+          </div>
+        </div>
       ) : user ? (
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="grid gap-5">
             {!isProfileComplete(profile) ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950">
+              <div className="trade-alert trade-alert-warning">
                 Complete your profile to publish listings and contact sellers.
               </div>
             ) : null}
@@ -159,7 +164,7 @@ export default function TradeProfilePage() {
                 onChange={(value) => setForm((current) => ({ ...current, faculty: value }))}
               />
               <label className="grid gap-2">
-                <span className="text-sm font-semibold text-slate-800">Campus location</span>
+                <span className="trade-field-label">Campus location</span>
                 <select
                   className="trade-input"
                   value={form.college_or_location}
@@ -174,7 +179,7 @@ export default function TradeProfilePage() {
                 </select>
               </label>
               <label className="grid gap-2">
-                <span className="text-sm font-semibold text-slate-800">Preferred contact</span>
+                <span className="trade-field-label">Preferred contact</span>
                 <select
                   className="trade-input"
                   value={form.contact_preference}
@@ -193,7 +198,7 @@ export default function TradeProfilePage() {
                 onChange={(value) => setForm((current) => ({ ...current, contact_value: value }))}
               />
               <label className="grid gap-2 sm:col-span-2">
-                <span className="text-sm font-semibold text-slate-800">Bio</span>
+                <span className="trade-field-label">Bio</span>
                 <textarea
                   className="trade-input min-h-28"
                   value={form.bio}
@@ -217,7 +222,7 @@ export default function TradeProfilePage() {
             <p className="text-sm text-slate-500">Signed in as</p>
             <p className="mt-1 break-words text-sm font-semibold text-slate-950">{user.email}</p>
             <button
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="trade-button-danger mt-4 w-full"
               disabled={isSigningOut}
               onClick={() => void signOut()}
               type="button"
@@ -241,13 +246,13 @@ export default function TradeProfilePage() {
             </div>
           </section>
           <section className="trade-card p-5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+            <div className="trade-icon-frame h-12 w-12">
               <UserRound aria-hidden="true" className="h-6 w-6" />
             </div>
             <h2 className="mt-4 text-lg font-semibold text-slate-950">Public seller preview</h2>
             <p className="mt-2 text-sm font-semibold text-slate-900">{form.display_name || "Your display name"}</p>
             <p className="mt-1 text-sm text-slate-600">{form.faculty || "Faculty"} · {form.college_or_location || "Campus location"}</p>
-            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+            <div className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
               <div className="flex gap-2">
                 <ShieldCheck aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>Your contact details are only shared after you accept a buyer&apos;s request.</p>
@@ -272,7 +277,7 @@ function TextField({
 }>) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-semibold text-slate-800">{label}</span>
+      <span className="trade-field-label">{label}</span>
       <input
         className="trade-input"
         value={value}

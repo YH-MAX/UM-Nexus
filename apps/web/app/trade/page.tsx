@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Filter, ImageOff, PlusCircle, Search, SlidersHorizontal, X } from "lucide-react";
+import { AlertCircle, Filter, ImageOff, Info, PlusCircle, Search, SlidersHorizontal, X } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { CategoryPill } from "@/components/trade/category-pill";
@@ -242,48 +242,67 @@ export default function TradePage() {
       title="Browse UM Listings"
       description="Find textbooks, electronics, dorm items, and campus essentials from UM students."
       action={
-        <Link className="trade-button-primary" href="/trade/sell">
+        <Link className="trade-button-primary w-full sm:w-auto" href="/trade/sell">
           <PlusCircle aria-hidden="true" className="h-4 w-4" />
           Sell an Item
         </Link>
       }
     >
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-          {error}
+        <div className="trade-alert trade-alert-danger flex gap-3">
+          <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{error}</p>
         </div>
       ) : null}
       {notice ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          {notice}
+        <div className="trade-alert trade-alert-warning flex gap-3">
+          <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{notice}</p>
         </div>
       ) : null}
 
       <section className="trade-card min-w-0 p-4 sm:p-5">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div className="min-w-0">
+            <p className="trade-kicker">Marketplace search</p>
+            <h2 className="mt-2 text-xl font-semibold text-slate-950">Find what students are selling now</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Search by item, category, pickup area, condition, or price range.
+            </p>
+          </div>
+          <div className="hidden text-right text-sm text-slate-500 lg:block">
+            <p className="font-semibold text-slate-700">{isLoading ? "Loading listings" : `${page.total} live result${page.total === 1 ? "" : "s"}`}</p>
+            <p className="mt-1">Updated as filters change</p>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <label className="relative block min-w-0">
             <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
             <input
-              className="w-full rounded-2xl border border-slate-300 bg-white py-4 pl-12 pr-4 text-base outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
+              className="trade-input min-h-12 pl-12 text-base"
               placeholder="Search textbooks, calculators, fans, monitors..."
               value={filters.search}
               onChange={(event) => updateFilter("search", event.target.value)}
             />
           </label>
           <button
-            className="trade-button-secondary lg:hidden"
+            className="trade-button-secondary justify-between lg:hidden"
             onClick={() => setIsFilterOpen(true)}
             type="button"
           >
-            <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
-            Filters
+            <span className="inline-flex items-center gap-2">
+              <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+              Filters
+            </span>
+            {hasFilters ? <span className="trade-chip-success px-2 py-0.5">Active</span> : null}
           </button>
         </div>
 
         <div className="mt-4 flex min-w-0 gap-2 overflow-x-auto pb-1">
           {categoryChips.map((category) => (
             <button
-              className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
+              className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${
                 filters.category === category.value
                   ? "border-slate-950 bg-slate-950 text-white"
                   : "border-slate-200 bg-white text-slate-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
@@ -297,7 +316,7 @@ export default function TradePage() {
           ))}
         </div>
 
-        <div className="mt-4 hidden lg:block">
+        <div className="mt-5 hidden rounded-lg border border-slate-200 bg-slate-50 p-4 lg:block">
           <FilterPanel
             filters={filters}
             hasFilters={hasFilters}
@@ -310,29 +329,30 @@ export default function TradePage() {
 
       {/* Result count + active filter summary */}
       {!isLoading ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold text-slate-700">
-              {page.total} {page.total === 1 ? "listing" : "listings"} found
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="trade-chip-strong">
+              Showing {allListings.length} of {page.total}
             </span>
             {filters.search ? (
-              <span className="text-sm text-slate-500">for &ldquo;{filters.search}&rdquo;</span>
+              <span className="trade-chip">Search: &ldquo;{filters.search}&rdquo;</span>
             ) : null}
             {filters.category ? <CategoryPill active category={filters.category} /> : null}
             {filters.condition ? (
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              <span className="trade-chip">
                 {filters.condition.replaceAll("_", " ")}
               </span>
             ) : null}
             {filters.pickup_location ? (
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              <span className="trade-chip">
                 {formatPickupLocation(filters.pickup_location)}
               </span>
             ) : null}
+            {!hasFilters ? <span className="text-sm text-slate-500">Newest UM marketplace listings</span> : null}
           </div>
           {hasFilters ? (
             <button
-              className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-rose-200 hover:text-rose-600"
+              className="trade-button-ghost min-h-8 px-3 py-1.5 text-xs text-slate-600 hover:text-rose-600"
               onClick={() => setFilters(initialFilters)}
               type="button"
             >
@@ -340,12 +360,12 @@ export default function TradePage() {
               Clear all filters
             </button>
           ) : null}
-        </div>
+        </section>
       ) : null}
 
       {/* Guest sign-in nudge when listings exist */}
       {!user && !isLoading && page.total > 0 ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+        <div className="trade-alert trade-alert-success">
           <Link className="font-semibold underline underline-offset-2" href="/login">Sign in with your UM email</Link>
           {" "}to save listings or contact sellers.
         </div>
@@ -373,7 +393,7 @@ export default function TradePage() {
         )
       ) : (
         <>
-          <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          <section className="grid gap-4 sm:grid-cols-2 lg:gap-5 xl:grid-cols-3">
             {allListings.map((listing) => (
               <ListingCard
                 isSaved={savedIds.has(listing.id)}
@@ -387,7 +407,7 @@ export default function TradePage() {
           {page.has_more ? (
             <div className="flex justify-center pt-2">
               <button
-                className="trade-button-secondary min-w-[160px]"
+                className="trade-button-secondary min-w-[180px]"
                 disabled={isLoadingMore}
                 onClick={() => void loadMore()}
                 type="button"
@@ -396,7 +416,9 @@ export default function TradePage() {
               </button>
             </div>
           ) : allListings.length > PAGE_SIZE ? (
-            <p className="text-center text-sm text-slate-400">All {page.total} listings loaded.</p>
+            <p className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-center text-sm font-medium text-slate-500">
+              All {page.total} listings loaded.
+            </p>
           ) : null}
         </>
       )}
@@ -405,19 +427,19 @@ export default function TradePage() {
         <div className="fixed inset-0 z-[60] lg:hidden">
           <button
             aria-label="Close filters"
-            className="absolute inset-0 bg-slate-950/40"
+            className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
             onClick={() => setIsFilterOpen(false)}
             type="button"
           />
-          <div className="absolute inset-x-0 bottom-0 rounded-t-3xl bg-white p-5 shadow-2xl">
+          <div className="absolute inset-x-0 bottom-0 max-h-[86vh] overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Marketplace</p>
+                <p className="trade-kicker">Marketplace</p>
                 <h2 className="text-lg font-semibold text-slate-950">Filters</h2>
               </div>
               <button
                 aria-label="Close filters"
-                className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600"
+                className="trade-button-ghost h-10 w-10 p-0"
                 onClick={() => setIsFilterOpen(false)}
                 type="button"
               >
@@ -490,6 +512,7 @@ function FilterPanel({
         <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Min RM</span>
         <input
           className={`trade-input ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
+          inputMode="decimal"
           min="0"
           placeholder="Min RM"
           type="number"
@@ -501,6 +524,7 @@ function FilterPanel({
         <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Max RM</span>
         <input
           className={`trade-input ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
+          inputMode="decimal"
           min="0"
           placeholder="Max RM"
           type="number"
@@ -515,7 +539,7 @@ function FilterPanel({
         <option value="price_high_low">Price: High to Low</option>
       </SelectField>
       {priceError ? (
-        <p className="col-span-full text-xs text-rose-600">
+        <p className="trade-alert trade-alert-danger col-span-full py-2 text-xs">
           Minimum price cannot be higher than maximum price.
         </p>
       ) : null}

@@ -69,7 +69,7 @@ export default function SavedListingsPage() {
       description="Compare items you are interested in by price, condition, pickup location, and seller response."
     >
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="trade-alert trade-alert-danger">
           {error}
         </div>
       ) : null}
@@ -89,7 +89,7 @@ export default function SavedListingsPage() {
           title="No saved listings yet"
         />
       ) : user ? (
-        <section className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        <section className="grid gap-4 sm:grid-cols-2 lg:gap-5 xl:grid-cols-3">
           {availableFavorites.map((favorite) => (
             favorite.listing ? (
               <ListingCard

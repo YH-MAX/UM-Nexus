@@ -211,24 +211,27 @@ export function WantedPostDetailClient({
       description="Post what you need, review seller offers, and find possible matches from UM students."
     >
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="trade-alert trade-alert-danger">
           {error}
         </div>
       ) : null}
       {notice ? (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+        <div className="trade-alert trade-alert-success">
           {notice}
         </div>
       ) : null}
 
       {isLoading ? (
-        <div className="rounded-lg border border-slate-200 bg-white p-5 text-sm text-slate-600">
-          Loading wanted post...
+        <div className="trade-card p-5" aria-busy="true" role="status">
+          <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
+            <span className="trade-loading-block h-10 w-10 shrink-0" />
+            Loading wanted post...
+          </div>
         </div>
       ) : wantedPost ? (
         <div className="grid gap-5">
         {searchParams.get("posted") === "1" ? (
-          <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
+          <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
             <h2 className="text-lg font-semibold">You posted this wanted request.</h2>
             <p className="mt-2 text-sm leading-6">
               Possible matching listings are shown below. Sellers can also create a listing directly from this demand.
@@ -397,7 +400,7 @@ export function WantedPostDetailClient({
       {isResponseOpen && wantedPost ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <button aria-label="Close response form" className="absolute inset-0 bg-slate-950/40" onClick={() => setIsResponseOpen(false)} type="button" />
-          <form className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onSubmit={sendWantedResponse}>
+              <form className="trade-modal-panel max-w-lg" onSubmit={sendWantedResponse}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Send Offer</p>
@@ -467,7 +470,7 @@ export function WantedPostDetailClient({
       {isCloseOpen && wantedPost ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
           <button aria-label="Close close-request form" className="absolute inset-0 bg-slate-950/40" onClick={() => setIsCloseOpen(false)} type="button" />
-          <form className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onSubmit={submitCloseReason}>
+              <form className="trade-modal-panel max-w-lg" onSubmit={submitCloseReason}>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Close Request</p>
@@ -621,3 +624,4 @@ function isWantedStale(createdAt: string): boolean {
   const age = Date.now() - new Date(createdAt).getTime();
   return age >= 14 * 24 * 60 * 60 * 1000;
 }
+

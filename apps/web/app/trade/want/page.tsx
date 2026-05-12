@@ -298,17 +298,17 @@ export default function WantPage() {
             </div>
           </section>
 
-          <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
             <div className="grid grid-cols-2 gap-2">
               <button
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${mode === "browse" ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${mode === "browse" ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"}`}
                 onClick={() => setMode("browse")}
                 type="button"
               >
                 Browse Wanted
               </button>
               <button
-                className={`rounded-xl px-4 py-2 text-sm font-semibold transition ${mode === "post" ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"}`}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${mode === "post" ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"}`}
                 onClick={() => setMode("post")}
                 type="button"
               >
@@ -321,13 +321,13 @@ export default function WantPage() {
           </section>
 
           {notice ? (
-            <div className="flex gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+            <div className="trade-alert trade-alert-success flex gap-3">
               <CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
               <p>{notice}</p>
             </div>
           ) : null}
           {error ? (
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+            <div className="trade-alert trade-alert-danger">
               {error}
             </div>
           ) : null}
@@ -366,9 +366,14 @@ export default function WantPage() {
               </div>
 
               {isLoadingBoard ? (
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">Loading wanted board...</div>
+                <div className="trade-card p-5" aria-busy="true" role="status">
+                  <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
+                    <span className="trade-loading-block h-10 w-10 shrink-0" />
+                    Loading wanted board...
+                  </div>
+                </div>
               ) : posts.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
+                <div className="trade-empty-panel">
                   <h2 className="text-lg font-semibold text-slate-950">No wanted requests found</h2>
                   <p className="mt-2 text-sm text-slate-600">Try clearing filters or post the first request for this category.</p>
                   <button className="trade-button-primary mt-5" onClick={() => setMode("post")} type="button">
@@ -395,7 +400,7 @@ export default function WantPage() {
           ) : (
             <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
               {!profileReady ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 lg:col-span-2">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 lg:col-span-2">
                   Complete your profile before posting wanted requests. You can keep browsing and responding to demand now.
                 </div>
               ) : null}
@@ -439,7 +444,7 @@ export default function WantPage() {
           {responsePost ? (
             <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
               <button aria-label="Close response form" className="absolute inset-0 bg-slate-950/40" onClick={() => setResponsePost(null)} type="button" />
-              <form className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onSubmit={sendWantedResponse}>
+              <form className="trade-modal-panel max-w-lg" onSubmit={sendWantedResponse}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Send Offer</p>
@@ -505,7 +510,7 @@ export default function WantPage() {
           {closePost ? (
             <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
               <button aria-label="Close close-request form" className="absolute inset-0 bg-slate-950/40" onClick={() => setClosePost(null)} type="button" />
-              <form className="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onSubmit={submitCloseReason}>
+              <form className="trade-modal-panel max-w-lg" onSubmit={submitCloseReason}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Close Request</p>
@@ -684,3 +689,4 @@ function SelectField({
     </label>
   );
 }
+

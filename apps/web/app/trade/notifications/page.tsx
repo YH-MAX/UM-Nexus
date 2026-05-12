@@ -112,18 +112,23 @@ export default function TradeNotificationsPage() {
   return (
     <TradeShell title="Trade alerts" description="Contact requests, moderation updates, and listing activity.">
       {error ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">{error}</div>
+        <div className="trade-alert trade-alert-danger">{error}</div>
       ) : null}
 
       {!user ? <RequireAuthCard description="Sign in with your UM account to view trade alerts." /> : null}
 
       {user && isLoading ? (
-        <div className="trade-card p-5 text-sm text-slate-600">Loading alerts...</div>
+        <div className="trade-card p-5" aria-busy="true" role="status">
+          <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
+            <span className="trade-loading-block h-10 w-10 shrink-0" />
+            Loading alerts...
+          </div>
+        </div>
       ) : user ? (
         <section className="trade-card p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+              <div className="trade-icon-frame">
                 <Bell aria-hidden="true" className="h-5 w-5" />
               </div>
               <h2 className="text-lg font-semibold text-slate-950">Inbox</h2>
@@ -141,15 +146,15 @@ export default function TradeNotificationsPage() {
           </div>
 
           {notifications.length > 0 && unreadCount === 0 ? (
-            <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+            <div className="mt-5 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
               You&apos;re all caught up.
             </div>
           ) : null}
 
           <div className="mt-5 grid gap-3">
             {notifications.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-slate-700 shadow-sm">
+              <div className="trade-empty-panel text-left">
+                <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm">
                   <Inbox aria-hidden="true" className="h-5 w-5" />
                 </div>
                 <h3 className="mt-4 font-semibold text-slate-950">No alerts yet</h3>
@@ -174,14 +179,14 @@ export default function TradeNotificationsPage() {
                     const Icon = meta.icon;
                     return (
                       <article
-                        className={`rounded-2xl border p-4 ${priorityClass(notification.priority)} ${
+                        className={`rounded-lg border p-4 ${priorityClass(notification.priority)} ${
                           notification.is_read ? "border-slate-200 bg-white" : "border-emerald-200 bg-emerald-50"
                         }`}
                         key={notification.id}
                       >
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div className="flex min-w-0 gap-3">
-                            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${meta.iconClass}`}>
+                            <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${meta.iconClass}`}>
                               <Icon aria-hidden="true" className="h-5 w-5" />
                             </div>
                             <div className="min-w-0">

@@ -5,11 +5,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  AlertCircle,
   BadgeCheck,
   BellRing,
   Flag,
   Heart,
   Image as ImageIcon,
+  Info,
   MapPin,
   MessageCircle,
   Pencil,
@@ -450,55 +452,63 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       description="Review the item, seller, pickup location, and safety details before requesting contact."
     >
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-          {error}
+        <div className="trade-alert trade-alert-danger flex gap-3">
+          <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{error}</p>
         </div>
       ) : null}
       {actionNotice ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-          {actionNotice}
+        <div className="trade-alert trade-alert-success flex gap-3">
+          <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{actionNotice}</p>
         </div>
       ) : null}
 
       {isLoading ? (
-        <div className="trade-card p-5 text-sm text-slate-600">Loading listing...</div>
+        <ListingDetailLoading />
       ) : listing ? (
         <>
           {/* Back navigation */}
           <Link
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-900"
+            className="trade-button-ghost w-fit min-h-9 px-2.5 text-slate-600"
             href="/trade"
           >
             <ArrowLeft aria-hidden="true" className="h-4 w-4" />
             Back to listings
           </Link>
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px] lg:items-start">
             {/* Left column */}
             <div className="grid gap-5">
               <ImageGallery listing={listing} />
 
               {/* Description with metadata chips */}
-              <section className="trade-card p-5">
-                <h2 className="text-xl font-semibold text-slate-950">Description</h2>
+              <section className="trade-card p-5 sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p className="trade-kicker">Item details</p>
+                    <h2 className="mt-2 text-xl font-semibold text-slate-950">Description</h2>
+                  </div>
+                  <StatusPill tone={statusTone(listing.status)}>{listing.status.replaceAll("_", " ")}</StatusPill>
+                </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                  <span className="trade-chip">
                     {formatCategory(listing.category)}
                   </span>
                   {listing.condition ?? listing.condition_label ? (
-                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                    <span className="trade-chip">
                       {(listing.condition ?? listing.condition_label ?? "").replaceAll("_", " ")}
                     </span>
                   ) : null}
-                  <span className="flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                  <span className="trade-chip">
                     <MapPin aria-hidden="true" className="h-3.5 w-3.5 text-emerald-700" />
                     {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}
                   </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+                  <span className="trade-chip text-slate-500">
                     Posted {formatRelativeTime(listing.created_at)}
                   </span>
                 </div>
-                <p className="mt-4 whitespace-pre-line text-sm leading-7 text-slate-600">
+                <p className="mt-5 whitespace-pre-line text-sm leading-7 text-slate-700">
                   {listing.description ?? "No description provided."}
                 </p>
               </section>
@@ -527,8 +537,11 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                   onSimulationPriceChange={setSimulationPrice}
                 />
               ) : (
-                <section className="trade-card p-5 text-center">
-                  <p className="text-sm text-slate-600">Looking for more items?</p>
+      <section className="trade-card p-5 text-center">
+                  <p className="text-sm font-semibold text-slate-900">Looking for more campus items?</p>
+                  <p className="mx-auto mt-1 max-w-md text-sm text-slate-600">
+                    Compare price, pickup area, and seller trust signals before sending a request.
+                  </p>
                   <Link className="trade-button-secondary mt-3" href="/trade">
                     Browse marketplace
                   </Link>
@@ -558,14 +571,14 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
               <div className="fixed inset-x-0 bottom-[74px] z-40 px-4 md:hidden">
                 {profileIncomplete ? (
                   <Link
-                    className="trade-button-primary block w-full py-3 text-center shadow-lg"
+                    className="trade-button-primary block w-full py-3 text-center shadow-lg shadow-emerald-900/20"
                     href="/trade/profile"
                   >
                     Complete Profile
                   </Link>
                 ) : (
                   <button
-                    className="trade-button-primary w-full py-3 shadow-lg"
+                    className="trade-button-primary w-full py-3 shadow-lg shadow-emerald-900/20"
                     disabled={isActing}
                     onClick={() => void handleContactRequest()}
                     type="button"
@@ -578,8 +591,56 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
             ) : null}
           </div>
         </>
-      ) : null}
+      ) : (
+        <ListingMissingState />
+      )}
     </TradeShell>
+  );
+}
+
+function ListingDetailLoading() {
+  return (
+    <section aria-busy="true" aria-label="Loading listing detail" className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px]" role="status">
+      <span className="sr-only">Loading listing...</span>
+      <div className="grid gap-5">
+        <div className="trade-card overflow-hidden">
+          <div className="trade-loading-block aspect-[4/3] rounded-none" />
+          <div className="grid gap-3 border-t border-slate-100 p-3 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div className="trade-loading-block aspect-square" key={index} />
+            ))}
+          </div>
+        </div>
+        <div className="trade-card space-y-4 p-5">
+          <div className="trade-loading-block h-4 w-28 rounded-full" />
+          <div className="trade-loading-block h-7 w-2/3 rounded-full" />
+          <div className="trade-loading-block h-24 w-full" />
+        </div>
+      </div>
+      <aside className="trade-card h-fit p-5 lg:sticky lg:top-24">
+        <div className="trade-loading-block h-6 w-36 rounded-full" />
+        <div className="trade-loading-block mt-4 h-10 w-32" />
+        <div className="trade-loading-block mt-5 h-28 w-full" />
+        <div className="trade-loading-block mt-5 h-12 w-full" />
+      </aside>
+    </section>
+  );
+}
+
+function ListingMissingState() {
+  return (
+    <section className="trade-empty-panel">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm">
+        <ImageIcon aria-hidden="true" className="h-6 w-6" />
+      </div>
+      <h2 className="mt-4 text-lg font-semibold text-slate-950">Listing unavailable</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">
+        This listing may have been removed, hidden, or is no longer available.
+      </p>
+      <Link className="trade-button-primary mt-5" href="/trade">
+        Back to marketplace
+      </Link>
+    </section>
   );
 }
 
@@ -590,27 +651,40 @@ function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
   const galleryImages = listing.images.filter((image) => image.id !== primaryImage?.id);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex aspect-[4/3] items-center justify-center bg-slate-100">
+    <section className="trade-card overflow-hidden">
+      <div className="relative flex aspect-[4/3] items-center justify-center bg-slate-100">
         {primaryImage?.public_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img alt={listing.title} className="h-full w-full object-cover" src={primaryImage.public_url} />
         ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-100 to-emerald-50 text-slate-400">
-            <ImageIcon aria-hidden="true" className="h-12 w-12" />
-            <span className="text-sm font-medium">No photo yet</span>
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400">
+            <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm">
+              <ImageIcon aria-hidden="true" className="h-7 w-7" />
+            </span>
+            <span className="text-sm font-semibold">No photo yet</span>
           </div>
         )}
+        <div className="absolute left-3 top-3 flex flex-wrap gap-2">
+          <StatusPill className="bg-white/95 shadow-sm ring-1 ring-white/70" tone={statusTone(listing.status)}>
+            {listing.status.replaceAll("_", " ")}
+          </StatusPill>
+          <StatusPill className="bg-white/95 shadow-sm ring-1 ring-white/70">
+            {formatCategory(listing.category)}
+          </StatusPill>
+        </div>
+        <div className="absolute bottom-3 left-3 rounded-lg bg-white/95 px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-white/70">
+          {formatMoney(listing.price, listing.currency)}
+        </div>
       </div>
       {galleryImages.length > 0 ? (
-        <div className="grid gap-3 border-t border-slate-100 p-3 sm:grid-cols-4">
+        <div className="grid gap-3 border-t border-slate-100 bg-white p-3 sm:grid-cols-4">
           {galleryImages.map((image) => (
-            <div className="overflow-hidden rounded-xl bg-slate-100" key={image.id}>
+            <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100" key={image.id}>
               {image.public_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img alt={listing.title} className="aspect-square w-full object-cover" src={image.public_url} />
               ) : (
-                <div className="flex aspect-square flex-col items-center justify-center gap-1 bg-gradient-to-br from-slate-100 to-emerald-50 text-slate-400">
+                <div className="flex aspect-square flex-col items-center justify-center gap-1 bg-slate-50 text-slate-400">
                   <ImageIcon aria-hidden="true" className="h-6 w-6" />
                   <span className="text-xs">No photo</span>
                 </div>
@@ -665,9 +739,9 @@ function ListingSummaryCard({
   onStatus: (status: "available" | "reserved" | "sold" | "hidden" | "deleted") => Promise<void>;
 }>) {
   return (
-    <aside className="h-fit rounded-2xl border border-slate-200 bg-white shadow-sm lg:sticky lg:top-24">
+    <aside className="trade-card h-fit overflow-hidden lg:sticky lg:top-24">
       {/* Section 1: Status + price + title */}
-      <div className="p-5">
+      <div className="border-b border-slate-100 p-5">
         <div className="flex flex-wrap gap-2">
           <StatusPill tone={statusTone(listing.status)}>{listing.status.replaceAll("_", " ")}</StatusPill>
           <StatusPill>{formatCategory(listing.category)}</StatusPill>
@@ -675,30 +749,31 @@ function ListingSummaryCard({
         <div className="mt-3">
           <PriceText currency={listing.currency} size="lg" value={listing.price} />
         </div>
-        <h2 className="mt-1 text-lg font-semibold leading-snug text-slate-800">{listing.title}</h2>
+        <h2 className="mt-2 text-lg font-semibold leading-snug text-slate-950">{listing.title}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Request contact only when you are ready to arrange a safe campus pickup.
+        </p>
       </div>
-
-      <hr className="border-slate-100" />
 
       {/* Section 2: Metadata */}
-      <div className="grid gap-2 p-5 text-sm text-slate-600">
-        <p>
-          <span className="font-medium text-slate-700">{formatCategory(listing.category)}</span>
-          {(listing.condition ?? listing.condition_label) ? (
-            <span> · {(listing.condition ?? listing.condition_label ?? "").replaceAll("_", " ")}</span>
-          ) : null}
-        </p>
-        <p className="flex items-center gap-2">
-          <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-700" />
-          {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}
-        </p>
-        <p className="text-xs text-slate-400">Posted {formatRelativeTime(listing.created_at)}</p>
+      <div className="grid gap-3 border-b border-slate-100 bg-slate-50/70 p-5 text-sm text-slate-600">
+        <div className="grid grid-cols-[96px_1fr] gap-3">
+          <span className="font-semibold text-slate-500">Condition</span>
+          <span className="font-semibold text-slate-900">
+            {(listing.condition ?? listing.condition_label ?? "Not specified").replaceAll("_", " ")}
+          </span>
+          <span className="font-semibold text-slate-500">Pickup</span>
+          <span className="flex min-w-0 items-center gap-2 font-semibold text-slate-900">
+            <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-700" />
+            <span className="truncate">{formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}</span>
+          </span>
+          <span className="font-semibold text-slate-500">Posted</span>
+          <span className="font-semibold text-slate-900">{formatRelativeTime(listing.created_at)}</span>
+        </div>
       </div>
 
-      <hr className="border-slate-100" />
-
       {/* Section 3: Contact / seller actions */}
-      <div className="p-5">
+      <div className="border-b border-slate-100 p-5">
         {user ? (
           isSeller ? (
             <SellerActions isActing={isActing} listing={listing} onStatus={onStatus} />
@@ -722,8 +797,6 @@ function ListingSummaryCard({
         )}
       </div>
 
-      <hr className="border-slate-100" />
-
       {/* Section 4: Save + report actions */}
       <div className="grid gap-2 p-5">
         <button className="trade-button-secondary w-full" disabled={isActing} onClick={() => void onFavorite()} type="button">
@@ -731,7 +804,7 @@ function ListingSummaryCard({
           {isSaved ? "Saved" : "Save listing"}
         </button>
         <button
-          className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50"
+          className="trade-button-danger w-full bg-white"
           disabled={isActing}
           onClick={() => void onReportListing()}
           type="button"
@@ -740,7 +813,7 @@ function ListingSummaryCard({
           Report listing
         </button>
         <button
-          className="trade-button-secondary w-full border-rose-200 text-rose-700 hover:bg-rose-50"
+          className="trade-button-danger w-full bg-white"
           disabled={isActing}
           onClick={() => void onReportSeller()}
           type="button"
@@ -783,9 +856,9 @@ function BuyerRequestForm({
   // Gate: show completion CTA when profile is incomplete
   if (!isProfileComplete(profile)) {
     return (
-      <div className="grid gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <div className="trade-alert trade-alert-warning grid gap-3">
         <p className="text-sm font-semibold text-amber-950">Complete your profile to contact this seller.</p>
-        <p className="text-xs leading-5 text-amber-800">
+        <p className="text-sm leading-6 text-amber-900">
           Add your name and contact method so sellers can identify you.
         </p>
         <Link className="trade-button-primary" href="/trade/profile">
@@ -800,46 +873,58 @@ function BuyerRequestForm({
 
   return (
     <div className="grid gap-3">
-      <p className="text-sm leading-6 text-slate-600">
-        Your message and selected contact method will be shown to the seller. The seller&apos;s contact details are shared only if they accept.
-      </p>
+      <div>
+        <p className="text-sm font-semibold text-slate-950">Request seller contact</p>
+        <p className="mt-1 text-sm leading-6 text-slate-600">
+          Your message and selected contact method will be shown to the seller. Their contact details are shared only if they accept.
+        </p>
+      </div>
       {listingStatus === "reserved" ? (
-        <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+        <p className="trade-alert trade-alert-warning p-3">
           This item is currently reserved. You can still request backup interest, but the seller may already be discussing it with another buyer.
         </p>
       ) : null}
-      <textarea
-        className="trade-input min-h-24 resize-none"
-        value={contactDraft.message}
-        onChange={(event) => onContactDraftChange((current) => ({ ...current, message: event.target.value }))}
-      />
-      <select
-        className="trade-input"
-        value={contactDraft.buyer_contact_method}
-        onChange={(event) =>
-          onContactDraftChange((current) => ({
-            ...current,
-            buyer_contact_method: event.target.value as NonNullable<ListingPayload["contact_method"]>,
-            buyer_contact_value: event.target.value === "email" || event.target.value === "in_app" ? "" : current.buyer_contact_value,
-          }))
-        }
-      >
-        {contactMethods.map((method) => (
-          <option key={method.value} value={method.value}>
-            {method.label}
-          </option>
-        ))}
-      </select>
-      {needsContactValue ? (
-        <input
-          className="trade-input"
-          placeholder={contactDraft.buyer_contact_method === "telegram" ? "@username" : "+60..."}
-          value={contactDraft.buyer_contact_value}
-          onChange={(event) => onContactDraftChange((current) => ({ ...current, buyer_contact_value: event.target.value }))}
+      <label className="grid gap-2">
+            <span className="trade-field-kicker">Message</span>
+        <textarea
+          className="trade-input min-h-24 resize-none"
+          value={contactDraft.message}
+          onChange={(event) => onContactDraftChange((current) => ({ ...current, message: event.target.value }))}
         />
+      </label>
+      <label className="grid gap-2">
+          <span className="trade-field-kicker">Your contact method</span>
+        <select
+          className="trade-input"
+          value={contactDraft.buyer_contact_method}
+          onChange={(event) =>
+            onContactDraftChange((current) => ({
+              ...current,
+              buyer_contact_method: event.target.value as NonNullable<ListingPayload["contact_method"]>,
+              buyer_contact_value: event.target.value === "email" || event.target.value === "in_app" ? "" : current.buyer_contact_value,
+            }))
+          }
+        >
+          {contactMethods.map((method) => (
+            <option key={method.value} value={method.value}>
+              {method.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {needsContactValue ? (
+        <label className="grid gap-2">
+          <span className="trade-field-kicker">Contact value</span>
+          <input
+            className="trade-input"
+            placeholder={contactDraft.buyer_contact_method === "telegram" ? "@username" : "+60..."}
+            value={contactDraft.buyer_contact_value}
+            onChange={(event) => onContactDraftChange((current) => ({ ...current, buyer_contact_value: event.target.value }))}
+          />
+        </label>
       ) : null}
       {needsSafetyAck ? (
-        <label className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+        <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
           <input
             checked={contactDraft.safety_acknowledged}
             className="mt-0.5 shrink-0"
@@ -876,8 +961,11 @@ function SellerActions({
   onStatus: (status: "available" | "reserved" | "sold" | "hidden" | "deleted") => Promise<void>;
 }>) {
   return (
-    <div className="grid gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
-      <p>This is your listing. Manage status or review buyer requests from My Trade.</p>
+    <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+      <div>
+        <p className="font-semibold text-slate-950">Seller controls</p>
+        <p className="mt-1 leading-6">This is your listing. Manage status or review buyer requests from My Trade.</p>
+      </div>
       <Link className="trade-button-primary w-full" href={`/trade/${listing.id}/edit`}>
         <Pencil aria-hidden="true" className="h-4 w-4" />
         Edit Listing
@@ -918,22 +1006,29 @@ function SellerCard({ listing }: Readonly<{ listing: Listing }>) {
   const isVerified = listing.seller?.profile?.verified_um_email === true;
 
   return (
-    <section className="trade-card p-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Seller</p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <h2 className="text-lg font-semibold text-slate-950">{getSellerDisplayName(listing)}</h2>
-        {isVerified ? (
-          <span className="flex items-center gap-1 text-xs font-semibold text-emerald-700">
-            <BadgeCheck aria-hidden="true" className="h-3.5 w-3.5" />
-            Verified UM
-          </span>
-        ) : null}
+    <section className="trade-card p-5 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="trade-kicker">Seller</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold text-slate-950">{getSellerDisplayName(listing)}</h2>
+            {isVerified ? (
+              <span className="trade-chip-success">
+                <BadgeCheck aria-hidden="true" className="h-3.5 w-3.5" />
+                Verified UM
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            {listing.seller?.profile?.faculty ?? "University of Malaya student"} ·{" "}
+            {listing.seller?.profile?.college_or_location ?? listing.seller?.profile?.residential_college ?? "Campus pickup"}
+          </p>
+        </div>
+        <span className="trade-icon-frame">
+          <ShieldCheck aria-hidden="true" className="h-5 w-5" />
+        </span>
       </div>
-      <p className="mt-1 text-sm leading-6 text-slate-600">
-        {listing.seller?.profile?.faculty ?? "University of Malaya student"} ·{" "}
-        {listing.seller?.profile?.college_or_location ?? listing.seller?.profile?.residential_college ?? "Campus pickup"}
-      </p>
-      <p className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
+      <p className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
         Contact details are shared only after the seller accepts a buyer request.
       </p>
     </section>
@@ -1017,6 +1112,7 @@ function SellerIntelligencePanel({
         <div className="mt-3 flex gap-2">
           <input
             className="trade-input min-w-0 flex-1"
+            inputMode="decimal"
             min="1"
             onChange={(event) => onSimulationPriceChange(event.target.value)}
             type="number"
@@ -1027,7 +1123,7 @@ function SellerIntelligencePanel({
           </button>
         </div>
         {simulation ? (
-          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
             <p className="font-semibold text-slate-950">
               {formatMoney(simulation.proposed_price, listing.currency)} · {simulation.action_type.replaceAll("_", " ")}
             </p>
@@ -1059,7 +1155,7 @@ function RiskWarning({ listing }: Readonly<{ listing: Listing }>) {
   const riskTitle = listing.risk_level === "high" ? "Under review" : "Needs review";
 
   return (
-    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+    <section className="rounded-lg border border-amber-200 bg-amber-50 p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-amber-950">{riskTitle}</h2>
@@ -1074,7 +1170,7 @@ function RiskWarning({ listing }: Readonly<{ listing: Listing }>) {
       {items.length > 0 ? (
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {items.map((item) => (
-            <div className="rounded-xl border border-amber-200 bg-white p-3 text-sm text-amber-950" key={item}>
+            <div className="rounded-lg border border-amber-200 bg-white p-3 text-sm text-amber-950" key={item}>
               {item}
             </div>
           ))}

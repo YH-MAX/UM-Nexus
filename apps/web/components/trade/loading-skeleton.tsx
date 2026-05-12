@@ -3,29 +3,33 @@ export function LoadingSkeleton() {
     <section
       aria-label="Loading marketplace listings"
       aria-busy="true"
-      className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3"
+      className="grid gap-4 sm:grid-cols-2 lg:gap-5 xl:grid-cols-3"
       role="status"
     >
       <span className="sr-only">Loading listings...</span>
       {Array.from({ length: 6 }).map((_, index) => (
         <div
-          className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+          className="trade-card overflow-hidden"
           key={index}
         >
-          <div className="aspect-[4/3] animate-pulse bg-slate-100" />
+          <div className="trade-loading-block aspect-[4/3] rounded-none" />
           <div className="space-y-3 p-4">
-            <div className="space-y-2">
-              <div className="h-4 w-3/4 animate-pulse rounded-full bg-slate-100" />
-              <div className="h-4 w-1/2 animate-pulse rounded-full bg-slate-100" />
+            <div className="flex items-center justify-between gap-3">
+              <div className="trade-loading-block h-5 w-20 rounded-full" />
+              <div className="trade-loading-block h-8 w-8 rounded-full" />
             </div>
-            <div className="h-6 w-1/3 animate-pulse rounded-full bg-slate-100" />
             <div className="space-y-2">
-              <div className="h-3 w-2/3 animate-pulse rounded-full bg-slate-100" />
-              <div className="h-3 w-1/2 animate-pulse rounded-full bg-slate-100" />
+              <div className="trade-loading-block h-4 w-3/4 rounded-full" />
+              <div className="trade-loading-block h-4 w-1/2 rounded-full" />
+            </div>
+            <div className="trade-loading-block h-8 w-1/3 rounded-lg" />
+            <div className="space-y-2">
+              <div className="trade-loading-block h-9 w-full" />
+              <div className="trade-loading-block h-3 w-1/2 rounded-full" />
             </div>
             <div className="flex items-center justify-between border-t border-slate-100 pt-3">
-              <div className="h-3 w-1/3 animate-pulse rounded-full bg-slate-100" />
-              <div className="h-3 w-1/5 animate-pulse rounded-full bg-slate-100" />
+              <div className="trade-loading-block h-3 w-1/3 rounded-full" />
+              <div className="trade-loading-block h-5 w-1/4 rounded-full" />
             </div>
           </div>
         </div>

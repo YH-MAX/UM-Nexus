@@ -21,13 +21,13 @@ export function AcceptRequestModal({ request, isUpdating, onConfirm, onCancel }:
         onClick={onCancel}
         type="button"
       />
-      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+      <div className="trade-modal-panel max-w-md">
         <h2 className="text-lg font-semibold text-slate-950">Accept contact request</h2>
         <p className="mt-1 text-sm leading-6 text-slate-600">
           The buyer will be notified and can see your contact details.
         </p>
 
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
           <p className="text-sm font-semibold text-slate-950">{request.listing?.title ?? "Listing"}</p>
           <p className="mt-1 text-sm leading-6 text-slate-600">{request.message ?? "No message provided."}</p>
         </div>
@@ -36,7 +36,7 @@ export function AcceptRequestModal({ request, isUpdating, onConfirm, onCancel }:
           <p className="text-sm font-semibold text-slate-800">After accepting</p>
           <div className="mt-2 grid gap-2">
             <label
-              className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
                 !markReserved
                   ? "border-emerald-400 bg-emerald-50"
                   : "border-slate-200 hover:border-emerald-200 hover:bg-emerald-50"
@@ -57,7 +57,7 @@ export function AcceptRequestModal({ request, isUpdating, onConfirm, onCancel }:
               </div>
             </label>
             <label
-              className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 transition ${
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${
                 markReserved
                   ? "border-emerald-400 bg-emerald-50"
                   : "border-slate-200 hover:border-emerald-200 hover:bg-emerald-50"
@@ -80,7 +80,7 @@ export function AcceptRequestModal({ request, isUpdating, onConfirm, onCancel }:
           </div>
         </div>
 
-        <div className="mt-5 flex flex-wrap justify-end gap-3">
+        <div className="trade-action-row mt-5 justify-end">
           <button
             className="trade-button-secondary"
             disabled={isUpdating}

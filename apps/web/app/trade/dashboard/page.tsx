@@ -377,12 +377,12 @@ export default function TradeDashboardPage() {
       }
     >
       {error ? (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <div className="trade-alert trade-alert-danger">
           {error}
         </div>
       ) : null}
       {notice ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+        <div className="trade-alert trade-alert-success">
           {notice}
         </div>
       ) : null}
@@ -392,7 +392,12 @@ export default function TradeDashboardPage() {
       ) : null}
 
       {user && isLoading ? (
-        <div className="trade-card p-5 text-sm text-slate-600">Loading dashboard...</div>
+        <div className="trade-card p-5" aria-busy="true" role="status">
+          <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
+            <span className="trade-loading-block h-10 w-10 shrink-0" />
+            Loading dashboard...
+          </div>
+        </div>
       ) : user && dashboard ? (
         <div className="grid gap-5">
           <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -402,7 +407,7 @@ export default function TradeDashboardPage() {
             <DashboardStatCard detail="Saved for later" icon={Heart} label="Saved items" value={stats.savedItems} />
           </section>
 
-          <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+          <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-white p-2 shadow-sm">
             {tabs.map((tab) => (
               <button
                 aria-pressed={activeTab === tab.id}
@@ -526,7 +531,7 @@ function Overview({
           <EmptyState actionHref="/trade/want" actionLabel="Post Wanted Request" description="Tell UM sellers what you are looking for." title="No wanted posts" />
         ) : (
           dashboard.wanted_posts.slice(0, 4).map((post) => (
-            <Link className="block rounded-2xl border border-slate-200 p-4 transition hover:border-emerald-200 hover:bg-emerald-50" href={`/wanted-posts/${post.id}`} key={post.id}>
+            <Link className="block rounded-lg border border-slate-200 p-4 transition hover:border-emerald-200 hover:bg-emerald-50" href={`/wanted-posts/${post.id}`} key={post.id}>
               <p className="font-semibold text-slate-950">{post.title}</p>
               <p className="mt-1 text-sm text-slate-600">
                 Budget {formatMoney(post.max_budget, post.currency)} · {formatPickupLocation(post.preferred_pickup_area)}
@@ -668,7 +673,7 @@ function WantedResponsesTab({
           />
         ) : (
           wantedPosts.map((post) => (
-            <Link className="block rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-emerald-200 hover:bg-emerald-50" href={`/wanted-posts/${post.id}`} key={post.id}>
+            <Link className="block rounded-lg border border-slate-200 bg-white p-4 transition hover:border-emerald-200 hover:bg-emerald-50" href={`/wanted-posts/${post.id}`} key={post.id}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <p className="font-semibold text-slate-950">{post.title}</p>
@@ -764,7 +769,7 @@ function WantedResponseCard({
   const wantedTitle = response.wanted_post?.title ?? "Wanted request";
   return (
     <article
-      className={`rounded-2xl border border-slate-200 bg-white p-4 transition ${
+      className={`rounded-lg border border-slate-200 bg-white p-4 transition ${
         isHighlighted ? "border-emerald-300 ring-4 ring-emerald-100" : ""
       }`}
       data-highlighted={isHighlighted ? "true" : "false"}
@@ -783,7 +788,7 @@ function WantedResponseCard({
       <OfferStatusTimeline status={response.status} />
 
       {response.listing ? (
-        <Link className="mt-3 block rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm transition hover:border-emerald-200 hover:bg-emerald-50" href={`/trade/${response.listing.id}`}>
+        <Link className="mt-3 block rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm transition hover:border-emerald-200 hover:bg-emerald-50" href={`/trade/${response.listing.id}`}>
           <span className="font-semibold text-slate-950">{response.listing.title}</span>
           <span className="mt-1 block text-slate-600">
             {formatMoney(response.listing.price, response.listing.currency)} · {formatPickupLocation(response.listing.pickup_location ?? response.listing.pickup_area)}
@@ -792,7 +797,7 @@ function WantedResponseCard({
       ) : null}
 
       {response.status === "accepted" ? (
-        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
           Seller contact: {formatContactLine(response.seller_contact_method, response.seller_contact_value)}
           {response.contact_reveal_blocked_reason ? (
             <p className="mt-1 text-xs font-semibold text-emerald-800">{response.contact_reveal_blocked_reason}</p>
@@ -801,7 +806,7 @@ function WantedResponseCard({
       ) : null}
 
       {response.buyer_response ? (
-        <p className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+        <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
           Buyer note: {response.buyer_response}
         </p>
       ) : null}
@@ -839,7 +844,7 @@ function OfferStatusTimeline({ status }: Readonly<{ status: string }>) {
   const activeIndex = status === "pending" ? 1 : 2;
 
   return (
-    <div className="mt-3 grid gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
+    <div className="mt-3 grid gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-3">
       {steps.map((step, index) => (
         <div className="flex items-center gap-2 text-xs font-semibold text-slate-600" key={step}>
           <span className={`h-2.5 w-2.5 rounded-full ${index <= activeIndex ? "bg-emerald-600" : "bg-slate-300"}`} />
@@ -885,12 +890,12 @@ function RequestCard({
         <StatusPill tone={statusTone(request.status)}>{request.status}</StatusPill>
       </div>
       {role === "seller" && request.buyer_contact_value ? (
-        <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
           Buyer contact: {request.buyer_contact_method} {request.buyer_contact_value}
         </div>
       ) : null}
       {request.status === "accepted" ? (
-        <div className="mt-3 grid gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
+        <div className="mt-3 grid gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950">
           <p>Buyer: {formatContactLine(request.buyer_contact_method, request.buyer_contact_value)}</p>
           <p>
             Seller:{" "}
@@ -1006,7 +1011,7 @@ function SoldTab({
           <p className="text-sm text-slate-600">Accepted requests and completed trades will appear here.</p>
         ) : (
           dashboard.transactions.map((transaction) => (
-            <div className="rounded-2xl border border-slate-200 p-4" key={transaction.id}>
+            <div className="rounded-lg border border-slate-200 p-4" key={transaction.id}>
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-semibold text-slate-950">{transaction.status.replaceAll("_", " ")}</p>
@@ -1074,3 +1079,4 @@ function Panel({ title, children }: Readonly<{ title: string; children: React.Re
     </section>
   );
 }
+

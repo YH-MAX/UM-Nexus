@@ -9,8 +9,10 @@ import {
   LayoutDashboard,
   Megaphone,
   PlusCircle,
+  ShieldCheck,
   Store,
   User,
+  X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -108,14 +110,22 @@ export function TradeShell({
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-slate-50 pb-24 text-slate-950 md:pb-0">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex h-16 w-full max-w-7xl min-w-0 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
-          <Link className="flex min-w-0 items-center gap-2 font-semibold text-slate-950" href="/trade">
-            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-700 text-white shadow-sm">
+    <main className="trade-page-surface pb-24 md:pb-0">
+      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/90 shadow-sm shadow-slate-200/50 backdrop-blur-xl">
+        <div className="trade-container flex h-16 items-center justify-between gap-3">
+          <Link
+            className="flex min-w-0 items-center gap-2 rounded-lg pr-2 font-semibold text-slate-950 transition hover:text-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+            href="/trade"
+          >
+            <span className="trade-icon-frame-dark h-9 w-9">
               <Store aria-hidden="true" className="h-4 w-4" />
             </span>
-            <span className="hidden text-base sm:inline">UM Nexus Trade</span>
+            <span className="hidden leading-tight sm:inline">
+              <span className="block text-base">UM Nexus Trade</span>
+              <span className="block text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                UM-only marketplace
+              </span>
+            </span>
             <span className="truncate text-base sm:hidden">UM Nexus</span>
           </Link>
 
@@ -137,10 +147,10 @@ export function TradeShell({
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-7xl min-w-0 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        <section className="flex min-w-0 flex-col gap-4 border-b border-slate-200 pb-6 md:flex-row md:items-end md:justify-between">
+      <div className="trade-container flex flex-col gap-6 py-6 lg:py-8">
+        <section className="flex min-w-0 flex-col gap-4 border-b border-slate-200/80 pb-6 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0 max-w-3xl">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
+            <p className="trade-kicker">
               {eyebrow}
             </p>
             <h1 className="mt-2 text-[2rem] font-semibold leading-tight text-slate-950 sm:text-4xl">
@@ -152,7 +162,7 @@ export function TradeShell({
               </p>
             ) : null}
           </div>
-          {action ? <div className="shrink-0">{action}</div> : null}
+          {action ? <div className="flex shrink-0 flex-wrap gap-2">{action}</div> : null}
         </section>
         {showOnboarding ? <TradeOnboardingCard onDismiss={dismissOnboarding} /> : null}
         {children}
@@ -160,7 +170,7 @@ export function TradeShell({
 
       <nav
         aria-label="Mobile trade navigation"
-        className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur md:hidden"
+        className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.10)] backdrop-blur-xl md:hidden"
       >
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
           {mobileNav.map((item) => (
@@ -174,28 +184,39 @@ export function TradeShell({
 
 function TradeOnboardingCard({ onDismiss }: Readonly<{ onDismiss: () => void }>) {
   return (
-    <section className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm font-semibold text-emerald-950">
-          Welcome to UM Nexus Trade — buy and sell safely within the UM campus community.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100" href="/trade">
+    <section className="trade-alert trade-alert-success">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 gap-3">
+          <span className="trade-icon-frame bg-white text-emerald-700">
+            <ShieldCheck aria-hidden="true" className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-semibold text-emerald-950">
+              Welcome to UM Nexus Trade.
+            </p>
+            <p className="mt-1 text-sm text-emerald-900">
+              Buy and sell safely inside the University of Malaya campus community.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          <Link className="trade-button-secondary border-emerald-200 px-3 py-2 text-emerald-900 hover:border-emerald-300 hover:bg-emerald-100" href="/trade">
             Browse
           </Link>
-          <Link className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100" href="/trade/sell">
+          <Link className="trade-button-secondary border-emerald-200 px-3 py-2 text-emerald-900 hover:border-emerald-300 hover:bg-emerald-100" href="/trade/sell">
             Sell an item
           </Link>
-          <Link className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-100" href="/trade/profile">
+          <Link className="trade-button-secondary border-emerald-200 px-3 py-2 text-emerald-900 hover:border-emerald-300 hover:bg-emerald-100" href="/trade/profile">
             Complete profile
           </Link>
           <button
             aria-label="Dismiss welcome banner"
-            className="rounded-lg border border-emerald-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100"
+            className="trade-button-ghost text-emerald-800 hover:bg-emerald-100"
             onClick={onDismiss}
             type="button"
           >
-            ✕ Dismiss
+            <X aria-hidden="true" className="h-4 w-4" />
+            Dismiss
           </button>
         </div>
       </div>
@@ -207,16 +228,16 @@ function DesktopNavLink({ active, item }: Readonly<{ active: boolean; item: NavI
   const Icon = item.icon;
   const className =
     item.kind === "primary"
-      ? "border-emerald-700 bg-emerald-700 text-white shadow-sm hover:bg-emerald-800"
+      ? "border-emerald-700 bg-emerald-700 text-white shadow-sm shadow-emerald-900/10 hover:bg-emerald-800"
       : active
         ? "border-slate-900 bg-slate-900 text-white shadow-sm"
         : item.kind === "secondary"
           ? "border-slate-300 bg-white text-slate-800 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800"
-          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-950";
+          : "border-transparent bg-transparent text-slate-700 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-950";
 
   return (
     <Link
-      className={`inline-flex items-center gap-2 rounded-xl border px-3.5 py-2 text-sm font-semibold transition ${className}`}
+      className={`inline-flex h-10 items-center gap-2 rounded-lg border px-3.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${className}`}
       href={item.href}
     >
       <Icon aria-hidden="true" className="h-4 w-4" />
@@ -236,12 +257,12 @@ function MobileNavLink({ active, item }: Readonly<{ active: boolean; item: NavIt
 
   return (
     <Link
-      className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-2xl px-2 text-[11px] font-semibold transition hover:bg-slate-50 ${className}`}
+      className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${className}`}
       href={item.href}
     >
       <span
-        className={`flex h-8 w-10 items-center justify-center rounded-2xl ${
-          active || item.kind === "primary" ? "bg-emerald-50" : "bg-transparent"
+        className={`flex h-8 w-10 items-center justify-center rounded-lg ${
+          active || item.kind === "primary" ? "bg-emerald-50 ring-1 ring-emerald-100" : "bg-transparent"
         }`}
       >
         <Icon aria-hidden="true" className="h-5 w-5" />
@@ -269,7 +290,7 @@ function UtilityLink({
   return (
     <Link
       aria-label={label}
-      className={`relative inline-flex items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition ${
+      className={`relative inline-flex items-center justify-center gap-2 rounded-lg border text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${
         mobile ? "h-10 w-10 p-0" : "h-10 px-3"
       } ${
         active

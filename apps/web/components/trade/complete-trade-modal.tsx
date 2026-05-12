@@ -36,13 +36,13 @@ export function CompleteTradeModal({ request, isUpdating, onConfirm, onCancel }:
         onClick={onCancel}
         type="button"
       />
-      <div className="relative w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+      <div className="trade-modal-panel max-w-md">
         <h2 className="text-lg font-semibold text-slate-950">Record trade completion</h2>
         <p className="mt-1 text-sm leading-6 text-slate-600">
           Help improve future price suggestions by recording the final sale price.
         </p>
 
-        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
           <p className="text-sm font-semibold text-slate-950">{request.listing?.title ?? "Listing"}</p>
           {request.listing?.price ? (
             <p className="mt-1 text-sm text-slate-600">Listed at {formatMoney(request.listing.price)}</p>
@@ -70,7 +70,7 @@ export function CompleteTradeModal({ request, isUpdating, onConfirm, onCancel }:
             {priceError ? <p className="text-xs text-rose-600">{priceError}</p> : null}
           </div>
 
-          <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 transition hover:border-emerald-200 hover:bg-emerald-50">
+          <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 transition hover:border-emerald-200 hover:bg-emerald-50">
             <input
               checked={followedAi}
               className="mt-0.5 accent-emerald-700"
@@ -86,7 +86,7 @@ export function CompleteTradeModal({ request, isUpdating, onConfirm, onCancel }:
           </label>
         </div>
 
-        <div className="mt-5 flex flex-wrap justify-end gap-3">
+        <div className="trade-action-row mt-5 justify-end">
           <button
             className="trade-button-secondary"
             disabled={isUpdating}

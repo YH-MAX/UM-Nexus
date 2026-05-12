@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Camera, ChevronDown, Send, Sparkles, Upload, X } from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -575,12 +576,12 @@ export default function SellPage() {
       description="Create a campus listing manually first. AI is optional help for title, category, description, and fair price guidance."
     >
       {error ? (
-        <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800" role="alert">
+        <p className="trade-alert trade-alert-danger" role="alert">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <p className="trade-alert trade-alert-success">
           {notice}
         </p>
       ) : null}
@@ -682,8 +683,8 @@ export default function SellPage() {
 
           <aside className="grid gap-5 lg:sticky lg:top-24">
             <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Preview — this is how your listing will appear to buyers
+              <p className="trade-field-kicker mb-2">
+                Preview: this is how your listing will appear to buyers
               </p>
               <ListingPreviewPanel draft={editableDraft} images={images} />
             </div>
@@ -720,7 +721,7 @@ function ProfileRequiredPanel() {
           </p>
         </div>
         <Link
-          className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+          className="trade-button-primary bg-slate-950 hover:bg-slate-800"
           href="/trade/profile"
         >
           Edit profile
@@ -763,7 +764,7 @@ function PublishQualityCheckpoint({
   const hasWarnings = recommendedChecks.some((c) => !c.ok);
 
   return (
-    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+    <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-amber-950">Ready to publish?</h2>
@@ -778,11 +779,11 @@ function PublishQualityCheckpoint({
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">Required</p>
+          <p className="trade-field-kicker mb-2">Required</p>
           <div className="grid gap-2">
             {requiredChecks.map((check) => (
               <div
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
                   check.ok
                     ? "border-emerald-200 bg-white text-emerald-800"
                     : "border-rose-200 bg-rose-50 text-rose-800"
@@ -796,11 +797,11 @@ function PublishQualityCheckpoint({
           </div>
         </div>
         <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">Recommended</p>
+          <p className="trade-field-kicker mb-2">Recommended</p>
           <div className="grid gap-2">
             {recommendedChecks.map((check) => (
               <div
-                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
                   check.ok
                     ? "border-emerald-200 bg-white text-emerald-800"
                     : "border-amber-200 bg-white text-amber-800"
@@ -852,7 +853,7 @@ function ListingPreviewPanel({
   const pickup = draft.pickup_location ?? draft.pickup_area ?? "kk1";
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section className="trade-card overflow-hidden">
       <div className="relative flex aspect-[4/3] items-center justify-center bg-slate-100">
         {cover ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -868,7 +869,7 @@ function ListingPreviewPanel({
       </div>
       <div className="space-y-3 p-5">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Live listing preview</p>
+          <p className="trade-kicker">Live listing preview</p>
           <h2 className="mt-2 line-clamp-2 text-lg font-semibold text-slate-950">
             {draft.title.trim() || "Item title"}
           </h2>
@@ -876,7 +877,7 @@ function ListingPreviewPanel({
             {formatMoney(draft.category === "free_items" ? 0 : draft.price, draft.currency)}
           </p>
         </div>
-        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600">
+        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600">
           <p className="font-medium text-slate-800">
             {formatCategory(draft.category || "others")} · {condition.replaceAll("_", " ")}
           </p>
@@ -910,10 +911,10 @@ function ManualListingPanel({
   onUpdateDraftField: (field: keyof ListingPayload, value: string | number | undefined) => void;
 }>) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="trade-card p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Manual listing</p>
+          <p className="trade-kicker">Manual listing</p>
           <h2 className="mt-2 text-xl font-semibold text-slate-950">Product details</h2>
         </div>
         <StatusPill tone={imageCount > 0 ? "good" : "warn"}>{imageCount}/5 photos</StatusPill>
@@ -1117,7 +1118,7 @@ function PhotoUploadPanel({
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">1 Photos</p>
+          <p className="trade-kicker">1 Photos</p>
           <h2 className="mt-2 text-xl font-semibold text-slate-950">Start with the item</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
             Clear photos help the AI estimate item type, condition, and risk.
@@ -1251,8 +1252,11 @@ function AgentConversationPanel({
         type="button"
       >
         <div className="flex flex-col gap-1">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">Optional</p>
-          <p className="text-base font-semibold text-slate-950">✨ AI listing assistant</p>
+          <p className="trade-kicker">Optional</p>
+          <p className="flex items-center gap-2 text-base font-semibold text-slate-950">
+            <Sparkles aria-hidden="true" className="h-4 w-4 text-emerald-700" />
+            AI listing assistant
+          </p>
           <p className="text-xs leading-5 text-slate-500">
             AI can help draft your title, category, description, and fair price. You can publish without it.
           </p>
@@ -1262,7 +1266,7 @@ function AgentConversationPanel({
           className={`shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
           style={{ fontSize: "1.25rem", lineHeight: 1 }}
         >
-          ▾
+          <ChevronDown aria-hidden="true" className="h-4 w-4" />
         </span>
       </button>
 
@@ -1532,7 +1536,7 @@ function DraftReviewPanel({
       <div className="border-b border-slate-200 p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700">3 AI draft</p>
+            <p className="trade-kicker">3 AI draft</p>
             <h2 className="mt-2 text-xl font-semibold text-slate-950">Review before publishing</h2>
           </div>
           {draft ? <StatusPill tone="good">seller-approved</StatusPill> : null}
@@ -1794,7 +1798,7 @@ function PriceTradeoffSelector({
               onClick={() => onApplyPriceOption(option)}
               type="button"
             >
-              <span className="block text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <span className="trade-field-kicker block">
                 {priceOptionLabels[option.type]}
               </span>
               <span className="mt-2 block text-lg font-semibold text-slate-950">{formatMoney(option.price)}</span>
@@ -1904,9 +1908,9 @@ function EditableField({
 }>) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-semibold text-slate-800">{label}</span>
+      <span className="trade-field-label">{label}</span>
       <input
-        className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-600"
+        className="trade-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -1925,9 +1929,10 @@ function EditableNumber({
 }>) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-semibold text-slate-800">{label}</span>
+      <span className="trade-field-label">{label}</span>
       <input
-        className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-600"
+        className="trade-input"
+        inputMode="decimal"
         min="0"
         step="0.01"
         type="number"
@@ -1955,9 +1960,9 @@ function EditableSelect({
 }>) {
   return (
     <label className="grid gap-2">
-      <span className="text-sm font-semibold text-slate-800">{label}</span>
+      <span className="trade-field-label">{label}</span>
       <select
-        className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-emerald-600"
+        className="trade-input"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -1992,7 +1997,7 @@ function Metric({
 
   return (
     <div className={`rounded-lg border p-3 ${toneClass}`}>
-      <p className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</p>
+      <p className="trade-field-kicker">{label}</p>
       <p className="mt-1 text-base font-semibold text-slate-950">{value}</p>
     </div>
   );
@@ -2068,21 +2073,21 @@ function PublishProgress({
       {phase === "timeout" ? (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
           <p className="font-semibold">Your listing is published and live on UM Nexus Trade.</p>
-          <p className="mt-1">AI enrichment is still running in the background — this does not affect your listing visibility.</p>
+          <p className="mt-1">AI enrichment is still running in the background; this does not affect your listing visibility.</p>
           {listingId ? (
             <button
               className="mt-2 font-semibold underline underline-offset-2"
               onClick={onOpenListing}
               type="button"
             >
-              View your listing →
+              View your listing
             </button>
           ) : null}
         </div>
       ) : null}
       {phase === "failed" ? (
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          Your listing was created successfully. One AI step could not complete — this does not affect visibility.
+          Your listing was created successfully. One AI step could not complete; this does not affect visibility.
           You can retry AI enrichment from the listing page.
         </p>
       ) : null}
@@ -2171,38 +2176,19 @@ function isContactReady(payload: ListingPayload): boolean {
 }
 
 function UploadIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <path d="M12 16V4m0 0 4 4m-4-4-4 4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" />
-      <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-    </svg>
-  );
+  return <Upload aria-hidden="true" className="h-4 w-4" />;
 }
 
 function CameraIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="2" />
-      <path d="M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" stroke="currentColor" strokeWidth="2" />
-    </svg>
-  );
+  return <Camera aria-hidden="true" className="h-4 w-4" />;
 }
 
 function SendIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <path d="m5 12 14-7-4 14-3-5-7-2Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="2" />
-      <path d="m12 14 7-9" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-    </svg>
-  );
+  return <Send aria-hidden="true" className="h-4 w-4" />;
 }
 
 function CloseIcon() {
-  return (
-    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <path d="m6 6 12 12M18 6 6 18" stroke="currentColor" strokeLinecap="round" strokeWidth="2" />
-    </svg>
-  );
+  return <X aria-hidden="true" className="h-4 w-4" />;
 }
 
 function suggestedListingTitle(wantedPost: WantedPost): string {
