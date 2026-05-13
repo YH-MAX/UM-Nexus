@@ -1,4 +1,4 @@
-const DEFAULT_ALLOWED_DOMAINS = ["siswa.um.edu.my", "um.edu.my"];
+const DEFAULT_ALLOWED_DOMAINS = ["siswa.um.edu.my"];
 
 export function parseAllowedEmailDomains(value?: string): string[] {
   if (!value) {

@@ -46,6 +46,23 @@ def test_non_um_email_returns_403(client, token_verifier) -> None:
     assert response.status_code == 403
 
 
+def test_unconfirmed_supabase_email_returns_403(client, supabase_auth_user_client) -> None:
+    supabase_auth_user_client.email_confirmed_at = None
+
+    response = client.get("/api/v1/auth/me", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    assert "Confirm your UM email" in response.json()["detail"]
+
+
+def test_supabase_user_mismatch_returns_401(client, supabase_auth_user_client) -> None:
+    supabase_auth_user_client.email = "someone-else@siswa.um.edu.my"
+
+    response = client.get("/api/v1/auth/me", headers=AUTH_HEADERS)
+
+    assert response.status_code == 401
+
+
 def test_profile_update_success(client, token_verifier) -> None:
     client.get("/api/v1/auth/me", headers=AUTH_HEADERS)
 

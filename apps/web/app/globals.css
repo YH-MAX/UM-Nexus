@@ -174,4 +174,208 @@ textarea {
   .trade-kicker {
     @apply text-xs font-semibold uppercase tracking-[0.14em] text-emerald-700;
   }
+
+  /* ============================================================
+     Nexus Maison — Luxury / Liquid Glass system
+     Used by /luxury landing page.
+     ============================================================ */
+
+  .luxury-surface {
+    @apply min-h-screen antialiased;
+    background:
+      radial-gradient(1200px 800px at 80% -10%, rgba(212, 175, 106, 0.10), transparent 60%),
+      radial-gradient(900px 700px at -10% 110%, rgba(212, 175, 106, 0.06), transparent 60%),
+      linear-gradient(180deg, #0a0807 0%, #0c0a09 50%, #0a0807 100%);
+    color: #e7e5e4;
+  }
+
+  .luxury-font-display {
+    font-family: var(--font-luxury-display), "Cormorant Garamond", "Playfair Display", Georgia, serif;
+    font-feature-settings: "liga", "kern", "dlig";
+    letter-spacing: -0.005em;
+  }
+
+  .luxury-font-body {
+    font-family: var(--font-luxury-body), "Montserrat", system-ui, -apple-system, sans-serif;
+  }
+
+  .luxury-eyebrow {
+    @apply text-[11px] font-medium uppercase text-stone-400;
+    font-family: var(--font-luxury-body), "Montserrat", system-ui, sans-serif;
+    letter-spacing: 0.32em;
+  }
+
+  .luxury-gold {
+    color: #d4af6a;
+  }
+
+  .luxury-gold-soft {
+    color: #c9a86a;
+  }
+
+  /* Liquid Glass — Dark variant (over dark sections / imagery) */
+  .luxury-glass-dark {
+    position: relative;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.02) 60%);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+      inset 0 -1px 0 0 rgba(255, 255, 255, 0.04),
+      0 30px 80px -30px rgba(0, 0, 0, 0.65);
+  }
+
+  .luxury-glass-dark::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.18) 0%,
+      rgba(255, 255, 255, 0) 36%,
+      rgba(255, 255, 255, 0) 64%,
+      rgba(212, 175, 106, 0.08) 100%
+    );
+    mix-blend-mode: screen;
+  }
+
+  /* Liquid Glass — Pale variant (over ivory sections) */
+  .luxury-glass-pale {
+    position: relative;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.55) 60%);
+    backdrop-filter: blur(26px) saturate(140%);
+    -webkit-backdrop-filter: blur(26px) saturate(140%);
+    border: 1px solid rgba(28, 25, 23, 0.10);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.95),
+      0 30px 80px -30px rgba(28, 25, 23, 0.25);
+  }
+
+  /* Champagne gold edge — for premium CTAs */
+  .luxury-gold-edge {
+    position: relative;
+    background: linear-gradient(180deg, #e2c081 0%, #c79747 100%);
+    color: #1c1917;
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.45),
+      inset 0 -1px 0 0 rgba(0, 0, 0, 0.18),
+      0 14px 36px -12px rgba(212, 175, 106, 0.55);
+    transition: filter 250ms ease, transform 250ms ease, box-shadow 250ms ease;
+    cursor: pointer;
+  }
+
+  .luxury-gold-edge:hover {
+    background: linear-gradient(180deg, #ecd1a1 0%, #d4ad5a 100%);
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.55),
+      inset 0 -1px 0 0 rgba(0, 0, 0, 0.18),
+      0 18px 46px -12px rgba(212, 175, 106, 0.7);
+  }
+
+  .luxury-gold-edge:focus-visible {
+    outline: 2px solid #e2c081;
+    outline-offset: 4px;
+  }
+
+  /* Ghost CTA (outline, transparent) */
+  .luxury-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-[11px] font-semibold uppercase text-stone-100 transition;
+    letter-spacing: 0.22em;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.04);
+    cursor: pointer;
+  }
+
+  .luxury-ghost:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.36);
+  }
+
+  /* Hairline rule with subtle gold tint */
+  .luxury-rule {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(212, 175, 106, 0.55) 30%,
+      rgba(212, 175, 106, 0.55) 70%,
+      transparent 100%
+    );
+  }
+
+  .luxury-rule-vertical {
+    width: 1px;
+    background: linear-gradient(
+      180deg,
+      transparent 0%,
+      rgba(212, 175, 106, 0.55) 30%,
+      rgba(212, 175, 106, 0.55) 70%,
+      transparent 100%
+    );
+  }
+
+  /* Specular highlight band that sweeps on hover */
+  .luxury-sheen {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .luxury-sheen::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      110deg,
+      transparent 35%,
+      rgba(255, 255, 255, 0.20) 50%,
+      transparent 65%
+    );
+    transform: translateX(-120%);
+    transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+  }
+
+  .luxury-sheen:hover::after {
+    transform: translateX(120%);
+  }
+
+  /* Slow ambient marquee */
+  @keyframes luxury-marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  .luxury-marquee-track {
+    animation: luxury-marquee 50s linear infinite;
+  }
+
+  /* Floating fluid blob in hero background */
+  @keyframes luxury-blob {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    50% {
+      transform: translate3d(2%, -3%, 0) scale(1.08);
+    }
+  }
+
+  .luxury-blob {
+    animation: luxury-blob 16s ease-in-out infinite;
+  }
+
+  /* Roman numeral lockup */
+  .luxury-numeral {
+    font-family: var(--font-luxury-display), "Cormorant Garamond", Georgia, serif;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    color: #d4af6a;
+  }
 }

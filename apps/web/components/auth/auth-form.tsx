@@ -39,6 +39,10 @@ function formatAuthErrorMessage(message: string | undefined): string {
   return message;
 }
 
+function isEmailConfirmed(user: { email_confirmed_at?: string | null } | null): boolean {
+  return Boolean(user?.email_confirmed_at);
+}
+
 export function AuthForm({ mode }: AuthFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -68,7 +72,7 @@ export function AuthForm({ mode }: AuthFormProps) {
   const passwordHelpId = `${mode}-password-help`;
   const title = isSignup ? "Create your account" : "Welcome back";
   const subtitle = isSignup
-    ? "Join the UM marketplace with your student or staff email."
+    ? "Join the UM marketplace with your student email."
     : "Sign in to save listings, contact sellers, and manage your Trade activity.";
   const submitLabel = isSignup ? "Create account" : "Sign in";
   const pendingLabel = isSignup ? "Creating account..." : "Signing in...";
@@ -90,9 +94,14 @@ export function AuthForm({ mode }: AuthFormProps) {
 
     try {
       if (isSignup) {
+        const emailRedirectTo =
+          typeof window === "undefined"
+            ? undefined
+            : `${window.location.origin}/login?${oppositeParams.toString()}`;
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
+          options: emailRedirectTo ? { emailRedirectTo } : undefined,
         });
 
         if (signUpError) {
@@ -100,9 +109,12 @@ export function AuthForm({ mode }: AuthFormProps) {
           return;
         }
 
-        if (!data.session) {
+        if (!data.session || !isEmailConfirmed(data.user)) {
+          if (data.session) {
+            await supabase.auth.signOut();
+          }
           setStatusMessage(
-            "Account created. Check your email if confirmation is enabled in Supabase Auth.",
+            "Check your UM email and confirm your account before signing in.",
           );
         } else {
           router.push(nextPath);
@@ -112,13 +124,19 @@ export function AuthForm({ mode }: AuthFormProps) {
         return;
       }
 
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (signInError) {
         setError(formatAuthErrorMessage(signInError.message));
+        return;
+      }
+
+      if (!isEmailConfirmed(data.user)) {
+        await supabase.auth.signOut();
+        setError("Confirm your UM email address before signing in.");
         return;
       }
 
@@ -173,7 +191,7 @@ export function AuthForm({ mode }: AuthFormProps) {
             />
           </div>
           <span className="block text-xs leading-5 text-slate-500" id={emailHelpId}>
-            Use @siswa.um.edu.my or @um.edu.my.
+            Use your @siswa.um.edu.my student email.
           </span>
         </label>
 

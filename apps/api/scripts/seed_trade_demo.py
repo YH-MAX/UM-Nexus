@@ -42,7 +42,7 @@ SEED_USERS = [
     },
     {
         "id": "00000000-0000-4000-8000-000000000020",
-        "email": "moderator.seed@um.edu.my",
+        "email": "moderator.seed@siswa.um.edu.my",
         "username": "moderator_seed",
         "display_name": "UM Trade Moderator",
         "faculty": "Student Affairs",

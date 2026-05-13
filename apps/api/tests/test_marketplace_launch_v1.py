@@ -710,10 +710,10 @@ def test_moderation_notifications_reach_listing_seller(client, db_session, token
     seller_reported_notifications = client.get("/api/v1/users/me/notifications", headers=AUTH_HEADERS)
 
     moderator_id = str(uuid4())
-    moderator = User(id=moderator_id, email="moderator@um.edu.my")
+    moderator = User(id=moderator_id, email="moderator@siswa.um.edu.my")
     moderator.profile = Profile(app_role=AppRole.MODERATOR)
     admin_id = str(uuid4())
-    admin = User(id=admin_id, email="admin@um.edu.my")
+    admin = User(id=admin_id, email="admin@siswa.um.edu.my")
     admin.profile = Profile(app_role=AppRole.ADMIN)
     db_session.add_all([moderator, admin])
     db_session.commit()

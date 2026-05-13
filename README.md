@@ -222,13 +222,13 @@ For production bootstrap, sign in once with the first admin UM account, then run
 
 ```bash
 cd apps/api
-python scripts/bootstrap_admin.py your.name@um.edu.my --role admin --reason "Initial launch admin."
+python scripts/bootstrap_admin.py your.name@siswa.um.edu.my --role admin --reason "Initial launch admin."
 ```
 
 Or with make:
 
 ```bash
-make api-bootstrap-admin EMAIL=your.name@um.edu.my
+make api-bootstrap-admin EMAIL=your.name@siswa.um.edu.my
 ```
 
 ### Supabase Storage Listing Images
@@ -390,10 +390,11 @@ For local frontend-only runs, mirror the public Supabase values in `apps/web/.en
 Configure these items in your Supabase project before testing auth end to end:
 
 - Enable email/password auth in Supabase Auth
+- Enable email confirmations in Supabase Auth. UM Nexus treats the confirmation email as proof that the mailbox exists.
 - Set the Site URL to `http://localhost:3000`
 - Add redirect URLs for `http://localhost:3000` and `http://localhost:3000/auth/callback` if you later enable callback-based flows
 - Use a JWKS URL in the format `https://<project-ref>.supabase.co/auth/v1/.well-known/jwks.json`
-- Use UM domains such as `siswa.um.edu.my` and `um.edu.my` in `ALLOWED_EMAIL_DOMAINS`
+- Use the UM student domain `siswa.um.edu.my` in `ALLOWED_EMAIL_DOMAINS`
 
 ## Database Foundation
 
@@ -420,11 +421,13 @@ Frontend auth:
 
 - Supabase JS client is configured in `apps/web`
 - `/login` and `/signup` use Supabase email/password auth
-- signup is blocked on the frontend if the email domain is not in `NEXT_PUBLIC_ALLOWED_EMAIL_DOMAINS`
+- signup is blocked on the frontend if the email domain is not `siswa.um.edu.my`
+- signup and login require a confirmed Supabase email before the user can continue
 
 Backend auth:
 
 - FastAPI verifies Supabase bearer tokens against the configured JWKS
+- FastAPI also checks the Supabase Auth `/user` record and rejects unconfirmed emails
 - `GET /api/v1/auth/me` verifies the token and syncs the local user/profile
 - `PATCH /api/v1/users/me/profile` updates editable profile fields
 - `PATCH /api/v1/users/{user_id}/role` is admin-only
@@ -433,7 +436,8 @@ Local user sync behavior:
 
 - the first authenticated request creates a local `users` row if missing
 - the local profile is also created automatically with `app_role = student`
-- access is rejected with `403` if the email domain is outside `ALLOWED_EMAIL_DOMAINS`
+- access is rejected with `403` if the email domain is outside `siswa.um.edu.my`
+- access is rejected with `403` if Supabase has not confirmed the email address
 
 Why `app_role` lives in our database:
 

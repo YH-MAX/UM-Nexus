@@ -6,7 +6,7 @@ from uuid import UUID
 
 import jwt
 from jwt import InvalidTokenError, PyJWKClient
-from pydantic import BaseModel, EmailStr, ValidationError
+from pydantic import BaseModel, EmailStr, Field, ValidationError
 
 from app.core.config import Settings, get_settings
 
@@ -19,6 +19,7 @@ class TokenClaims(BaseModel):
     sub: UUID
     email: EmailStr
     role: str | None = None
+    access_token: str | None = Field(default=None, exclude=True)
 
 
 class SupabaseJWTVerifier:

@@ -4,7 +4,7 @@ const now = "2026-05-05T08:00:00.000Z";
 
 const sellerUser = { id: "seller-1", email: "seller@siswa.um.edu.my" };
 const buyerUser = { id: "buyer-1", email: "buyer@siswa.um.edu.my" };
-const moderatorUser = { id: "moderator-1", email: "moderator@um.edu.my" };
+const moderatorUser = { id: "moderator-1", email: "moderator@siswa.um.edu.my" };
 
 const baseListing = {
   id: "listing-1",

@@ -27,7 +27,7 @@ services:
       - key: SUPABASE_STORAGE_BUCKET
         value: listing-images
       - key: ALLOWED_EMAIL_DOMAINS
-        value: siswa.um.edu.my,um.edu.my
+        value: siswa.um.edu.my
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: GLM_PROVIDER

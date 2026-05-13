@@ -15,6 +15,7 @@ from app.auth.jwt import TokenClaims, TokenVerificationError, get_token_verifier
 from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import get_db
+from app.integrations.supabase_auth import SupabaseAuthUser, get_supabase_auth_user_client
 from app.main import app
 from app.tasks.celery_app import celery_app
 import app.db.session as session_module
@@ -34,6 +35,21 @@ class StubTokenVerifier:
         if self.error is not None:
             raise self.error
         return self.claims
+
+
+class StubSupabaseAuthUserClient:
+    def __init__(self, token_verifier: StubTokenVerifier) -> None:
+        self.token_verifier = token_verifier
+        self.email_confirmed_at: str | None = "2026-01-01T00:00:00Z"
+        self.user_id: str | None = None
+        self.email: str | None = None
+
+    def get_user(self, access_token: str) -> SupabaseAuthUser:
+        return SupabaseAuthUser(
+            id=self.user_id or str(self.token_verifier.claims.sub),
+            email=self.email or self.token_verifier.claims.email,
+            email_confirmed_at=self.email_confirmed_at,
+        )
 
 
 engine = create_engine(
@@ -78,7 +94,7 @@ def reset_database() -> Generator[None, None, None]:
     original_trade_report_daily_limit = settings.trade_report_daily_limit
     original_trade_wanted_post_daily_limit = settings.trade_wanted_post_daily_limit
     temp_upload_dir = tempfile.mkdtemp(prefix="umnexus-test-uploads-")
-    settings.allowed_email_domains = ("siswa.um.edu.my", "um.edu.my")
+    settings.allowed_email_domains = ("siswa.um.edu.my",)
     settings.upload_storage_dir = temp_upload_dir
     settings.upload_public_base_url = "http://testserver/uploads"
     settings.supabase_url = "https://project-ref.supabase.co"
@@ -131,7 +147,15 @@ def token_verifier() -> StubTokenVerifier:
 
 
 @pytest.fixture
-def client(token_verifier: StubTokenVerifier) -> Generator[TestClient, None, None]:
+def supabase_auth_user_client(token_verifier: StubTokenVerifier) -> StubSupabaseAuthUserClient:
+    return StubSupabaseAuthUserClient(token_verifier)
+
+
+@pytest.fixture
+def client(
+    token_verifier: StubTokenVerifier,
+    supabase_auth_user_client: StubSupabaseAuthUserClient,
+) -> Generator[TestClient, None, None]:
     def override_get_db() -> Generator[Session, None, None]:
         db = TestingSessionLocal()
         try:
@@ -141,6 +165,7 @@ def client(token_verifier: StubTokenVerifier) -> Generator[TestClient, None, Non
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_token_verifier] = lambda: token_verifier
+    app.dependency_overrides[get_supabase_auth_user_client] = lambda: supabase_auth_user_client
 
     with TestClient(app) as test_client:
         yield test_client
