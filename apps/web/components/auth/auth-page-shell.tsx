@@ -1,111 +1,144 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { BadgeCheck, BookOpen, MapPin, ShieldCheck, Store } from "lucide-react";
+import { Cormorant_Garamond, Montserrat } from "next/font/google";
+import { ArrowLeft, Diamond } from "lucide-react";
+
+const luxuryDisplay = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  variable: "--font-luxury-display",
+  display: "swap",
+});
+
+const luxuryBody = Montserrat({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600"],
+  variable: "--font-luxury-body",
+  display: "swap",
+});
 
 type AuthPageShellProps = Readonly<{
   children: ReactNode;
 }>;
 
-const trustPoints = [
-  {
-    icon: ShieldCheck,
-    label: "UM-only access",
-    body: "Student and staff email domains keep marketplace actions inside the campus community.",
-  },
-  {
-    icon: BadgeCheck,
-    label: "Private contact",
-    body: "Seller details stay hidden until a request is accepted.",
-  },
-  {
-    icon: MapPin,
-    label: "Campus meetup first",
-    body: "Trade around familiar UM pickup spots and inspect items before paying.",
-  },
-];
-
-const previewItems = [
-  { title: "WIA2005 Textbook", price: "RM 45", meta: "Like new", pickup: "Main Library" },
-  { title: "Scientific Calculator", price: "RM 30", meta: "Good", pickup: "FSKTM" },
-];
-
 export function AuthPageShell({ children }: AuthPageShellProps) {
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
-      <div className="mx-auto grid min-h-[calc(100vh-3rem)] w-full max-w-6xl overflow-hidden rounded-[2rem] border border-slate-200 bg-white shadow-sm lg:grid-cols-[minmax(0,0.92fr)_minmax(360px,1fr)]">
-        <section className="flex min-w-0 items-center justify-center px-5 py-8 sm:px-8 lg:px-10">
-          <div className="w-full max-w-md">{children}</div>
+    <div
+      className={`${luxuryDisplay.variable} ${luxuryBody.variable} luxury-font-body relative min-h-screen overflow-hidden`}
+      style={{ background: "#0B0B0C", color: "#F5F5F4" }}
+    >
+      {/* Cinematic backdrop — visible on every breakpoint, dimmed on the auth side via gradient. */}
+      <div aria-hidden="true" className="absolute inset-0 -z-20">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          alt=""
+          className="h-full w-full object-cover opacity-[0.5]"
+          src="https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?auto=format&fit=crop&w=2400&q=85"
+        />
+      </div>
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(circle at 22% 30%, rgba(214, 179, 106, 0.18), transparent 38%), linear-gradient(100deg, rgba(11,11,12,0.78) 0%, rgba(11,11,12,0.85) 48%, rgba(11,11,12,0.94) 100%)",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="luxury-blob absolute -left-32 top-1/3 -z-10 h-[420px] w-[420px] rounded-full blur-3xl"
+        style={{ background: "radial-gradient(circle, rgba(197,154,67,0.20), transparent 70%)" }}
+      />
+
+      <header className="absolute inset-x-0 top-0 z-20 px-4 pt-5 sm:px-8 sm:pt-7">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+          <Link
+            aria-label="UM Nexus Trade — home"
+            className="group flex items-center gap-3 rounded-full pr-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-200"
+            href="/"
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-stone-950/70">
+              <Diamond aria-hidden="true" className="luxury-gold h-4 w-4" />
+            </span>
+            <span className="luxury-font-display text-xl font-medium leading-none text-stone-50 sm:text-2xl">
+              UM Nexus<span className="luxury-gold px-1">·</span>Trade
+            </span>
+          </Link>
+
+          <Link
+            className="hidden cursor-pointer items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-[11px] font-medium uppercase text-stone-200 transition hover:border-white/25 hover:text-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-200 sm:inline-flex"
+            href="/"
+            style={{ letterSpacing: "0.22em" }}
+          >
+            <ArrowLeft aria-hidden="true" className="h-3.5 w-3.5" />
+            Back to landing
+          </Link>
+        </div>
+      </header>
+
+      <main className="relative mx-auto grid min-h-screen w-full max-w-7xl items-stretch gap-12 px-4 pb-12 pt-28 sm:px-8 sm:pt-32 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,460px)] lg:gap-16 lg:pb-16">
+        <section
+          aria-label="UM Nexus Trade — campus marketplace"
+          className="relative flex items-end pb-4 sm:items-center sm:pb-0"
+        >
+          <div className="max-w-xl">
+            <p
+              className="luxury-eyebrow"
+              style={{ color: "rgba(214, 179, 106, 0.85)" }}
+            >
+              University of Malaya · Verified Access
+            </p>
+            <h2
+              className="luxury-font-display mt-5 text-[clamp(2.5rem,6vw,5rem)] font-light leading-[0.98]"
+              style={{ color: "#F5F5F4" }}
+            >
+              Enter the <em className="luxury-gold not-italic">UM-only</em>
+              <br />
+              marketplace.
+            </h2>
+            <p
+              className="mt-6 max-w-md text-[15px] leading-8"
+              style={{ color: "rgba(245, 245, 244, 0.72)" }}
+            >
+              Verified students. Safer campus trading. Smarter discovery.
+            </p>
+
+            <div className="luxury-rule mt-10 hidden max-w-md sm:block" />
+
+            <dl className="mt-10 hidden grid-cols-3 gap-x-6 gap-y-2 sm:grid sm:max-w-md">
+              <Stat value="UM·only" label="Verified students" />
+              <Stat value="3 taps" label="To request seller" />
+              <Stat value="24h" label="Fresh listings" />
+            </dl>
+          </div>
         </section>
 
-        <aside className="min-w-0 border-t border-slate-200 bg-slate-950 p-5 text-white sm:p-8 lg:border-l lg:border-t-0">
-          <div className="flex h-full flex-col justify-between gap-8">
-            <div>
-              <Link className="inline-flex items-center gap-2 text-sm font-semibold text-white" href="/">
-                <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-500 text-slate-950">
-                  <Store aria-hidden="true" className="h-4 w-4" />
-                </span>
-                UM Nexus Trade
-              </Link>
+        <section
+          aria-label="Sign in or create an account"
+          className="flex items-center"
+        >
+          <div className="w-full">{children}</div>
+        </section>
+      </main>
+    </div>
+  );
+}
 
-              <div className="mt-10 max-w-xl">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">
-                  Campus marketplace access
-                </p>
-                <h2 className="mt-3 text-3xl font-semibold leading-tight sm:text-4xl">
-                  Buy, sell, and meet through a UM-first trust layer.
-                </h2>
-                <p className="mt-4 text-sm leading-6 text-slate-300">
-                  Sign in once to save listings, contact sellers, post wanted items, and manage your trade activity.
-                </p>
-              </div>
-
-              <div className="mt-8 grid gap-3">
-                {trustPoints.map((point) => {
-                  const Icon = point.icon;
-                  return (
-                    <div className="flex gap-3 rounded-2xl border border-white/10 bg-white/[0.06] p-4" key={point.label}>
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-400/15 text-emerald-200">
-                        <Icon aria-hidden="true" className="h-4 w-4" />
-                      </span>
-                      <div>
-                        <p className="text-sm font-semibold text-white">{point.label}</p>
-                        <p className="mt-1 text-sm leading-5 text-slate-300">{point.body}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-white/10 bg-white/[0.07] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200">Live preview</p>
-                  <p className="mt-1 text-sm font-semibold text-white">Popular campus listings</p>
-                </div>
-                <BookOpen aria-hidden="true" className="h-5 w-5 text-emerald-200" />
-              </div>
-              <div className="mt-4 grid gap-3">
-                {previewItems.map((item) => (
-                  <div className="rounded-2xl bg-white p-3 text-slate-950" key={item.title}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold">{item.title}</p>
-                        <p className="mt-1 text-xs text-slate-500">{item.meta}</p>
-                      </div>
-                      <p className="shrink-0 text-sm font-bold text-emerald-800">{item.price}</p>
-                    </div>
-                    <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
-                      <MapPin aria-hidden="true" className="h-3.5 w-3.5 text-emerald-700" />
-                      {item.pickup}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </aside>
-      </div>
-    </main>
+function Stat({ value, label }: Readonly<{ value: string; label: string }>) {
+  return (
+    <div>
+      <dt
+        className="luxury-font-display text-2xl font-medium"
+        style={{ color: "#F5F5F4" }}
+      >
+        {value}
+      </dt>
+      <dd
+        className="luxury-eyebrow mt-1"
+        style={{ color: "rgba(245, 245, 244, 0.55)" }}
+      >
+        {label}
+      </dd>
+    </div>
   );
 }
