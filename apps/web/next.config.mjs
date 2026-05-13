@@ -20,6 +20,15 @@ if (process.env.SKIP_ENV_VALIDATION !== "true") {
 const nextConfig = {
   poweredByHeader: false,
   allowedDevOrigins: ["127.0.0.1:3100", "localhost:3100", "http://127.0.0.1:3100", "http://localhost:3100"],
+  async redirects() {
+    return [
+      {
+        source: "/luxury",
+        destination: "/",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {
