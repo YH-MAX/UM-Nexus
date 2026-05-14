@@ -66,7 +66,7 @@ def test_supabase_storage_upload_helper_posts_file_and_returns_metadata() -> Non
     assert request.headers["apikey"] == "test-service-role"
 
 
-def test_supabase_storage_upload_sends_publishable_key_as_apikey_when_configured() -> None:
+def test_supabase_storage_upload_sends_service_role_for_apikey_and_authorization() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -103,7 +103,7 @@ def test_supabase_storage_upload_sends_publishable_key_as_apikey_when_configured
     assert len(requests) == 1
     request = requests[0]
     assert request.headers["authorization"] == "Bearer test-service-role"
-    assert request.headers["apikey"] == settings.supabase_anon_key
+    assert request.headers["apikey"] == "test-service-role"
     assert request.headers["content-type"] == "image/jpeg"
     assert request.headers["x-upsert"] == "true"
 
@@ -120,7 +120,14 @@ def test_supabase_storage_rejects_malformed_service_role_jwt() -> None:
         SupabaseStorageClient(settings=settings)
 
 
-def test_settings_normalizes_supabase_url_and_secrets() -> None:
+def test_settings_normalizes_supabase_url_secrets_and_strips_invisible_chars() -> None:
+    zw = "\u200b"
+    settings = Settings(
+        _env_file=None,
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key=f"{zw}eyJhbGci.test{zw}",
+    )
+    assert settings.supabase_service_role_key == "eyJhbGci.test"
     settings = Settings(
         _env_file=None,
         supabase_url=" https://example.supabase.co/ ",

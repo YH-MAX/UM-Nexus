@@ -79,7 +79,10 @@ async def _store_image_upload(storage_prefix: str, upload_file: UploadFile) -> S
             mime_type=content_type,
             settings=settings,
         )
-    except (ConfigurationError, ExternalProviderError) as exc:
+    except ConfigurationError as exc:
+        # Misconfigured Supabase env: never hide behind local dev fallback (that masks bad keys).
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ExternalProviderError as exc:
         if settings.app_env != "development":
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
         uploaded = _store_local_development_upload(

@@ -21,6 +21,12 @@ DEFAULT_CORS_ALLOWED_ORIGINS = (
 
 
 def find_env_file() -> str | None:
+    """First `.env` found walking parents from `app/core/config.py`.
+
+    When both `apps/api/.env` and the repository root `.env` exist, **the API-local file
+    wins** (it is encountered first). Keep `SUPABASE_*` secrets identical in both, or
+    remove the extra file, so the running process always loads the keys you expect.
+    """
     current = Path(__file__).resolve()
 
     for parent in current.parents:
@@ -94,6 +100,10 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_supabase_jwt_secrets(cls, value: object) -> str:
         raw = str(value).strip()
+        # Host dashboards (Render, etc.) and chat apps sometimes inject these into pasted secrets.
+        for invisible in ("\ufeff", "\u200b", "\u200c", "\u200d", "\u2060"):
+            raw = raw.replace(invisible, "")
+        raw = raw.replace("\r", "").replace("\n", "")
         if raw.lower().startswith("bearer "):
             raw = raw[7:].strip()
         if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":

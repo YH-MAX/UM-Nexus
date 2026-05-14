@@ -50,13 +50,10 @@ class SupabaseStorageClient:
         normalized_path = _normalize_storage_path(storage_path)
         upload_url = self._object_url(normalized_path)
         service_role = self.settings.supabase_service_role_key
-        publishable = self.settings.supabase_anon_key
-        # Supabase gateways expect `apikey` to be the project's publishable (anon) JWT when available;
-        # `Authorization` carries the elevated credential for Storage writes.
-        apikey_header = publishable or service_role
+        # Use the service role for both headers (Supabase Storage REST expects matching project JWTs).
         headers = {
             "Authorization": f"Bearer {service_role}",
-            "apikey": apikey_header,
+            "apikey": service_role,
             "Content-Type": mime_type,
             "x-upsert": "true",
         }
@@ -75,8 +72,8 @@ class SupabaseStorageClient:
             lowered = body_preview.lower()
             if "signature verification" in lowered or '"unauthorized"' in lowered:
                 message += (
-                    " Ensure SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_ANON_KEY (or "
-                    "SUPABASE_PUBLISHABLE_KEY) are from the same Supabase project, with no extra spaces or line breaks."
+                    " Most often the `service_role` secret in SUPABASE_SERVICE_ROLE_KEY is truncated or corrupted—"
+                    "re-copy the full key from Supabase Dashboard → Project Settings → API (one line, no spaces)."
                 )
             raise ExternalProviderError(message)
 
