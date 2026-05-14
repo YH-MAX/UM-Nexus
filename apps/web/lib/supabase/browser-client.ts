@@ -10,6 +10,13 @@ export function createBrowserSupabaseClient(): SupabaseClient {
   }
 
   const { supabasePublishableKey, supabaseUrl } = getSupabasePublicConfig();
-  browserClient = createClient(supabaseUrl, supabasePublishableKey);
+  browserClient = createClient(supabaseUrl, supabasePublishableKey, {
+    auth: {
+      flowType: "pkce",
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+    },
+  });
   return browserClient;
 }

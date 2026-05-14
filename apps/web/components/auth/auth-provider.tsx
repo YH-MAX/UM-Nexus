@@ -13,10 +13,10 @@ import {
   getAllowedEmailDomainsFromEnv,
   isAllowedEmailDomain,
 } from "@/lib/auth/allowed-email-domains";
+import { AUTH_DOMAIN_REJECTED_KEY } from "@/lib/auth/auth-storage-keys";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser-client";
 
 const allowedEmailDomains = getAllowedEmailDomainsFromEnv();
-const AUTH_DOMAIN_REJECTED_KEY = "um_nexus_auth_domain_error";
 
 function sessionHasAllowedEmail(session: Session | null): boolean {
   const email = session?.user?.email;

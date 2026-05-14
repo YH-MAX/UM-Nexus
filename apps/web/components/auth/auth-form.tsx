@@ -21,6 +21,8 @@ import {
   getAllowedEmailDomainError,
   getAllowedEmailDomainsFromEnv,
 } from "@/lib/auth/allowed-email-domains";
+import { AUTH_DOMAIN_REJECTED_KEY, AUTH_OAUTH_ERROR_KEY } from "@/lib/auth/auth-storage-keys";
+import { buildGoogleOAuthCallbackUrl } from "@/lib/auth/google-oauth-redirect";
 import { applyIntentToReturnTo, sanitizeIntent, sanitizeReturnTo } from "@/lib/auth/return-intent";
 
 type AuthFormProps = {
@@ -28,8 +30,6 @@ type AuthFormProps = {
 };
 
 const allowedDomains = getAllowedEmailDomainsFromEnv();
-
-const AUTH_DOMAIN_REJECTED_KEY = "um_nexus_auth_domain_error";
 
 const trustPoints = [
   { icon: ShieldCheck, label: "Verified UM identities" },
@@ -97,18 +97,24 @@ export function AuthForm({ mode }: AuthFormProps) {
     if (typeof window === "undefined") {
       return;
     }
-    const reason = window.sessionStorage.getItem(AUTH_DOMAIN_REJECTED_KEY);
-    if (!reason) {
-      return;
-    }
-    window.sessionStorage.removeItem(AUTH_DOMAIN_REJECTED_KEY);
-    if (reason === "email") {
-      setError("Your account must have a University of Malaya email address to use UM Nexus Trade.");
-    } else {
-      setError(
-        getAllowedEmailDomainError("not-allowed@example.com", allowedDomains) ??
-          "Use a University of Malaya email address.",
-      );
+    const oauthMessage = window.sessionStorage.getItem(AUTH_OAUTH_ERROR_KEY);
+    const domainReason = window.sessionStorage.getItem(AUTH_DOMAIN_REJECTED_KEY);
+
+    if (domainReason) {
+      window.sessionStorage.removeItem(AUTH_DOMAIN_REJECTED_KEY);
+      if (domainReason === "email") {
+        setError(
+          "Your account must have a University of Malaya email address to use UM Nexus Trade.",
+        );
+      } else {
+        setError(
+          getAllowedEmailDomainError("not-allowed@example.com", allowedDomains) ??
+            "Use a University of Malaya email address.",
+        );
+      }
+    } else if (oauthMessage) {
+      window.sessionStorage.removeItem(AUTH_OAUTH_ERROR_KEY);
+      setError(oauthMessage);
     }
   }, []);
 
@@ -121,7 +127,13 @@ export function AuthForm({ mode }: AuthFormProps) {
       const redirectTo =
         typeof window === "undefined"
           ? undefined
-          : `${window.location.origin}/login?${oppositeParams.toString()}`;
+          : buildGoogleOAuthCallbackUrl({
+              origin: window.location.origin,
+              returnTo,
+              intent,
+              listingId,
+              from: isSignup ? "signup" : "login",
+            });
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: redirectTo
