@@ -22,6 +22,7 @@ import {
   conditionOptions,
   contactMethods,
   createListing,
+  deleteListing,
   formatCategory,
   formatMoney,
   formatPickupLocation,
@@ -514,7 +515,14 @@ export default function SellPage() {
         metadata: { source: "manual_sell_page" },
       });
       setPublishPhase("images");
-      const failedCount = await uploadSelectedImages(listing.id);
+      let failedCount = 0;
+      try {
+        failedCount = await uploadSelectedImages(listing.id);
+      } catch (uploadError) {
+        await deleteListing(listing.id).catch(() => null);
+        setPublishedListingId(null);
+        throw uploadError;
+      }
       if (failedCount > 0) {
         setNotice(`Listing published! ${failedCount} photo${failedCount > 1 ? "s" : ""} failed to upload. You can retry from Edit Listing.`);
       }
@@ -550,7 +558,7 @@ export default function SellPage() {
       }
     }
     if (images.length > 0 && uploadedCount === 0) {
-      throw new Error(`Listing was created, but none of the selected photos uploaded. ${firstError}`);
+      throw new Error(`Publish stopped because none of the selected photos uploaded. ${firstError}`);
     }
     return failedCount;
   }

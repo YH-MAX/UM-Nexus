@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 
 import httpx
 import pytest
@@ -71,10 +73,17 @@ def test_supabase_storage_upload_sends_publishable_key_as_apikey_when_configured
         requests.append(request)
         return httpx.Response(200, json={"Key": "listing-images/listings/listing-1/photo.jpg"})
 
+    anon_payload = base64.urlsafe_b64encode(
+        json.dumps(
+            {"iss": "supabase", "ref": "project-ref", "role": "anon", "iat": 1_700_000_000},
+        ).encode(),
+    ).decode("ascii").rstrip("=")
+    anon_key = f"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.{anon_payload}.fake-signature"
+
     settings = Settings(
         _env_file=None,
         supabase_url="https://project-ref.supabase.co",
-        supabase_anon_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiJ9.fake",
+        supabase_anon_key=anon_key,
         supabase_service_role_key="test-service-role",
         supabase_storage_bucket="listing-images",
     )
@@ -123,3 +132,20 @@ def test_settings_normalizes_supabase_url_and_secrets() -> None:
     assert settings.supabase_service_role_key == "eyJhbGci.test"
     assert settings.supabase_anon_key == "eyJhbGciOiJhbm9uIn0.pub"
     assert settings.supabase_storage_bucket == "listing-images"
+
+
+def test_storage_client_rejects_service_role_jwt_with_non_integer_iat() -> None:
+    payload = base64.urlsafe_b64encode(
+        b'{"iss":"supabase","ref":"proj","role":"service_role","iat":"not-a-timestamp"}',
+    ).decode("ascii").rstrip("=")
+    bad_token = f"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.{payload}.signature"
+
+    with pytest.raises(ConfigurationError, match="iat"):
+        SupabaseStorageClient(
+            settings=Settings(
+                _env_file=None,
+                supabase_url="https://proj.supabase.co",
+                supabase_service_role_key=bad_token,
+                supabase_storage_bucket="listing-images",
+            ),
+        )

@@ -243,6 +243,34 @@ test.describe("authenticated Trade product workflows", () => {
     expect(state.uploadedImages).toHaveLength(1);
   });
 
+  test("manual publish removes the listing if every selected photo upload fails", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    const state = await mockTradeApi(page, { failImageUploads: true });
+
+    await page.goto("/trade/sell");
+    await page.locator('input[type="file"]').first().setInputFiles({
+      name: "desk-lamp.jpg",
+      mimeType: "image/jpeg",
+      buffer: Buffer.from("fake-image-bytes"),
+    });
+    await page.getByLabel("Title").fill("Desk lamp near KK12");
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Category").selectOption("dorm_room");
+    await page.getByLabel("Condition").selectOption("good");
+    await page.getByLabel("Pickup location").selectOption("kk1");
+    await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
+    await page.getByLabel("Contact value").fill("@aina_um");
+    await page.getByRole("button", { name: /Publish Listing/i }).click();
+    const publishReview = page.locator("section").filter({
+      has: page.getByRole("heading", { name: /Ready to publish/i }),
+    });
+    await publishReview.getByRole("button", { name: "Publish Listing" }).click();
+
+    await expect(page.getByText(/Publish stopped because none of the selected photos uploaded/i)).toBeVisible();
+    expect(state.uploadedImages).toHaveLength(0);
+    expect(state.deletedListings).toContain("listing-new");
+  });
+
   test("seller dashboard exposes request timeline and accept/reject actions", async ({ page }) => {
     await loginAs(page, sellerUser);
     const state = await mockTradeApi(page);
@@ -393,7 +421,7 @@ async function loginAs(page: Page, user: { id: string; email: string }) {
   }, user);
 }
 
-async function mockTradeApi(page: Page) {
+async function mockTradeApi(page: Page, options: { failImageUploads?: boolean } = {}) {
   const state = {
     favorites: [] as string[],
     contactRequestCreated: false,
@@ -405,6 +433,7 @@ async function mockTradeApi(page: Page) {
     acceptedRequests: 0,
     lastUpdatedTitle: "",
     moderationReason: "",
+    deletedListings: [] as string[],
     notifications: tradeNotifications().map((notification) => ({ ...notification })),
   };
 
@@ -481,6 +510,9 @@ async function mockTradeApi(page: Page) {
     }
 
     if (method === "POST" && path === "/listings/listing-new/images") {
+      if (options.failImageUploads) {
+        return json(route, { detail: "Supabase Storage upload failed with status 400: signature verification failed" }, 502);
+      }
       const image = {
         id: `image-${state.uploadedImages.length + 1}`,
         listing_id: "listing-new",
@@ -493,6 +525,11 @@ async function mockTradeApi(page: Page) {
       };
       state.uploadedImages.push(image);
       return json(route, image, 201);
+    }
+
+    if (method === "DELETE" && path === "/listings/listing-new") {
+      state.deletedListings.push("listing-new");
+      return json(route, { ...baseListing, id: "listing-new", status: "deleted", images: state.uploadedImages });
     }
 
     if (method === "GET" && (path === "/listings/listing-1" || path === "/listings/listing-new")) {

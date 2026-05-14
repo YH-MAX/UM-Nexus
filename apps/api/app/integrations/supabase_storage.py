@@ -112,20 +112,46 @@ class SupabaseStorageClient:
             joined = ", ".join(missing)
             raise ConfigurationError(f"Missing required Supabase Storage settings: {joined}.")
 
-        claims = _decode_jwt_payload_if_jwt_shaped(self.settings.supabase_service_role_key)
-        if claims is None:
-            return
-
-        role = str(claims.get("role") or "")
-        if role != "service_role":
-            raise ConfigurationError("SUPABASE_SERVICE_ROLE_KEY must be a Supabase service_role key.")
-
-        configured_ref = _project_ref_from_supabase_url(self.settings.supabase_url)
-        token_ref = str(claims.get("ref") or "")
-        if configured_ref and token_ref and configured_ref != token_ref:
-            raise ConfigurationError(
-                "SUPABASE_SERVICE_ROLE_KEY belongs to a different Supabase project than SUPABASE_URL."
+        service_claims = _decode_jwt_payload_if_jwt_shaped(
+            self.settings.supabase_service_role_key,
+            setting_name="SUPABASE_SERVICE_ROLE_KEY",
+        )
+        if service_claims is not None:
+            _assert_supabase_jwt_claims(
+                service_claims,
+                expect_role="service_role",
+                setting_name="SUPABASE_SERVICE_ROLE_KEY",
             )
+
+        anon_key = self.settings.supabase_anon_key.strip()
+        if anon_key and anon_key.count(".") == 2:
+            anon_claims = _decode_jwt_payload_if_jwt_shaped(
+                anon_key,
+                setting_name="SUPABASE_ANON_KEY (or SUPABASE_PUBLISHABLE_KEY)",
+            )
+            if anon_claims is not None:
+                if anon_claims.get("role") == "service_role":
+                    raise ConfigurationError(
+                        "SUPABASE_ANON_KEY (or SUPABASE_PUBLISHABLE_KEY) must be the anon/publishable key, "
+                        "not the service_role secret."
+                    )
+                _assert_supabase_jwt_claims(
+                    anon_claims,
+                    expect_role="anon",
+                    setting_name="SUPABASE_ANON_KEY (or SUPABASE_PUBLISHABLE_KEY)",
+                )
+                if service_claims and anon_claims.get("ref") != service_claims.get("ref"):
+                    raise ConfigurationError(
+                        "SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY are from different Supabase projects."
+                    )
+
+        if service_claims is not None:
+            configured_ref = _project_ref_from_supabase_url(self.settings.supabase_url)
+            token_ref = str(service_claims.get("ref") or "")
+            if configured_ref and token_ref and configured_ref != token_ref:
+                raise ConfigurationError(
+                    "SUPABASE_SERVICE_ROLE_KEY belongs to a different Supabase project than SUPABASE_URL."
+                )
 
 
 async def upload_listing_image_to_supabase(
@@ -154,21 +180,42 @@ def _quote_storage_path(storage_path: str) -> str:
     return "/".join(quote(part, safe="") for part in _normalize_storage_path(storage_path).split("/"))
 
 
-def _decode_jwt_payload_if_jwt_shaped(token: str) -> dict[str, Any] | None:
+def _decode_jwt_payload_if_jwt_shaped(token: str, *, setting_name: str = "SUPABASE_SERVICE_ROLE_KEY") -> dict[str, Any] | None:
     parts = token.split(".")
     if len(parts) != 3:
         return None
 
+    payload_b64 = parts[1]
+    pad = "=" * ((4 - len(payload_b64) % 4) % 4)
     try:
-        payload = parts[1] + "=" * (-len(parts[1]) % 4)
-        decoded = base64.urlsafe_b64decode(payload.encode("ascii"))
+        decoded = base64.urlsafe_b64decode((payload_b64 + pad).encode("ascii"))
         claims = json.loads(decoded.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
-        raise ConfigurationError("SUPABASE_SERVICE_ROLE_KEY is not a valid JWT. Copy the service_role key again.") from exc
+        raise ConfigurationError(
+            f"{setting_name} is not a valid JWT (truncated or corrupted paste). "
+            "Supabase Dashboard → Project Settings → API → copy the full secret in one line."
+        ) from exc
 
     if not isinstance(claims, dict):
-        raise ConfigurationError("SUPABASE_SERVICE_ROLE_KEY is not a valid Supabase JWT payload.")
+        raise ConfigurationError(f"{setting_name} is not a valid Supabase JWT payload.")
     return claims
+
+
+def _assert_supabase_jwt_claims(claims: dict[str, Any], *, expect_role: str, setting_name: str) -> None:
+    if claims.get("role") != expect_role:
+        raise ConfigurationError(
+            f"{setting_name} must be the Supabase `{expect_role}` JWT (decoded role was {claims.get('role')!r})."
+        )
+    iat = claims.get("iat")
+    if type(iat) is not int:
+        raise ConfigurationError(
+            f"{setting_name} is not a standard Supabase JWT: `iat` must be an integer Unix timestamp. "
+            "The middle part of the key was likely damaged when pasting—re-copy the entire key from "
+            "Project Settings → API."
+        )
+    ref = claims.get("ref")
+    if not isinstance(ref, str) or not ref.strip():
+        raise ConfigurationError(f"{setting_name} is missing a valid `ref` claim; re-copy the key from Supabase.")
 
 
 def _project_ref_from_supabase_url(supabase_url: str) -> str | None:
