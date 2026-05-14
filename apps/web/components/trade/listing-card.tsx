@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BadgeCheck, Heart, Image as ImageIcon, MapPin, ShieldAlert, UserRound } from "lucide-react";
+import { BadgeCheck, Heart, Image as ImageIcon, MapPin, ShieldAlert } from "lucide-react";
 
 import { buildAuthHref } from "@/lib/auth/return-intent";
 import {
@@ -20,6 +20,8 @@ type ListingCardProps = Readonly<{
   isSaved?: boolean;
   onToggleFavorite?: (listingId: string, nextSaved: boolean) => void | Promise<void>;
   showFavorite?: boolean;
+  /** Visual layout only; links and actions unchanged. */
+  viewMode?: "grid" | "list";
 }>;
 
 const RISK_LABELS: Record<string, string> = {
@@ -27,11 +29,23 @@ const RISK_LABELS: Record<string, string> = {
   medium: "Needs review",
 };
 
+function formatListingStatus(status: string): string {
+  return status.replaceAll("_", " ");
+}
+
+function sellerInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "UM";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0] ?? ""}${parts[parts.length - 1]![0] ?? ""}`.toUpperCase() || "UM";
+}
+
 export function ListingCard({
   listing,
   isSaved = false,
   onToggleFavorite,
   showFavorite = true,
+  viewMode = "grid",
 }: ListingCardProps) {
   const primaryImage = listing.images.find((image) => image.is_primary) ?? listing.images[0];
   const condition = listing.condition ?? listing.condition_label;
@@ -44,6 +58,12 @@ export function ListingCard({
   const sellerName = getSellerDisplayName(listing);
   const isVerified = listing.seller?.profile?.verified_um_email === true;
   const riskLabel = listing.risk_level ? (RISK_LABELS[listing.risk_level] ?? `${listing.risk_level} risk`) : null;
+  const facultyLabel =
+    listing.seller?.profile?.faculty?.trim() ||
+    listing.seller?.profile?.residential_college?.trim() ||
+    listing.seller?.profile?.college_or_location?.trim() ||
+    null;
+  const isList = viewMode === "list";
 
   async function handleFavorite(event: React.MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -51,98 +71,146 @@ export function ListingCard({
     await onToggleFavorite?.(listing.id, !isSaved);
   }
 
-  return (
-    <article className="trade-card trade-card-hover group relative overflow-hidden">
-      <Link aria-label={`Open ${listing.title}`} className="block" href={href}>
-        <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-slate-100">
-          {primaryImage?.public_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              alt={listing.title}
-              className="h-full w-full object-cover transition duration-300 ease-out group-hover:scale-[1.03]"
-              src={primaryImage.public_url}
-            />
-          ) : (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400">
-              <span className="flex h-12 w-12 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm">
-                <ImageIcon aria-hidden="true" className="h-6 w-6" />
-              </span>
-              <span className="text-xs font-semibold">No photo yet</span>
-            </div>
-          )}
+  const imageBlock = (
+    <div
+      className={`relative flex items-center justify-center overflow-hidden bg-gradient-to-br from-amber-100/40 via-stone-100 to-amber-50/30 ${
+        isList ? "aspect-[4/3] w-full sm:aspect-square sm:w-44 sm:max-w-[11rem] sm:shrink-0" : "aspect-[4/3] w-full"
+      }`}
+    >
+      {primaryImage?.public_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt={listing.title}
+          className="h-full w-full object-cover transition duration-200 ease-out group-hover:scale-[1.04]"
+          src={primaryImage.public_url}
+        />
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-[#f4e9d8] via-[#ebe4dc] to-[#e8dfd4] text-stone-500">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-200/60 bg-white/90 shadow-sm">
+            <ImageIcon aria-hidden="true" className="h-6 w-6 text-amber-700/70" />
+          </span>
+          <span className="text-xs font-semibold tracking-wide text-stone-600">No photo yet</span>
+        </div>
+      )}
 
-          <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-slate-950/45 to-transparent opacity-80" />
-          <div className="absolute left-3 top-3 flex max-w-[calc(100%-4.5rem)] flex-wrap gap-2">
-            <StatusPill className="bg-white/95 shadow-sm ring-1 ring-white/70" tone={statusTone(listing.status)}>
-              {listing.status.replaceAll("_", " ")}
-            </StatusPill>
-          </div>
-          {riskLabel && listing.risk_level !== "low" ? (
-            <div className="absolute bottom-3 left-3">
-              <StatusPill className="shadow-sm" tone={listing.risk_level === "high" ? "danger" : "warning"}>
-                <ShieldAlert aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
-                {riskLabel}
-              </StatusPill>
-            </div>
+      {!isList ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-stone-950/35 to-transparent opacity-90" /> : null}
+
+      <div className="absolute left-3 top-3 flex max-w-[calc(100%-4.5rem)] flex-wrap gap-2">
+        <StatusPill
+          className="rounded-full border-0 bg-white/95 px-2.5 py-0.5 text-[11px] capitalize shadow-sm ring-1 ring-stone-200/80"
+          tone={statusTone(listing.status)}
+        >
+          {formatListingStatus(listing.status)}
+        </StatusPill>
+      </div>
+      {riskLabel && listing.risk_level !== "low" ? (
+        <div className={`absolute left-3 ${isList ? "bottom-3 sm:bottom-auto sm:left-3 sm:top-12" : "bottom-3"}`}>
+          <StatusPill className="shadow-sm" tone={listing.risk_level === "high" ? "danger" : "warning"}>
+            <ShieldAlert aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
+            {riskLabel}
+          </StatusPill>
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const body = (
+    <div className={`flex min-w-0 flex-1 flex-col ${isList ? "justify-center p-4 sm:py-4" : "p-4"}`}>
+      {listing.status === "reserved" && !isList ? (
+        <p className="trade-chip mb-2 border-amber-200 bg-amber-50 text-amber-900">Reserved · backup interest welcome</p>
+      ) : null}
+      {listing.status === "reserved" && isList ? (
+        <p className="mb-2 inline-flex w-fit rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900">
+          Reserved · backup interest welcome
+        </p>
+      ) : null}
+
+      <div className={isList ? "space-y-2" : "space-y-3"}>
+        <div className={`flex gap-3 ${isList ? "items-start" : "items-start justify-between"}`}>
+          <h2
+            className={`min-w-0 font-semibold leading-snug text-stone-950 transition group-hover:text-amber-900/90 ${
+              isList ? "line-clamp-2 text-base sm:text-[17px]" : "line-clamp-1 text-base"
+            }`}
+          >
+            {listing.title}
+          </h2>
+          {!isList ? (
+            <p className="shrink-0 text-right text-base font-bold leading-tight text-amber-700">
+              {formatMoney(listing.price, listing.currency)}
+            </p>
           ) : null}
         </div>
+        {isList ? (
+          <p className="text-lg font-bold text-amber-700">{formatMoney(listing.price, listing.currency)}</p>
+        ) : null}
 
-        <div className="space-y-3 p-4">
-          {listing.status === "reserved" ? (
-            <p className="trade-chip border-amber-200 bg-amber-50 text-amber-800">
-              Reserved · backup interest welcome
-            </p>
-          ) : null}
-
-          <div className="space-y-2">
-            <div className="flex items-start justify-between gap-3">
-              <h2 className="line-clamp-2 min-h-[2.75rem] text-base font-semibold leading-snug text-slate-950 transition group-hover:text-emerald-800">
-                {listing.title}
-              </h2>
-              <p className="shrink-0 rounded-lg bg-emerald-50 px-2.5 py-1 text-right text-base font-bold text-emerald-900">
-                {formatMoney(listing.price, listing.currency)}
-              </p>
-            </div>
-            <p className="line-clamp-1 text-sm text-slate-600">
-              <span className="font-medium text-slate-800">{formatCategory(listing.category)}</span>
-              {condition ? <span> · {condition.replaceAll("_", " ")}</span> : null}
-            </p>
-          </div>
-
-          <p className="flex min-w-0 items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
-            <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-700" />
-            <span className="truncate">
-              Pickup: {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}
+        <p className="line-clamp-1 text-sm text-stone-600">
+          <span className="font-medium text-stone-800">{formatCategory(listing.category)}</span>
+          {condition ? (
+            <span>
+              {" "}
+              · <span className="capitalize">{condition.replaceAll("_", " ")}</span>
             </span>
-          </p>
+          ) : null}
+        </p>
+      </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs font-medium text-slate-500">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <UserRound aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+      <p className="mt-3 flex min-w-0 items-center gap-1.5 rounded-xl border border-stone-100 bg-stone-50/80 px-3 py-2 text-sm text-stone-600">
+        <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-700/90" />
+        <span className="truncate">Pickup: {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}</span>
+      </p>
+
+      <div
+        className={`mt-3 flex items-center gap-3 border-t border-stone-100 pt-3 text-xs font-medium text-stone-500 ${
+          isList ? "flex-wrap sm:flex-nowrap" : "justify-between"
+        }`}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-stone-200 text-[11px] font-bold text-stone-800 ring-1 ring-stone-200/80">
+            {sellerInitials(sellerName)}
+          </span>
+          <span className="flex min-w-0 flex-col">
+            <span className="flex min-w-0 items-center gap-1.5 truncate text-stone-800">
               <span className="truncate">{sellerName}</span>
             </span>
-            {isVerified ? (
-              <span className="flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700">
-                <BadgeCheck aria-hidden="true" className="h-3.5 w-3.5" />
-                UM verified
-              </span>
-            ) : (
-              <span className="shrink-0">{formatRelativeTime(listing.created_at)}</span>
-            )}
-          </div>
+            {facultyLabel ? <span className="truncate text-[11px] text-stone-500">{facultyLabel}</span> : null}
+          </span>
+        </span>
+        <span className="ml-auto flex shrink-0 items-center gap-2">
           {isVerified ? (
-            <p className="text-xs font-medium text-slate-400">{formatRelativeTime(listing.created_at)}</p>
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200/80 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">
+              <BadgeCheck aria-hidden="true" className="h-3.5 w-3.5" />
+              UM verified
+            </span>
           ) : null}
-        </div>
+          <span className="text-[11px] text-stone-400">{formatRelativeTime(listing.created_at)}</span>
+        </span>
+      </div>
+    </div>
+  );
+
+  return (
+    <article
+      className={`group relative overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-sm transition duration-200 ease-out hover:-translate-y-1 hover:border-stone-300/90 hover:shadow-md ${
+        isList ? "sm:flex sm:items-stretch" : ""
+      }`}
+    >
+      <Link
+        aria-label={`Open ${listing.title}`}
+        className={`min-w-0 text-left ${isList ? "flex w-full flex-1 flex-col sm:flex-row" : "block"}`}
+        href={href}
+      >
+        {imageBlock}
+        {body}
       </Link>
 
       {showFavorite ? (
         onToggleFavorite ? (
           <button
             aria-label={isSaved ? "Remove saved listing" : "Save listing"}
-            className={`absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border bg-white/95 shadow-sm transition hover:scale-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${
-              isSaved ? "border-rose-200 text-rose-600" : "border-white/80 text-slate-700 hover:text-rose-600"
-            }`}
+            className={`absolute flex h-10 w-10 items-center justify-center rounded-full border border-stone-200/90 bg-white text-stone-600 shadow-md transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+              isList ? "right-3 top-3" : "right-3 top-3"
+            } ${isSaved ? "border-rose-200 text-rose-600" : ""}`}
             onClick={(event) => void handleFavorite(event)}
             type="button"
           >
@@ -151,7 +219,7 @@ export function ListingCard({
         ) : (
           <Link
             aria-label="Sign in to save listing"
-            className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border border-white/80 bg-white/95 text-slate-700 shadow-sm transition hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+            className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border border-stone-200/90 bg-white text-stone-600 shadow-md transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             href={favoriteSignInHref}
           >
             <Heart aria-hidden="true" className="h-4 w-4" />

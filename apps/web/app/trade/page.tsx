@@ -1,40 +1,51 @@
 "use client";
 
 import Link from "next/link";
+import { Cormorant_Garamond } from "next/font/google";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Filter, ImageOff, Info, PlusCircle, Search, SlidersHorizontal, X } from "lucide-react";
+import {
+  AlertCircle,
+  Filter,
+  Grid3x3,
+  ImageOff,
+  Info,
+  LayoutList,
+  PlusCircle,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { CategoryPill } from "@/components/trade/category-pill";
 import { EmptyState } from "@/components/trade/empty-state";
 import { ListingCard } from "@/components/trade/listing-card";
 import { LoadingSkeleton } from "@/components/trade/loading-skeleton";
+import { MarketplaceBrowseSidebar } from "@/components/trade/marketplace-browse-sidebar";
+import {
+  categoryChips,
+  MarketplaceFilterPanel,
+  type ListingFilters,
+} from "@/components/trade/marketplace-filter-panel";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   addFavorite,
-  conditionOptions,
-  formatCategory,
   formatPickupLocation,
+  formatRelativeTime,
   getFavorites,
   getListings,
-  listingStatusOptions,
-  pickupAreas,
   removeFavorite,
-  tradeCategories,
   type Listing,
   type ListingsPage,
 } from "@/lib/trade/api";
 
-type ListingFilters = {
-  search: string;
-  category: string;
-  condition: string;
-  pickup_location: string;
-  status: string;
-  min_price: string;
-  max_price: string;
-  sort: string;
-};
+const displaySerif = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-marketplace-display",
+  display: "swap",
+});
 
 const initialFilters: ListingFilters = {
   search: "",
@@ -46,23 +57,6 @@ const initialFilters: ListingFilters = {
   max_price: "",
   sort: "latest",
 };
-
-const CHIP_LABELS: Record<string, string> = {
-  textbooks_notes: "Textbooks",
-  kitchen_appliances: "Kitchen",
-  sports_hobby: "Sports",
-  tickets_events: "Tickets & Events",
-  free_items: "Free Items",
-  dorm_room: "Dorm & Room",
-};
-
-const categoryChips = [
-  { value: "", label: "All" },
-  ...tradeCategories.map((category) => ({
-    value: category.value,
-    label: CHIP_LABELS[category.value] ?? category.label,
-  })),
-];
 
 const PAGE_SIZE = 24;
 
@@ -80,9 +74,10 @@ export default function TradePage() {
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounce search: 500ms delay before updating debouncedSearch
   useEffect(() => {
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
@@ -97,7 +92,6 @@ export default function TradePage() {
     };
   }, [filters.search]);
 
-  // Reset and fetch when filters change (use debouncedSearch for text search)
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
@@ -119,6 +113,7 @@ export default function TradePage() {
           setPage(result);
           setAllListings(result.items);
           setError(null);
+          setLastSyncedAt(new Date().toISOString());
         }
       })
       .catch((nextError: unknown) => {
@@ -182,6 +177,8 @@ export default function TradePage() {
     return filters.min_price && filters.max_price && min > max;
   }, [filters.min_price, filters.max_price]);
 
+  const updatedLabel = lastSyncedAt ? formatRelativeTime(lastSyncedAt) : "Just now";
+
   async function loadMore() {
     if (!page.has_more || isLoadingMore) return;
     setIsLoadingMore(true);
@@ -200,6 +197,7 @@ export default function TradePage() {
       const result = await getListings(activeFilters, { limit: PAGE_SIZE, offset: nextOffset });
       setPage(result);
       setAllListings((prev) => [...prev, ...result.items]);
+      setLastSyncedAt(new Date().toISOString());
     } catch (nextError: unknown) {
       setError(nextError instanceof Error ? nextError.message : "Unable to load more listings.");
     } finally {
@@ -237,228 +235,315 @@ export default function TradePage() {
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
+  const showingFrom = allListings.length === 0 ? 0 : 1;
+  const showingTo = allListings.length;
+  const resultsSummary =
+    allListings.length === 0
+      ? "Showing 0 listings"
+      : `Showing ${showingFrom}–${showingTo} of ${page.total} listing${page.total === 1 ? "" : "s"}`;
+
+  const filterPanelProps = {
+    filters,
+    hasFilters,
+    priceError: !!priceError,
+    onClear: () => setFilters(initialFilters),
+    onUpdate: updateFilter,
+  } as const;
+
   return (
-    <TradeShell
-      title="Browse UM Listings"
-      description="Find textbooks, electronics, dorm items, and campus essentials from UM students."
-      action={
-        <Link className="trade-button-primary w-full sm:w-auto" href="/trade/sell">
-          <PlusCircle aria-hidden="true" className="h-4 w-4" />
-          Sell an Item
-        </Link>
-      }
-    >
-      {error ? (
-        <div className="trade-alert trade-alert-danger flex gap-3">
-          <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>{error}</p>
-        </div>
-      ) : null}
-      {notice ? (
-        <div className="trade-alert trade-alert-warning flex gap-3">
-          <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>{notice}</p>
-        </div>
-      ) : null}
-
-      <section className="trade-card min-w-0 p-4 sm:p-5">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div className="min-w-0">
-            <p className="trade-kicker">Marketplace search</p>
-            <h2 className="mt-2 text-xl font-semibold text-slate-950">Find what students are selling now</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Search by item, category, pickup area, condition, or price range.
-            </p>
+    <div className={displaySerif.variable}>
+      <TradeShell hideHero title="Browse UM Listings">
+        {error ? (
+          <div className="trade-alert trade-alert-danger flex gap-3 rounded-2xl">
+            <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>{error}</p>
           </div>
-          <div className="hidden text-right text-sm text-slate-500 lg:block">
-            <p className="font-semibold text-slate-700">{isLoading ? "Loading listings" : `${page.total} live result${page.total === 1 ? "" : "s"}`}</p>
-            <p className="mt-1">Updated as filters change</p>
+        ) : null}
+        {notice ? (
+          <div className="trade-alert trade-alert-warning flex gap-3 rounded-2xl">
+            <Info aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>{notice}</p>
           </div>
-        </div>
+        ) : null}
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <label className="relative block min-w-0">
-            <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
-            <input
-              className="trade-input min-h-12 pl-12 text-base"
-              placeholder="Search textbooks, calculators, fans, monitors..."
-              value={filters.search}
-              onChange={(event) => updateFilter("search", event.target.value)}
-            />
-          </label>
-          <button
-            className="trade-button-secondary justify-between lg:hidden"
-            onClick={() => setIsFilterOpen(true)}
-            type="button"
-          >
-            <span className="inline-flex items-center gap-2">
-              <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
-              Filters
-            </span>
-            {hasFilters ? <span className="trade-chip-success px-2 py-0.5">Active</span> : null}
-          </button>
-        </div>
-
-        <div className="mt-4 flex min-w-0 gap-2 overflow-x-auto pb-1">
-          {categoryChips.map((category) => (
-            <button
-              className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 ${
-                filters.category === category.value
-                  ? "border-slate-950 bg-slate-950 text-white"
-                  : "border-slate-200 bg-white text-slate-700 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-800"
-              }`}
-              key={category.value || "all"}
-              onClick={() => updateFilter("category", category.value)}
-              type="button"
-            >
-              {category.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="mt-5 hidden rounded-lg border border-slate-200 bg-slate-50 p-4 lg:block">
-          <FilterPanel
-            filters={filters}
-            hasFilters={hasFilters}
-            priceError={!!priceError}
-            onClear={() => setFilters(initialFilters)}
-            onUpdate={updateFilter}
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-10">
+          <MarketplaceBrowseSidebar
+            activeCategory={filters.category}
+            filterSlot={<MarketplaceFilterPanel {...filterPanelProps} layout="sidebar" />}
+            onSelectCategory={(value) => updateFilter("category", value)}
           />
-        </div>
-      </section>
 
-      {/* Result count + active filter summary */}
-      {!isLoading ? (
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="trade-chip-strong">
-              Showing {allListings.length} of {page.total}
-            </span>
-            {filters.search ? (
-              <span className="trade-chip">Search: &ldquo;{filters.search}&rdquo;</span>
-            ) : null}
-            {filters.category ? <CategoryPill active category={filters.category} /> : null}
-            {filters.condition ? (
-              <span className="trade-chip">
-                {filters.condition.replaceAll("_", " ")}
-              </span>
-            ) : null}
-            {filters.pickup_location ? (
-              <span className="trade-chip">
-                {formatPickupLocation(filters.pickup_location)}
-              </span>
-            ) : null}
-            {!hasFilters ? <span className="text-sm text-slate-500">Newest UM marketplace listings</span> : null}
-          </div>
-          {hasFilters ? (
-            <button
-              className="trade-button-ghost min-h-8 px-3 py-1.5 text-xs text-slate-600 hover:text-rose-600"
-              onClick={() => setFilters(initialFilters)}
-              type="button"
-            >
-              <X aria-hidden="true" className="h-3.5 w-3.5" />
-              Clear all filters
-            </button>
-          ) : null}
-        </section>
-      ) : null}
-
-      {/* Guest sign-in nudge when listings exist */}
-      {!user && !isLoading && page.total > 0 ? (
-        <div className="trade-alert trade-alert-success">
-          <Link className="font-semibold underline underline-offset-2" href="/login">Sign in with your UM email</Link>
-          {" "}to save listings or contact sellers.
-        </div>
-      ) : null}
-
-      {isLoading ? (
-        <LoadingSkeleton />
-      ) : allListings.length === 0 ? (
-        hasFilters ? (
-          <EmptyState
-            actionLabel="Clear filters"
-            description="No matching listings found. Try changing your filters or clearing your search."
-            icon={Filter}
-            title="No matching listings"
-            onAction={() => setFilters(initialFilters)}
-          />
-        ) : (
-          <EmptyState
-            actionHref="/trade/sell"
-            actionLabel="Sell an item"
-            description="No listings yet. Be the first to sell something on UM Nexus Trade."
-            icon={ImageOff}
-            title="No listings yet"
-          />
-        )
-      ) : (
-        <>
-          <section className="grid gap-4 sm:grid-cols-2 lg:gap-5 xl:grid-cols-3">
-            {allListings.map((listing) => (
-              <ListingCard
-                isSaved={savedIds.has(listing.id)}
-                key={listing.id}
-                listing={listing}
-                onToggleFavorite={user ? toggleFavorite : undefined}
-              />
-            ))}
-          </section>
-
-          {page.has_more ? (
-            <div className="flex justify-center pt-2">
-              <button
-                className="trade-button-secondary min-w-[180px]"
-                disabled={isLoadingMore}
-                onClick={() => void loadMore()}
-                type="button"
-              >
-                {isLoadingMore ? "Loading..." : `Load more (${page.total - allListings.length} remaining)`}
-              </button>
-            </div>
-          ) : allListings.length > PAGE_SIZE ? (
-            <p className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-center text-sm font-medium text-slate-500">
-              All {page.total} listings loaded.
-            </p>
-          ) : null}
-        </>
-      )}
-
-      {isFilterOpen ? (
-        <div className="fixed inset-0 z-[60] lg:hidden">
-          <button
-            aria-label="Close filters"
-            className="absolute inset-0 bg-slate-950/45 backdrop-blur-sm"
-            onClick={() => setIsFilterOpen(false)}
-            type="button"
-          />
-          <div className="absolute inset-x-0 bottom-0 max-h-[86vh] overflow-y-auto rounded-t-2xl bg-white p-5 shadow-2xl">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="trade-kicker">Marketplace</p>
-                <h2 className="text-lg font-semibold text-slate-950">Filters</h2>
+          <div className="min-w-0 flex-1 space-y-6">
+            <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 max-w-3xl">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">UM Nexus Trade</p>
+                <h1
+                  className={`${displaySerif.className} mt-2 text-4xl font-semibold leading-[1.1] text-stone-950 sm:text-5xl`}
+                >
+                  Browse UM Listings
+                </h1>
+                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-stone-600 sm:text-base">
+                  Find textbooks, electronics, dorm items, and campus essentials from UM students.
+                </p>
               </div>
+              <div className="flex w-full shrink-0 flex-col items-stretch gap-4 sm:flex-row sm:items-end sm:justify-end lg:w-auto lg:flex-col lg:items-end">
+                <Link
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-stone-950 px-6 text-sm font-semibold text-white shadow-md transition duration-200 hover:bg-stone-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                  href="/trade/sell"
+                >
+                  <PlusCircle aria-hidden="true" className="h-4 w-4" />
+                  Sell an item
+                </Link>
+                <div className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-right shadow-sm backdrop-blur-sm">
+                  <p className="text-sm font-semibold text-stone-900">
+                    {isLoading ? "Loading listings…" : `${page.total} live result${page.total === 1 ? "" : "s"}`}
+                  </p>
+                  <p className="mt-1 flex items-center justify-end gap-2 text-xs text-stone-500">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.25)]" />
+                    Updated {updatedLabel}
+                  </p>
+                </div>
+              </div>
+            </header>
+
+            <div className="space-y-4">
+              <label className="relative block min-w-0">
+                <Search
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400"
+                />
+                <input
+                  className="trade-input min-h-[56px] rounded-2xl border-stone-200 bg-white pl-14 pr-4 text-base shadow-sm focus-visible:ring-amber-200"
+                  placeholder="Search textbooks, calculators, fans, monitors..."
+                  value={filters.search}
+                  onChange={(event) => updateFilter("search", event.target.value)}
+                />
+              </label>
+
+              <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {categoryChips.map((category) => {
+                  const active = filters.category === category.value;
+                  return (
+                    <button
+                      className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                        active
+                          ? "border-stone-950 bg-stone-950 text-white shadow-md"
+                          : "border-stone-200 bg-white text-stone-700 hover:border-amber-200 hover:bg-amber-50"
+                      }`}
+                      key={category.value || "all"}
+                      onClick={() => updateFilter("category", category.value)}
+                      type="button"
+                    >
+                      {active ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden="true" />
+                      ) : null}
+                      {category.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="hidden lg:block">
+              <MarketplaceFilterPanel {...filterPanelProps} layout="bar" />
+            </div>
+
+            <div className="flex items-center justify-between gap-3 lg:hidden">
               <button
-                aria-label="Close filters"
-                className="trade-button-ghost h-10 w-10 p-0"
-                onClick={() => setIsFilterOpen(false)}
+                className="trade-button-secondary min-h-12 w-full justify-between rounded-2xl border-stone-200 bg-white"
+                onClick={() => setIsFilterOpen(true)}
                 type="button"
               >
-                <X aria-hidden="true" className="h-5 w-5" />
+                <span className="inline-flex items-center gap-2">
+                  <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
+                  Filters
+                </span>
+                {hasFilters ? (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
+                    Active
+                  </span>
+                ) : null}
               </button>
             </div>
-            <div className="mt-5">
-              <FilterPanel
-                filters={filters}
-                hasFilters={hasFilters}
-                priceError={!!priceError}
-                onClear={() => setFilters(initialFilters)}
-                onUpdate={updateFilter}
-              />
-            </div>
+
+            {!isLoading ? (
+              <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-sm">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {filters.search ? (
+                    <span className="trade-chip border-stone-200 bg-stone-50 text-stone-700">
+                      Search: &ldquo;{filters.search}&rdquo;
+                    </span>
+                  ) : null}
+                  {filters.category ? <CategoryPill active category={filters.category} /> : null}
+                  {filters.condition ? (
+                    <span className="trade-chip border-stone-200 bg-stone-50 text-stone-700">
+                      {filters.condition.replaceAll("_", " ")}
+                    </span>
+                  ) : null}
+                  {filters.pickup_location ? (
+                    <span className="trade-chip border-stone-200 bg-stone-50 text-stone-700">
+                      {formatPickupLocation(filters.pickup_location)}
+                    </span>
+                  ) : null}
+                  {!hasFilters ? (
+                    <span className="text-sm text-stone-500">Newest UM marketplace listings</span>
+                  ) : null}
+                </div>
+                {hasFilters ? (
+                  <button
+                    className="inline-flex min-h-8 items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold text-stone-600 transition hover:bg-rose-50 hover:text-rose-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                    onClick={() => setFilters(initialFilters)}
+                    type="button"
+                  >
+                    <X aria-hidden="true" className="h-3.5 w-3.5" />
+                    Clear all filters
+                  </button>
+                ) : null}
+              </section>
+            ) : null}
+
+            {!user && !isLoading && page.total > 0 ? (
+              <div className="trade-alert trade-alert-success rounded-2xl border-emerald-200/80">
+                <Link className="font-semibold text-emerald-900 underline underline-offset-2" href="/login">
+                  Sign in with your UM email
+                </Link>{" "}
+                to save listings or contact sellers.
+              </div>
+            ) : null}
+
+            {!isLoading && allListings.length > 0 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="flex items-center gap-2 text-sm font-medium text-stone-700">
+                  <Sparkles aria-hidden="true" className="h-4 w-4 text-amber-600" />
+                  {resultsSummary}
+                </p>
+                <div
+                  className="inline-flex rounded-xl border border-stone-200 bg-white p-1 shadow-sm"
+                  role="group"
+                  aria-label="Listing view"
+                >
+                  <button
+                    aria-label="Grid view"
+                    aria-pressed={viewMode === "grid"}
+                    className={`inline-flex h-9 w-10 items-center justify-center rounded-lg transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                      viewMode === "grid"
+                        ? "bg-[#f5f0e6] text-amber-900 shadow-sm"
+                        : "text-stone-500 hover:bg-stone-50"
+                    }`}
+                    onClick={() => setViewMode("grid")}
+                    type="button"
+                  >
+                    <Grid3x3 aria-hidden="true" className="h-4 w-4" />
+                  </button>
+                  <button
+                    aria-label="List view"
+                    aria-pressed={viewMode === "list"}
+                    className={`inline-flex h-9 w-10 items-center justify-center rounded-lg transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                      viewMode === "list"
+                        ? "bg-[#f5f0e6] text-amber-900 shadow-sm"
+                        : "text-stone-500 hover:bg-stone-50"
+                    }`}
+                    onClick={() => setViewMode("list")}
+                    type="button"
+                  >
+                    <LayoutList aria-hidden="true" className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {isLoading ? (
+              <LoadingSkeleton />
+            ) : allListings.length === 0 ? (
+              hasFilters ? (
+                <EmptyState
+                  actionLabel="Clear filters"
+                  description="No matching listings found. Try changing your filters or clearing your search."
+                  icon={Filter}
+                  title="No matching listings"
+                  onAction={() => setFilters(initialFilters)}
+                />
+              ) : (
+                <EmptyState
+                  actionHref="/trade/sell"
+                  actionLabel="Sell an item"
+                  description="No listings yet. Be the first to sell something on UM Nexus Trade."
+                  icon={ImageOff}
+                  title="No listings yet"
+                />
+              )
+            ) : (
+              <>
+                <section
+                  className={
+                    viewMode === "grid"
+                      ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                      : "flex flex-col gap-4"
+                  }
+                >
+                  {allListings.map((listing) => (
+                    <ListingCard
+                      isSaved={savedIds.has(listing.id)}
+                      key={listing.id}
+                      listing={listing}
+                      viewMode={viewMode}
+                      onToggleFavorite={user ? toggleFavorite : undefined}
+                    />
+                  ))}
+                </section>
+
+                {page.has_more ? (
+                  <div className="flex justify-center pt-2">
+                    <button
+                      className="trade-button-secondary min-h-12 min-w-[200px] rounded-2xl border-stone-200"
+                      disabled={isLoadingMore}
+                      onClick={() => void loadMore()}
+                      type="button"
+                    >
+                      {isLoadingMore ? "Loading..." : `Load more (${page.total - allListings.length} remaining)`}
+                    </button>
+                  </div>
+                ) : allListings.length > PAGE_SIZE ? (
+                  <p className="rounded-2xl border border-stone-200 bg-white/90 px-4 py-3 text-center text-sm font-medium text-stone-500 shadow-sm">
+                    All {page.total} listings loaded.
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
-      ) : null}
-    </TradeShell>
+
+        {isFilterOpen ? (
+          <div className="fixed inset-0 z-[60] lg:hidden">
+            <button
+              aria-label="Close filters"
+              className="absolute inset-0 bg-stone-950/50 backdrop-blur-sm"
+              onClick={() => setIsFilterOpen(false)}
+              type="button"
+            />
+            <div className="absolute inset-x-0 bottom-0 max-h-[86vh] overflow-y-auto rounded-t-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-2xl">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Marketplace</p>
+                  <h2 className="text-lg font-semibold text-stone-950">Filters</h2>
+                </div>
+                <button
+                  aria-label="Close filters"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-700 transition hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                  onClick={() => setIsFilterOpen(false)}
+                  type="button"
+                >
+                  <X aria-hidden="true" className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="mt-5">
+                <MarketplaceFilterPanel {...filterPanelProps} layout="sidebar" />
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </TradeShell>
+    </div>
   );
 }
 
@@ -474,110 +559,4 @@ function buildQueryFilters(filters: ListingFilters): Record<string, string> {
     out[key] = value;
   }
   return out;
-}
-
-function FilterPanel({
-  filters,
-  hasFilters,
-  priceError,
-  onClear,
-  onUpdate,
-}: Readonly<{
-  filters: ListingFilters;
-  hasFilters: boolean;
-  priceError: boolean;
-  onClear: () => void;
-  onUpdate: <K extends keyof ListingFilters>(key: K, value: ListingFilters[K]) => void;
-}>) {
-  return (
-    <div className="grid min-w-0 gap-3 md:grid-cols-2 lg:grid-cols-6">
-      <SelectField label="Condition" value={filters.condition} onChange={(value) => onUpdate("condition", value)}>
-        <option value="">Any condition</option>
-        {conditionOptions.map((item) => (
-          <option key={item.value} value={item.value}>{item.label}</option>
-        ))}
-      </SelectField>
-      <SelectField label="Pickup" value={filters.pickup_location} onChange={(value) => onUpdate("pickup_location", value)}>
-        <option value="">Any pickup</option>
-        {pickupAreas.map((item) => (
-          <option key={item.value} value={item.value}>{item.label}</option>
-        ))}
-      </SelectField>
-      <SelectField label="Status" value={filters.status} onChange={(value) => onUpdate("status", value)}>
-        {listingStatusOptions.map((item) => (
-          <option key={item.value} value={item.value}>{item.label}</option>
-        ))}
-      </SelectField>
-      <div className="grid min-w-0 gap-1.5">
-        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Min RM</span>
-        <input
-          className={`trade-input ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
-          inputMode="decimal"
-          min="0"
-          placeholder="Min RM"
-          type="number"
-          value={filters.min_price}
-          onChange={(event) => onUpdate("min_price", event.target.value)}
-        />
-      </div>
-      <div className="grid min-w-0 gap-1.5">
-        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">Max RM</span>
-        <input
-          className={`trade-input ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
-          inputMode="decimal"
-          min="0"
-          placeholder="Max RM"
-          type="number"
-          value={filters.max_price}
-          onChange={(event) => onUpdate("max_price", event.target.value)}
-        />
-      </div>
-      <SelectField label="Sort" value={filters.sort} onChange={(value) => onUpdate("sort", value)}>
-        <option value="latest">Newest first</option>
-        <option value="oldest">Oldest first</option>
-        <option value="price_low_high">Price: Low to High</option>
-        <option value="price_high_low">Price: High to Low</option>
-      </SelectField>
-      {priceError ? (
-        <p className="trade-alert trade-alert-danger col-span-full py-2 text-xs">
-          Minimum price cannot be higher than maximum price.
-        </p>
-      ) : null}
-      {hasFilters ? (
-        <button
-          className="trade-button-secondary md:col-span-2 lg:col-span-6"
-          onClick={onClear}
-          type="button"
-        >
-          <X aria-hidden="true" className="h-4 w-4" />
-          Clear filters
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function SelectField({
-  children,
-  label,
-  value,
-  onChange,
-}: Readonly<{
-  children: React.ReactNode;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}>) {
-  return (
-    <label className="grid min-w-0 gap-1.5">
-      <span className="text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">{label}</span>
-      <select
-        className="trade-input"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {children}
-      </select>
-    </label>
-  );
 }

@@ -22,7 +22,6 @@ import {
   getAllowedEmailDomainsFromEnv,
 } from "@/lib/auth/allowed-email-domains";
 import { AUTH_DOMAIN_REJECTED_KEY, AUTH_OAUTH_ERROR_KEY } from "@/lib/auth/auth-storage-keys";
-import { buildGoogleOAuthCallbackUrl } from "@/lib/auth/google-oauth-redirect";
 import { applyIntentToReturnTo, sanitizeIntent, sanitizeReturnTo } from "@/lib/auth/return-intent";
 
 type AuthFormProps = {
@@ -97,10 +96,13 @@ export function AuthForm({ mode }: AuthFormProps) {
     if (typeof window === "undefined") {
       return;
     }
+    const redirectedAuthError = searchParams.get("authError");
     const oauthMessage = window.sessionStorage.getItem(AUTH_OAUTH_ERROR_KEY);
     const domainReason = window.sessionStorage.getItem(AUTH_DOMAIN_REJECTED_KEY);
 
-    if (domainReason) {
+    if (redirectedAuthError) {
+      setError(redirectedAuthError);
+    } else if (domainReason) {
       window.sessionStorage.removeItem(AUTH_DOMAIN_REJECTED_KEY);
       if (domainReason === "email") {
         setError(
@@ -116,45 +118,31 @@ export function AuthForm({ mode }: AuthFormProps) {
       window.sessionStorage.removeItem(AUTH_OAUTH_ERROR_KEY);
       setError(oauthMessage);
     }
-  }, []);
+  }, [searchParams]);
 
-  async function handleGoogle() {
+  function handleGoogle() {
     setError(null);
     setStatusMessage(null);
     setIsOAuthSubmitting(true);
 
-    try {
-      const redirectTo =
-        typeof window === "undefined"
-          ? undefined
-          : buildGoogleOAuthCallbackUrl({
-              origin: window.location.origin,
-              returnTo,
-              intent,
-              listingId,
-              from: isSignup ? "signup" : "login",
-            });
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: redirectTo
-          ? {
-              redirectTo,
-              queryParams: { prompt: "select_account" },
-            }
-          : undefined,
-      });
+    if (typeof window === "undefined") {
+      return;
+    }
 
-      if (oauthError) {
-        setError(formatAuthErrorMessage(oauthError.message));
-        setIsOAuthSubmitting(false);
+    try {
+      const params = new URLSearchParams();
+      params.set("returnTo", returnTo);
+      if (intent) {
+        params.set("intent", intent);
       }
-      // On success the browser is redirected; no need to reset state.
-    } catch (oauthError) {
-      setError(
-        formatAuthErrorMessage(
-          oauthError instanceof Error ? oauthError.message : undefined,
-        ),
-      );
+      if (listingId) {
+        params.set("listingId", listingId);
+      }
+      params.set("from", isSignup ? "signup" : "login");
+
+      window.location.assign(`/auth/google?${params.toString()}`);
+    } catch {
+      setError("Could not start Google sign-in. Please try again.");
       setIsOAuthSubmitting(false);
     }
   }

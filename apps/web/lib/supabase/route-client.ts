@@ -9,15 +9,8 @@ type CookieToSet = {
   options: CookieOptions;
 };
 
-/**
- * Refreshes the Supabase session from cookies on each matched request.
- * Required for @supabase/ssr so server and client stay aligned with auth cookies.
- */
-export async function updateSession(request: NextRequest): Promise<NextResponse> {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
-
+export function createRouteSupabaseClient(request: NextRequest) {
+  const pendingCookies: CookieToSet[] = [];
   const { supabasePublishableKey, supabaseUrl } = getSupabasePublicConfig();
 
   const supabase = createServerClient(supabaseUrl, supabasePublishableKey, {
@@ -29,17 +22,17 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
         cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
-        supabaseResponse = NextResponse.next({
-          request,
-        });
-        cookiesToSet.forEach(({ name, value, options }) => {
-          supabaseResponse.cookies.set(name, value, options);
-        });
+        pendingCookies.push(...cookiesToSet);
       },
     },
   });
 
-  await supabase.auth.getUser();
+  function applyCookies(response: NextResponse): NextResponse {
+    pendingCookies.forEach(({ name, value, options }) => {
+      response.cookies.set(name, value, options);
+    });
+    return response;
+  }
 
-  return supabaseResponse;
+  return { applyCookies, supabase };
 }
