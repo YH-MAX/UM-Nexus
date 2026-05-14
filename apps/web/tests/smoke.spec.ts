@@ -1,14 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 const publicRoutes = [
-  { path: "/", heading: /Buy smarter|UM Nexus Trade/i },
+  { path: "/", heading: /Where students/i },
   { path: "/trade", heading: /Browse UM Listings/i },
-  { path: "/trade/sell", heading: /Sell an item/i },
+  { path: "/trade/sell", heading: /Sign in required/i },
   { path: "/trade/want", heading: /Wanted board/i },
   { path: "/trade/saved", heading: /Saved listings/i },
   { path: "/trade/dashboard", heading: /My Trade/i },
   { path: "/trade/notifications", heading: /Trade alerts/i },
-  { path: "/trade/profile", heading: /Trade profile/i },
+  { path: "/trade/profile", heading: /Sign in required/i },
   { path: "/trade/moderation", heading: /Trust review queue/i },
   { path: "/safety", heading: /Trade safely within UM/i },
   { path: "/terms", heading: /UM Nexus Trade Terms/i },

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Cormorant_Garamond } from "next/font/google";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   type ChangeEvent,
@@ -11,11 +12,26 @@ import {
   useRef,
   useState,
 } from "react";
-import { Camera, ChevronDown, Send, Sparkles, Upload, X } from "lucide-react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  Camera,
+  Check,
+  ChevronDown,
+  Clock,
+  Heart,
+  MapPin,
+  Plus,
+  Send,
+  Shield,
+  ShieldCheck,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
-import { SafetyNotice } from "@/components/trade/safety-notice";
 import { StatusPill } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
@@ -138,11 +154,18 @@ const initialListingPayload: ListingPayload = {
   contact_value: "",
 };
 
+const sellDisplay = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  display: "swap",
+});
+
 export default function SellPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const aiAssistantPanelRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
   const [sellerContext, setSellerContext] = useState<SellAgentSellerContext>({
     seller_goal: "fair_price",
@@ -277,13 +300,20 @@ export default function SellPage() {
 
   const workflowSteps = useMemo(
     () => [
-      { label: "Photos", complete: images.length > 0 },
-      { label: "Details", complete: hasManualMinimum(editableDraft) },
-      { label: "Review", complete: publishPhase !== "idle" },
-      { label: "Publish", complete: publishPhase === "ready" },
+      { label: "Photos", subtitle: "Add images", complete: images.length > 0 },
+      { label: "Details", subtitle: "Item information", complete: hasManualMinimum(editableDraft) },
+      { label: "Review", subtitle: "Check & confirm", complete: publishPhase !== "idle" },
+      { label: "Publish", subtitle: "Go live", complete: publishPhase === "ready" },
     ],
     [editableDraft, images.length, publishPhase],
   );
+
+  function scrollToAiAssistant() {
+    setIsAiPanelOpen(true);
+    window.setTimeout(() => {
+      aiAssistantPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
 
   const followUpClues = useMemo(() => {
     const labels = new Set(
@@ -579,23 +609,20 @@ export default function SellPage() {
   const isBusy = isGenerating || isPublishing || isSavingDraft;
 
   return (
-    <TradeShell
-      title="Sell an item"
-      description="Create a campus listing manually first. AI is optional help for title, category, description, and fair price guidance."
-    >
+    <TradeShell hideHero title="Sell an item">
       {error ? (
-        <p className="trade-alert trade-alert-danger" role="alert">
+        <p className="trade-alert trade-alert-danger rounded-2xl" role="alert">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="trade-alert trade-alert-success">
+        <p className="trade-alert trade-alert-success rounded-2xl">
           {notice}
         </p>
       ) : null}
 
       {wantedContext ? (
-        <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+        <section className="rounded-2xl border border-emerald-200/80 bg-emerald-50/90 p-4 text-emerald-950 shadow-sm">
           <p className="text-sm font-semibold">Creating listing for wanted request:</p>
           <h2 className="mt-1 text-xl font-semibold">{wantedContext.title}</h2>
           <div className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
@@ -636,91 +663,367 @@ export default function SellPage() {
       ) : null}
 
       {user ? (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
-          <div className="grid gap-5">
-            <WorkflowProgress steps={workflowSteps} />
+        <div className="space-y-8 pb-4">
+          <SellMarketplaceHero displayClassName={sellDisplay.className} />
 
-            {!profileReady ? <ProfileRequiredPanel /> : null}
+          <WorkflowProgress steps={workflowSteps} />
 
-            <PhotoUploadPanel
-              cameraInputRef={cameraInputRef}
-              disabled={isBusy}
-              fileInputRef={fileInputRef}
-              images={images}
-              onFileChange={handleImageSelection}
-              onRemoveImage={removeImage}
-            />
+          <SellAiAssistantBanner onTryAssistant={scrollToAiAssistant} />
 
-            <ManualListingPanel
-              disabled={isBusy}
-              draft={editableDraft}
-              imageCount={images.length}
-              isPublishing={isPublishing}
-              isSavingDraft={isSavingDraft}
-              onPublish={() => setQualityReviewMode("manual")}
-              onSaveDraft={handleSaveManualDraft}
-              onUpdateDraftField={updateDraftField}
-            />
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:items-start">
+            <div className="grid min-w-0 gap-6">
+              <PhotoUploadPanel
+                cameraInputRef={cameraInputRef}
+                disabled={isBusy}
+                fileInputRef={fileInputRef}
+                images={images}
+                onFileChange={handleImageSelection}
+                onRemoveImage={removeImage}
+              />
 
-            <AgentConversationPanel
-              activeClue={activeClue}
-              activeValue={activeValue}
-              canGenerate={canGenerate}
-              className="order-3 lg:col-start-1 lg:row-start-2"
-              disabled={isBusy}
-              draft={draft}
-              error={error}
-              followUpClues={followUpClues}
-              freeText={freeText}
-              imagesCount={images.length}
-              isGenerating={isGenerating}
-              isOpen={isAiPanelOpen}
-              messages={messages}
-              onCancelClue={() => setActiveClue(null)}
-              onClueClick={handleClueClick}
-              onGenerateDraft={handleGenerateDraft}
-              onGoalSelect={handleGoalSelect}
-              onSaveClue={saveActiveClue}
-              onSendFreeText={handleSendFreeText}
-              onToggle={() => setIsAiPanelOpen((prev) => !prev)}
-              sellerContext={sellerContext}
-              setActiveValue={setActiveValue}
-              setFreeText={setFreeText}
-            />
-          </div>
+              {!profileReady ? <ProfileRequiredPanel /> : null}
 
-          <aside className="grid gap-5 lg:sticky lg:top-24">
-            <div>
-              <p className="trade-field-kicker mb-2">
-                Preview: this is how your listing will appear to buyers
-              </p>
-              <ListingPreviewPanel draft={editableDraft} images={images} />
+              <ManualListingPanel
+                disabled={isBusy}
+                draft={editableDraft}
+                imageCount={images.length}
+                isPublishing={isPublishing}
+                isSavingDraft={isSavingDraft}
+                onPublish={() => setQualityReviewMode("manual")}
+                onSaveDraft={handleSaveManualDraft}
+                onUpdateDraftField={updateDraftField}
+              />
+
+              <div ref={aiAssistantPanelRef}>
+                <AgentConversationPanel
+                  activeClue={activeClue}
+                  activeValue={activeValue}
+                  canGenerate={canGenerate}
+                  className="order-3"
+                  disabled={isBusy}
+                  draft={draft}
+                  error={error}
+                  followUpClues={followUpClues}
+                  freeText={freeText}
+                  imagesCount={images.length}
+                  isGenerating={isGenerating}
+                  isOpen={isAiPanelOpen}
+                  messages={messages}
+                  onCancelClue={() => setActiveClue(null)}
+                  onClueClick={handleClueClick}
+                  onGenerateDraft={handleGenerateDraft}
+                  onGoalSelect={handleGoalSelect}
+                  onSaveClue={saveActiveClue}
+                  onSendFreeText={handleSendFreeText}
+                  onToggle={() => setIsAiPanelOpen((prev) => !prev)}
+                  sellerContext={sellerContext}
+                  setActiveValue={setActiveValue}
+                  setFreeText={setFreeText}
+                />
+              </div>
             </div>
-            <SafetyNotice />
-            <DraftReviewPanel
-              draft={draft}
-              editableDraft={editableDraft}
-              isGenerating={isGenerating}
-              isPublishing={isPublishing}
-              onApplyPriceOption={applyPriceOption}
-              onGenerateDraft={handleGenerateDraft}
-              onOpenListing={() => (publishedListingId ? router.push(`/trade/${publishedListingId}`) : undefined)}
-              onPublish={() => setQualityReviewMode("ai")}
-              onUpdateDraftField={updateDraftField}
-              publishPhase={publishPhase}
-              publishedListingId={publishedListingId}
-              selectedPriceType={selectedPriceType}
-            />
-          </aside>
+
+            <aside className="grid min-w-0 gap-5 lg:sticky lg:top-24">
+              <SellLivePreviewCard
+                currentProfile={currentProfile}
+                draft={editableDraft}
+                images={images}
+              />
+              <SellTipsCard />
+              <SellListingQualityCard draft={editableDraft} imageCount={images.length} />
+              <SellSafetyCard />
+              <DraftReviewPanel
+                draft={draft}
+                editableDraft={editableDraft}
+                isGenerating={isGenerating}
+                isPublishing={isPublishing}
+                onApplyPriceOption={applyPriceOption}
+                onGenerateDraft={handleGenerateDraft}
+                onOpenListing={() => (publishedListingId ? router.push(`/trade/${publishedListingId}`) : undefined)}
+                onPublish={() => setQualityReviewMode("ai")}
+                onUpdateDraftField={updateDraftField}
+                publishPhase={publishPhase}
+                publishedListingId={publishedListingId}
+                selectedPriceType={selectedPriceType}
+              />
+            </aside>
+          </div>
         </div>
       ) : null}
     </TradeShell>
   );
 }
 
+function SellMarketplaceHero({ displayClassName }: Readonly<{ displayClassName: string }>) {
+  return (
+    <header className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+      <div className="min-w-0 max-w-3xl">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#C98A1D]">UM Nexus Trade</p>
+        <h1 className={`${displayClassName} mt-2 text-4xl font-semibold leading-tight text-stone-950 sm:text-[2.75rem]`}>
+          Sell to the UM community. <span aria-hidden="true">✨</span>
+        </h1>
+        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[#6B6257] sm:text-base">
+          List textbooks, electronics, dorm essentials, and more for verified UM students. Our AI assistant helps you write
+          better titles, descriptions and set a fair price.
+        </p>
+      </div>
+      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-4 lg:max-w-[38rem] xl:max-w-[40rem]">
+        <div className="flex items-start gap-4 rounded-[1.25rem] border border-stone-200/70 bg-white p-5 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#D4AF6A]/55 bg-[#faf8f3] text-[#5c4320]">
+            <Clock aria-hidden="true" className="h-[22px] w-[22px]" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <p className="text-[15px] font-bold leading-snug tracking-tight text-stone-950">Takes 2–3 mins</p>
+            <p className="mt-1 text-sm leading-snug text-stone-600">Streamlined steps</p>
+          </div>
+        </div>
+        <div className="flex items-start gap-4 rounded-[1.25rem] border border-stone-200/70 bg-white p-5 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-stone-950 text-[#D4AF6A] shadow-inner">
+            <BadgeCheck aria-hidden="true" className="h-[22px] w-[22px]" strokeWidth={2.25} />
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <p className="text-[15px] font-bold leading-snug tracking-tight text-stone-950">Verified UM community</p>
+            <p className="mt-1 text-sm leading-snug text-stone-600">UM email only</p>
+          </div>
+        </div>
+        <div className="flex items-start gap-4 rounded-[1.25rem] border border-stone-200/70 bg-white p-5 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#D4AF6A]/55 bg-[#faf8f3] text-[#5c4320]">
+            <ShieldCheck aria-hidden="true" className="h-[22px] w-[22px]" strokeWidth={1.75} />
+          </span>
+          <div className="min-w-0 pt-0.5">
+            <p className="text-[15px] font-bold leading-snug tracking-tight text-stone-950">Safe & trusted</p>
+            <p className="mt-1 text-sm leading-snug text-stone-600">Campus pickup guidance</p>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function SellAiAssistantBanner({ onTryAssistant }: Readonly<{ onTryAssistant: () => void }>) {
+  return (
+    <section className="flex flex-col gap-4 rounded-2xl border border-[#D99A2B]/50 bg-gradient-to-r from-amber-50/90 via-[#fff9ed] to-amber-50/70 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 flex-1 gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-white text-amber-700 shadow-sm">
+          <Sparkles aria-hidden="true" className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-stone-950">AI listing assistant</h2>
+            <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+              Beta
+            </span>
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-[#6B6257]">
+            Describe your item naturally and I&apos;ll suggest a title, category, condition and fair price.
+          </p>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 self-stretch sm:self-auto">
+        <button
+          className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-stone-900 bg-stone-950 px-5 py-2.5 text-sm font-semibold text-amber-300 shadow-md transition hover:bg-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 sm:flex-initial"
+          onClick={onTryAssistant}
+          type="button"
+        >
+          Try AI Assistant
+          <ChevronDown aria-hidden="true" className="h-4 w-4 -rotate-90 text-amber-200/90" />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function sellerPreviewInitials(profile: CurrentProfile | null, fallback: string): string {
+  const raw = (profile?.display_name ?? profile?.full_name ?? fallback).trim();
+  const parts = raw.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]![0] ?? ""}${parts[parts.length - 1]![0] ?? ""}`.toUpperCase();
+  }
+  return raw.slice(0, 2).toUpperCase() || "UM";
+}
+
+function SellLivePreviewCard({
+  draft,
+  images,
+  currentProfile,
+}: Readonly<{
+  draft: ListingPayload;
+  images: PreviewFile[];
+  currentProfile: CurrentProfile | null;
+}>) {
+  const cover = images[0];
+  const condition = draft.condition_label ?? draft.condition ?? "good";
+  const pickup = draft.pickup_location ?? draft.pickup_area ?? "";
+  const displayName =
+    currentProfile?.display_name?.trim() ||
+    currentProfile?.full_name?.trim() ||
+    "Aiman";
+  const faculty = currentProfile?.faculty?.trim() || "FST";
+  const verified = currentProfile?.verified_um_email === true;
+
+  const titlePreview = draft.title.trim() || "IKEA Desk Lamp";
+  const priceDisplay =
+    draft.category === "free_items" ? formatMoney(0, draft.currency) : formatMoney(draft.price || 0, draft.currency);
+  const categoryLine = `${formatCategory(draft.category || "dorm_room")} · ${condition.replaceAll("_", " ")}`;
+  const pickupLine = pickup ? formatPickupLocation(pickup) : "KK1 Lobby";
+
+  return (
+    <section className="rounded-2xl border border-stone-200/90 bg-white p-5 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#C98A1D]">Live preview</p>
+      <p className="mt-1 text-sm text-[#6B6257]">This is how your listing will appear to other students.</p>
+      <div className="mt-4 overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-sm">
+        <div className="relative aspect-[4/3] bg-gradient-to-br from-stone-800 via-stone-900 to-black">
+          {cover ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt="" className="h-full w-full object-cover" src={cover.previewUrl} />
+          ) : (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-stone-700 via-stone-900 to-black text-center text-stone-300">
+              <Upload aria-hidden="true" className="h-8 w-8 text-amber-400/80" />
+              <p className="text-sm font-medium text-stone-200">Product preview</p>
+            </div>
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
+          <div className="absolute left-3 top-3">
+            <StatusPill className="border-0 bg-white/95 shadow-sm" tone="available">
+              Available
+            </StatusPill>
+          </div>
+          <button
+            aria-label="Save listing (preview)"
+            className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border border-white/30 bg-white/95 text-stone-600 shadow-md backdrop-blur-sm"
+            type="button"
+          >
+            <Heart aria-hidden="true" className="h-4 w-4" />
+          </button>
+          <span className="absolute bottom-3 right-3 rounded-full bg-black/55 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+            {Math.min(images.length, 5)} / 5
+          </span>
+        </div>
+        <div className="space-y-3 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <h3 className="line-clamp-2 min-w-0 text-lg font-semibold text-stone-950">{titlePreview}</h3>
+            <p className="shrink-0 text-lg font-bold text-[#C98A1D]">{priceDisplay}</p>
+          </div>
+          <p className="text-sm text-[#6B6257]">{categoryLine}</p>
+          <p className="flex items-center gap-1.5 text-sm text-[#6B6257]">
+            <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-700/90" />
+            Pickup: {pickupLine}
+          </p>
+          <p className="line-clamp-2 text-xs leading-relaxed text-stone-500">
+            {draft.description?.trim() || "Describe your item so buyers know what to expect."}
+          </p>
+          <div className="flex items-center justify-between border-t border-stone-100 pt-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-amber-100 to-stone-200 text-xs font-bold text-stone-800 ring-1 ring-stone-200">
+                {sellerPreviewInitials(currentProfile, displayName)}
+              </span>
+              <div className="min-w-0">
+                <p className="flex items-center gap-1 truncate text-sm font-semibold text-stone-950">
+                  {displayName}
+                  {verified ? <BadgeCheck aria-hidden="true" className="h-4 w-4 shrink-0 text-emerald-600" /> : null}
+                </p>
+                <p className="truncate text-xs text-[#6B6257]">{faculty}</p>
+              </div>
+            </div>
+            <span className="shrink-0 text-xs text-stone-400">Just now</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SellTipsCard() {
+  const tips = [
+    "Use clear, bright photos",
+    "Set a fair price",
+    "Write honest descriptions",
+    "Add pickup details",
+  ];
+  return (
+    <section className="rounded-2xl border border-stone-200/90 bg-white p-5 shadow-sm">
+      <h3 className="text-base font-semibold text-stone-950">Tips for a great listing</h3>
+      <ul className="mt-4 space-y-3">
+        {tips.map((tip) => (
+          <li className="flex items-start gap-2.5 text-sm text-[#6B6257]" key={tip}>
+            <Check aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            {tip}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function SellListingQualityCard({
+  draft,
+  imageCount,
+}: Readonly<{
+  draft: ListingPayload;
+  imageCount: number;
+}>) {
+  const desc = draft.description?.trim() ?? "";
+  const photoTarget = 3;
+  const photoOk = imageCount >= photoTarget;
+  const descOk = desc.length >= 40;
+  const pickupOk = Boolean(draft.pickup_location ?? draft.pickup_area);
+  const priceOk = draft.category === "free_items" || (typeof draft.price === "number" && draft.price > 0);
+
+  const rows = [
+    { label: "Add at least 3 photos", status: photoOk ? "Done" : `${Math.min(imageCount, photoTarget)}/${photoTarget}`, ok: photoOk },
+    {
+      label: "Add detailed description",
+      status: descOk ? "Looks good" : desc.length > 0 ? `${desc.length}+ chars` : "Start typing",
+      ok: descOk,
+    },
+    { label: "Set pickup location", status: pickupOk ? "Set" : "Pending", ok: pickupOk },
+    { label: "Set a reasonable price", status: priceOk ? "Set" : "Pending", ok: priceOk },
+  ];
+
+  return (
+    <section className="rounded-2xl border border-stone-200/90 bg-white p-5 shadow-sm">
+      <h3 className="text-base font-semibold text-stone-950">Listing quality</h3>
+      <p className="mt-1 text-sm text-[#6B6257]">Improve these to get more views and faster replies.</p>
+      <ul className="mt-4 space-y-3">
+        {rows.map((row) => (
+          <li className="flex items-center justify-between gap-3 text-sm" key={row.label}>
+            <span className="flex min-w-0 items-center gap-2 text-stone-800">
+              <Check aria-hidden="true" className={`h-4 w-4 shrink-0 ${row.ok ? "text-emerald-600" : "text-stone-300"}`} />
+              <span className="min-w-0">{row.label}</span>
+            </span>
+            <span
+              className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                row.ok ? "bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200" : "bg-stone-100 text-stone-600 ring-1 ring-stone-200"
+              }`}
+            >
+              {row.status}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function SellSafetyCard() {
+  return (
+    <section className="rounded-2xl border border-amber-200/70 bg-gradient-to-br from-amber-50/80 to-[#fffdf8] p-5 shadow-sm">
+      <div className="flex gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-white text-amber-800">
+          <Shield aria-hidden="true" className="h-5 w-5" />
+        </span>
+        <div>
+          <h3 className="text-base font-semibold text-stone-950">Trade safely on campus</h3>
+          <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-[#6B6257]">{tradeSafetyMessage}</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ProfileRequiredPanel() {
   return (
-    <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm">
+    <section className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-[#fffdf8] p-5 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-amber-950">Complete your trade profile</h2>
@@ -729,7 +1032,7 @@ function ProfileRequiredPanel() {
           </p>
         </div>
         <Link
-          className="trade-button-primary bg-slate-950 hover:bg-slate-800"
+          className="trade-button-primary rounded-xl px-5 shadow-md"
           href="/trade/profile"
         >
           Edit profile
@@ -849,56 +1152,6 @@ function PublishQualityCheckpoint({
   );
 }
 
-function ListingPreviewPanel({
-  draft,
-  images,
-}: Readonly<{
-  draft: ListingPayload;
-  images: PreviewFile[];
-}>) {
-  const cover = images[0];
-  const condition = draft.condition_label ?? draft.condition ?? "good";
-  const pickup = draft.pickup_location ?? draft.pickup_area ?? "kk1";
-
-  return (
-    <section className="trade-card overflow-hidden">
-      <div className="relative flex aspect-[4/3] items-center justify-center bg-slate-100">
-        {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img alt="Listing preview" className="h-full w-full object-cover" src={cover.previewUrl} />
-        ) : (
-          <div className="px-6 text-center text-sm font-semibold text-slate-500">
-            Your first photo becomes the cover image.
-          </div>
-        )}
-        <div className="absolute left-3 top-3">
-          <StatusPill tone="available">Preview</StatusPill>
-        </div>
-      </div>
-      <div className="space-y-3 p-5">
-        <div>
-          <p className="trade-kicker">Live listing preview</p>
-          <h2 className="mt-2 line-clamp-2 text-lg font-semibold text-slate-950">
-            {draft.title.trim() || "Item title"}
-          </h2>
-          <p className="mt-2 text-2xl font-bold text-emerald-800">
-            {formatMoney(draft.category === "free_items" ? 0 : draft.price, draft.currency)}
-          </p>
-        </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600">
-          <p className="font-medium text-slate-800">
-            {formatCategory(draft.category || "others")} · {condition.replaceAll("_", " ")}
-          </p>
-          <p className="mt-1">Pickup: {formatPickupLocation(pickup)}</p>
-        </div>
-        <p className="line-clamp-3 text-sm leading-6 text-slate-600">
-          {draft.description?.trim() || "Write a short, honest description so buyers can decide quickly."}
-        </p>
-      </div>
-    </section>
-  );
-}
-
 function ManualListingPanel({
   disabled,
   draft,
@@ -918,31 +1171,116 @@ function ManualListingPanel({
   onSaveDraft: () => void;
   onUpdateDraftField: (field: keyof ListingPayload, value: string | number | undefined) => void;
 }>) {
+  const titleLen = draft.title.length;
+  const descLen = (draft.description ?? "").length;
+
+  function appendDescriptionHint(prefix: string) {
+    const current = draft.description ?? "";
+    if (current.includes(prefix)) {
+      return;
+    }
+    const next = current.trim() ? `${current.trim()}\n${prefix} ` : `${prefix} `;
+    onUpdateDraftField("description", next);
+  }
+
+  function focusField(id: string) {
+    window.setTimeout(() => document.getElementById(id)?.focus(), 0);
+  }
+
+  function handleDetailChip(kind: string) {
+    if (kind === "brand") {
+      focusField("sell-brand");
+      return;
+    }
+    if (kind === "model") {
+      focusField("sell-model");
+      return;
+    }
+    if (kind === "year") {
+      appendDescriptionHint("Year:");
+      focusField("sell-description");
+      return;
+    }
+    if (kind === "color") {
+      appendDescriptionHint("Color:");
+      focusField("sell-description");
+      return;
+    }
+    if (kind === "dimensions") {
+      appendDescriptionHint("Dimensions:");
+      focusField("sell-description");
+      return;
+    }
+    if (kind === "others") {
+      document.getElementById("sell-extra-fields")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
+  const detailChips: Array<{ id: string; label: string }> = [
+    { id: "brand", label: "Brand" },
+    { id: "model", label: "Model" },
+    { id: "year", label: "Year" },
+    { id: "color", label: "Color" },
+    { id: "dimensions", label: "Dimensions" },
+    { id: "others", label: "Others" },
+  ];
+
   return (
-    <section className="trade-card p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section className="rounded-2xl border border-stone-200/90 bg-white p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="trade-kicker">Manual listing</p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-950">Product details</h2>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#C98A1D]">2. Product details</p>
+          <h2 className="mt-2 text-xl font-semibold text-stone-950">Tell buyers what you&apos;re selling</h2>
         </div>
-        <StatusPill tone={imageCount > 0 ? "good" : "warn"}>{imageCount}/5 photos</StatusPill>
+        <span className="inline-flex items-center rounded-full border border-stone-200 bg-[#faf7f0] px-3 py-1 text-xs font-semibold text-stone-700">
+          {imageCount}/5 photos
+        </span>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <EditableField
-          label="Title"
-          value={draft.title}
-          onChange={(value) => onUpdateDraftField("title", value)}
-        />
-        <EditableNumber
-          label="Price"
-          value={draft.price}
-          onChange={(value) => onUpdateDraftField("price", value)}
-        />
+      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+        <div className="grid gap-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <label className="text-sm font-semibold text-stone-900" htmlFor="sell-title">
+              Title <span className="text-rose-600">*</span>
+            </label>
+            <span className="text-xs text-stone-400">{titleLen}/80</span>
+          </div>
+          <input
+            className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white"
+            id="sell-title"
+            maxLength={80}
+            placeholder="e.g. IKEA Desk Lamp, Calculus Textbook"
+            value={draft.title}
+            onChange={(event) => onUpdateDraftField("title", event.target.value)}
+          />
+        </div>
+
+        <div className="grid gap-2">
+          <label className="text-sm font-semibold text-stone-900" htmlFor="sell-price">
+            Price <span className="text-rose-600">*</span>
+          </label>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-stone-500">
+              RM
+            </span>
+            <input
+              className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white pl-12"
+              id="sell-price"
+              inputMode="decimal"
+              min="0"
+              placeholder="e.g. 45"
+              step="0.01"
+              type="number"
+              value={Number.isFinite(draft.price) && draft.price > 0 ? draft.price : ""}
+              onChange={(event) => onUpdateDraftField("price", Number(event.target.value))}
+            />
+          </div>
+        </div>
+
         <EditableSelect
           allowEmpty
           emptyLabel="Choose category"
-          label="Category"
+          label="Category *"
           options={tradeCategories}
           value={draft.category}
           onChange={(value) => {
@@ -955,85 +1293,149 @@ function ManualListingPanel({
         <EditableSelect
           allowEmpty
           emptyLabel="Choose condition"
-          label="Condition"
+          label="Condition *"
           options={conditionOptions}
           value={draft.condition_label ?? ""}
           onChange={(value) => onUpdateDraftField("condition_label", value)}
         />
-        <EditableSelect
-          allowEmpty
-          emptyLabel="Choose pickup location"
-          label="Pickup location"
-          options={pickupAreas}
-          value={draft.pickup_location ?? draft.pickup_area ?? ""}
-          onChange={(value) => {
-            onUpdateDraftField("pickup_location", value);
-            onUpdateDraftField("pickup_area", value);
-          }}
-        />
-        <EditableField
-          label="Pickup note"
-          value={draft.pickup_note ?? ""}
-          onChange={(value) => onUpdateDraftField("pickup_note", value || undefined)}
-        />
-        <label className="grid gap-2 lg:col-span-2">
-          <span className="text-sm font-semibold text-slate-800">Description</span>
+
+        <div className="grid gap-2 lg:col-span-2">
+          <label className="text-sm font-semibold text-stone-900" htmlFor="sell-pickup">
+            Pickup location <span className="text-rose-600">*</span>
+          </label>
+          <div className="relative">
+            <select
+              className="trade-input min-h-[46px] appearance-none rounded-xl border-stone-200 bg-white pr-12"
+              id="sell-pickup"
+              value={draft.pickup_location ?? draft.pickup_area ?? ""}
+              onChange={(event) => {
+                const value = event.target.value;
+                onUpdateDraftField("pickup_location", value);
+                onUpdateDraftField("pickup_area", value);
+              }}
+            >
+              <option value="">Choose pickup location</option>
+              {pickupAreas.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <MapPin aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+          </div>
+        </div>
+
+        <div className="grid gap-2 lg:col-span-2">
+          <label className="text-sm font-semibold text-stone-800" htmlFor="sell-pickup-note">
+            Pickup notes <span className="font-normal text-stone-400">(optional)</span>
+          </label>
+          <input
+            className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white"
+            id="sell-pickup-note"
+            placeholder="e.g. KK1 lobby, after 6pm, weekdays"
+            value={draft.pickup_note ?? ""}
+            onChange={(event) => onUpdateDraftField("pickup_note", event.target.value || undefined)}
+          />
+        </div>
+
+        <div className="grid gap-2 lg:col-span-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <label className="text-sm font-semibold text-stone-900" htmlFor="sell-description">
+              Description <span className="text-rose-600">*</span>
+            </label>
+            <span className="text-xs text-stone-400">{descLen}/500</span>
+          </div>
           <textarea
-            className="min-h-28 resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm leading-6 outline-none transition focus:border-emerald-600"
+            className="trade-input min-h-[140px] resize-y rounded-xl border-stone-200 bg-white py-3"
+            id="sell-description"
+            maxLength={500}
+            placeholder="Describe your item, its condition, and any important details buyers should know..."
             value={draft.description ?? ""}
             onChange={(event) => onUpdateDraftField("description", event.target.value || undefined)}
           />
-        </label>
-        <EditableSelect
-          label="Contact method"
-          options={contactMethods}
-          value={draft.contact_method ?? "telegram"}
-          onChange={(value) => onUpdateDraftField("contact_method", value)}
-        />
-        <EditableField
-          label="Contact value"
-          value={draft.contact_value ?? ""}
-          onChange={(value) => onUpdateDraftField("contact_value", value || undefined)}
-        />
+        </div>
       </div>
 
-      <details className="mt-4 rounded-lg border border-slate-200 bg-slate-50">
-        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-slate-800">Extra item fields</summary>
-        <div className="grid gap-3 border-t border-slate-200 p-4 sm:grid-cols-3">
-          <EditableField
-            label="Item name"
-            value={draft.item_name ?? ""}
-            onChange={(value) => onUpdateDraftField("item_name", value || undefined)}
+      <div className="mt-5">
+        <p className="text-sm font-semibold text-stone-900">Add details</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {detailChips.map((chip) => (
+            <button
+              className="rounded-full border border-stone-200 bg-[#faf7f0] px-3.5 py-1.5 text-xs font-semibold text-stone-800 transition hover:border-[#C98A1D]/50 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={disabled}
+              key={chip.id}
+              onClick={() => handleDetailChip(chip.id)}
+              type="button"
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-stone-100 bg-[#faf7f0]/50 p-4" id="sell-extra-fields">
+        <p className="text-sm font-semibold text-stone-900">Contact for buyers</p>
+        <p className="mt-1 text-xs text-[#6B6257]">Required before publish — how buyers can reach you after a contact request.</p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <EditableSelect
+            label="Contact method"
+            options={contactMethods}
+            value={draft.contact_method ?? "telegram"}
+            onChange={(value) => onUpdateDraftField("contact_method", value)}
           />
           <EditableField
-            label="Brand"
-            value={draft.brand ?? ""}
-            onChange={(value) => onUpdateDraftField("brand", value || undefined)}
-          />
-          <EditableField
-            label="Model"
-            value={draft.model ?? ""}
-            onChange={(value) => onUpdateDraftField("model", value || undefined)}
+            id="sell-contact-value"
+            label="Contact value"
+            placeholder="Handle or phone"
+            value={draft.contact_value ?? ""}
+            onChange={(value) => onUpdateDraftField("contact_value", value || undefined)}
           />
         </div>
-      </details>
+        <details className="mt-4 rounded-xl border border-stone-200 bg-white">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-stone-800">Extra item fields</summary>
+          <div className="grid gap-3 border-t border-stone-100 p-4 sm:grid-cols-3">
+            <EditableField
+              id="sell-item-name"
+              label="Item name"
+              value={draft.item_name ?? ""}
+              onChange={(value) => onUpdateDraftField("item_name", value || undefined)}
+            />
+            <EditableField
+              id="sell-brand"
+              label="Brand"
+              value={draft.brand ?? ""}
+              onChange={(value) => onUpdateDraftField("brand", value || undefined)}
+            />
+            <EditableField
+              id="sell-model"
+              label="Model"
+              value={draft.model ?? ""}
+              onChange={(value) => onUpdateDraftField("model", value || undefined)}
+            />
+          </div>
+        </details>
+      </div>
 
-      <div className="mt-5 flex flex-wrap gap-3">
+      <div className="mt-8 flex flex-col gap-3 border-t border-stone-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <button
+            className="trade-button-secondary min-h-[46px] rounded-xl border-stone-200 bg-white px-6"
+            disabled={disabled || isSavingDraft}
+            onClick={() => void onSaveDraft()}
+            type="button"
+          >
+            {isSavingDraft ? "Saving..." : "Save draft"}
+          </button>
+          <p className="text-xs text-[#6B6257] sm:ml-2">Your draft is saved automatically</p>
+        </div>
         <button
-          className="trade-button-secondary"
-          disabled={disabled || isSavingDraft}
-          onClick={onSaveDraft}
-          type="button"
-        >
-          {isSavingDraft ? "Saving..." : "Save Draft"}
-        </button>
-        <button
-          className="trade-button-primary"
+          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-stone-950 px-6 text-sm font-semibold text-[#E8C66A] shadow-md transition hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled || isPublishing}
           onClick={onPublish}
           type="button"
         >
-          {isPublishing ? "Publishing..." : "Publish Listing"}
+          {isPublishing ? "Working..." : "Continue to review"}
+          <ArrowRight aria-hidden="true" className="h-4 w-4" />
         </button>
       </div>
     </section>
@@ -1043,38 +1445,42 @@ function ManualListingPanel({
 function WorkflowProgress({
   steps,
 }: Readonly<{
-  steps: Array<{ label: string; complete: boolean }>;
+  steps: Array<{ label: string; subtitle: string; complete: boolean }>;
 }>) {
   const firstIncomplete = steps.findIndex((step) => !step.complete);
   const activeIndex = firstIncomplete === -1 ? steps.length - 1 : firstIncomplete;
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="grid gap-2 sm:grid-cols-4">
+    <section className="rounded-2xl border border-stone-200/90 bg-white p-4 shadow-sm sm:p-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {steps.map((step, index) => {
           const isDone = step.complete;
           const isActive = activeIndex === index && !isDone;
           return (
             <div
-              className={`flex items-center gap-3 rounded-lg px-3 py-2 ${
-                isDone ? "bg-emerald-50" : isActive ? "bg-slate-100" : "bg-white"
+              className={`flex items-center gap-3 rounded-xl border px-3 py-3 transition ${
+                isDone
+                  ? "border-emerald-200/80 bg-emerald-50/60"
+                  : isActive
+                    ? "border-stone-900 bg-stone-950 text-white shadow-md"
+                    : "border-stone-100 bg-[#faf7f0]/80 text-stone-700"
               }`}
               key={step.label}
             >
               <span
-                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold ${
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
                   isDone
-                    ? "bg-emerald-700 text-white"
+                    ? "bg-emerald-600 text-white"
                     : isActive
-                      ? "bg-slate-950 text-white"
-                      : "bg-slate-100 text-slate-500"
+                      ? "bg-[#C98A1D] text-stone-950"
+                      : "bg-stone-200 text-stone-600"
                 }`}
               >
                 {index + 1}
               </span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-950">{step.label}</p>
-                <p className="text-xs text-slate-500">{isDone ? "Complete" : isActive ? "Current" : "Next"}</p>
+                <p className={`truncate text-sm font-semibold ${isActive ? "text-white" : "text-stone-950"}`}>{step.label}</p>
+                <p className={`truncate text-xs ${isActive ? "text-amber-100/90" : "text-[#6B6257]"}`}>{step.subtitle}</p>
               </div>
             </div>
           );
@@ -1101,10 +1507,45 @@ function PhotoUploadPanel({
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onRemoveImage: (previewUrl: string) => void;
 }>) {
-  const slots = Array.from({ length: 5 }, (_, index) => images[index] ?? null);
+  const main = images[0] ?? null;
+  const secondary = images.slice(1, 5);
+
+  function renderSlot(index: number) {
+    const image = secondary[index - 1] ?? null;
+    if (image) {
+      return (
+        <div className="group relative aspect-square overflow-hidden rounded-xl border border-stone-200 bg-stone-100" key={image.previewUrl}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img alt={`Upload ${index + 1}`} className="h-full w-full object-cover" src={image.previewUrl} />
+          <button
+            aria-label={`Remove photo ${index + 1}`}
+            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-stone-700 shadow-sm transition hover:bg-rose-50 hover:text-rose-700"
+            disabled={disabled}
+            onClick={() => onRemoveImage(image.previewUrl)}
+            type="button"
+          >
+            <CloseIcon />
+          </button>
+        </div>
+      );
+    }
+    return (
+      <button
+        className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-stone-300 bg-[#faf7f0] px-2 text-center text-xs font-semibold text-[#6B6257] transition hover:border-[#C98A1D]/60 hover:bg-amber-50/50 disabled:cursor-not-allowed disabled:opacity-60"
+        disabled={disabled}
+        key={`slot-${index}`}
+        onClick={() => fileInputRef.current?.click()}
+        type="button"
+      >
+        <Plus aria-hidden="true" className="h-4 w-4 text-amber-700" />
+        <span>{index === 4 ? "Add more" : "Add photo"}</span>
+        <span className="text-[10px] font-medium text-stone-400">{index === 4 ? "Up to 5 photos" : "Optional"}</span>
+      </button>
+    );
+  }
 
   return (
-    <section className={`rounded-lg border border-slate-200 bg-white p-5 shadow-sm ${className ?? ""}`}>
+    <section className={`rounded-2xl border border-stone-200/90 bg-white p-5 shadow-sm sm:p-6 ${className ?? ""}`}>
       <input
         accept="image/jpeg,image/png,image/webp"
         className="hidden"
@@ -1126,78 +1567,84 @@ function PhotoUploadPanel({
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="trade-kicker">1 Photos</p>
-          <h2 className="mt-2 text-xl font-semibold text-slate-950">Start with the item</h2>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600">
-            Clear photos help the AI estimate item type, condition, and risk.
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#C98A1D]">1. Photos</p>
+          <h2 className="mt-2 text-xl font-semibold text-stone-950">Great photos sell faster</h2>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#6B6257]">
+            Add clear, bright photos from multiple angles.
           </p>
         </div>
-        <StatusPill tone={images.length > 0 ? "good" : "neutral"}>{images.length}/5 photos</StatusPill>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-4">
-        {slots.map((image, index) =>
-          image ? (
-            <div className="group relative overflow-hidden rounded-lg border border-slate-200 bg-slate-100" key={image.previewUrl}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                alt={`Upload preview ${index + 1}`}
-                className="aspect-square w-full object-cover"
-                src={image.previewUrl}
-              />
-              {index === 0 ? (
-                <span className="absolute left-2 top-2 rounded-lg bg-slate-950/90 px-2 py-1 text-xs font-semibold text-white">
-                  Primary
-                </span>
-              ) : null}
-              <button
-                aria-label={`Remove photo ${index + 1}`}
-                className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-white/95 text-slate-700 shadow-sm transition hover:bg-rose-50 hover:text-rose-700"
-                disabled={disabled}
-                onClick={() => onRemoveImage(image.previewUrl)}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-              <div className="absolute inset-x-0 bottom-0 bg-slate-950/70 px-2 py-1 text-xs text-white">
-                <p className="truncate">{image.file.name}</p>
-              </div>
-            </div>
-          ) : (
-            <button
-              className="flex aspect-square flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 text-center text-sm font-semibold text-slate-600 transition hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-800 disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={disabled}
-              key={`slot-${index}`}
-              onClick={() => fileInputRef.current?.click()}
-              type="button"
-            >
-              <UploadIcon />
-              <span>{index === 0 ? "Add photo" : "Optional"}</span>
-            </button>
-          ),
-        )}
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
         <button
-          className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
-          disabled={disabled || images.length >= 5}
-          onClick={() => fileInputRef.current?.click()}
-          type="button"
-        >
-          <UploadIcon />
-          Upload photos
-        </button>
-        <button
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-emerald-500 hover:text-emerald-800 disabled:cursor-not-allowed disabled:text-slate-400"
+          className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-900 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled || images.length >= 5}
           onClick={() => cameraInputRef.current?.click()}
           type="button"
         >
-          <CameraIcon />
+          <Camera aria-hidden="true" className="h-4 w-4" />
           Use camera
         </button>
       </div>
+
+      <div className="mt-6 flex flex-col gap-4 lg:flex-row">
+        <div className="relative min-h-[260px] flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-gradient-to-br from-stone-800 via-stone-900 to-black lg:min-h-[300px]">
+          {main ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img alt="Main listing photo" className="h-full min-h-[260px] w-full object-cover lg:min-h-[300px]" src={main.previewUrl} />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
+            </>
+          ) : (
+            <button
+              className="flex h-full min-h-[260px] w-full flex-col items-center justify-center gap-3 p-6 text-center transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60 lg:min-h-[300px]"
+              disabled={disabled}
+              onClick={() => fileInputRef.current?.click()}
+              type="button"
+            >
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-200">
+                Main photo
+              </span>
+              <Upload aria-hidden="true" className="h-10 w-10 text-amber-300/90" />
+              <p className="text-lg font-semibold text-white">Add main photo</p>
+              <p className="max-w-xs text-sm text-stone-300">This will be your cover image.</p>
+              <p className="max-w-sm text-xs leading-5 text-stone-400">
+                Recommended: Square images, good lighting, clean background
+              </p>
+            </button>
+          )}
+          {main ? (
+            <>
+              <span className="absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+                Main photo
+              </span>
+              <button
+                aria-label="Remove main photo"
+                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/95 text-stone-700 shadow-md hover:bg-rose-50 hover:text-rose-700"
+                disabled={disabled}
+                onClick={() => onRemoveImage(main.previewUrl)}
+                type="button"
+              >
+                <CloseIcon />
+              </button>
+              <button
+                className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-white/95 px-4 py-2 text-sm font-semibold text-stone-900 shadow-lg backdrop-blur-sm"
+                disabled={disabled || images.length >= 5}
+                onClick={() => fileInputRef.current?.click()}
+                type="button"
+              >
+                <Upload aria-hidden="true" className="h-4 w-4" />
+                Replace
+              </button>
+            </>
+          ) : null}
+        </div>
+
+        <div className="grid w-full shrink-0 grid-cols-2 gap-3 sm:max-w-md lg:w-[280px] lg:max-w-none">
+          {[1, 2, 3, 4].map((i) => renderSlot(i))}
+        </div>
+      </div>
+
+      <p className="mt-4 text-sm text-[#6B6257]">
+        <span className="font-semibold text-stone-800">Tip:</span> Items with 3+ photos get up to 3x more interest.
+      </p>
     </section>
   );
 }
@@ -1252,20 +1699,20 @@ function AgentConversationPanel({
   setFreeText: Dispatch<SetStateAction<string>>;
 }>) {
   return (
-    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm ${className ?? ""}`}>
+    <section className={`overflow-hidden rounded-2xl border border-stone-200/90 bg-white shadow-sm ${className ?? ""}`}>
       {/* Collapsible header */}
       <button
-        className="flex w-full items-center justify-between gap-3 border-b border-slate-200 p-5 text-left transition hover:bg-slate-50"
+        className="flex w-full items-center justify-between gap-3 border-b border-stone-100 bg-[#faf7f0]/40 p-5 text-left transition hover:bg-amber-50/30"
         onClick={onToggle}
         type="button"
       >
         <div className="flex flex-col gap-1">
-          <p className="trade-kicker">Optional</p>
-          <p className="flex items-center gap-2 text-base font-semibold text-slate-950">
-            <Sparkles aria-hidden="true" className="h-4 w-4 text-emerald-700" />
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#C98A1D]">Optional</p>
+          <p className="flex items-center gap-2 text-base font-semibold text-stone-950">
+            <Sparkles aria-hidden="true" className="h-4 w-4 text-amber-700" />
             AI listing assistant
           </p>
-          <p className="text-xs leading-5 text-slate-500">
+          <p className="text-xs leading-5 text-[#6B6257]">
             AI can help draft your title, category, description, and fair price. You can publish without it.
           </p>
         </div>
@@ -1540,7 +1987,7 @@ function DraftReviewPanel({
   const [activeTab, setActiveTab] = useState<DraftTab>("decision");
 
   return (
-    <aside className={`h-fit rounded-lg border border-slate-200 bg-white shadow-sm lg:sticky lg:top-6 ${className ?? ""}`}>
+    <aside className={`h-fit rounded-2xl border border-stone-200/90 bg-white shadow-sm ${className ?? ""}`}>
       <div className="border-b border-slate-200 p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -1909,16 +2356,25 @@ function EditableField({
   label,
   value,
   onChange,
+  id,
+  placeholder,
+  maxLength,
 }: Readonly<{
   label: string;
   value: string;
   onChange: (value: string) => void;
+  id?: string;
+  placeholder?: string;
+  maxLength?: number;
 }>) {
   return (
-    <label className="grid gap-2">
-      <span className="trade-field-label">{label}</span>
+    <label className="grid gap-2" htmlFor={id}>
+      <span className="text-sm font-semibold text-stone-900">{label}</span>
       <input
-        className="trade-input"
+        className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white"
+        id={id}
+        maxLength={maxLength}
+        placeholder={placeholder}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -1968,9 +2424,9 @@ function EditableSelect({
 }>) {
   return (
     <label className="grid gap-2">
-      <span className="trade-field-label">{label}</span>
+      <span className="text-sm font-semibold text-stone-900">{label}</span>
       <select
-        className="trade-input"
+        className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       >
@@ -2181,14 +2637,6 @@ function isContactReady(payload: ListingPayload): boolean {
     return Boolean(payload.contact_value?.trim());
   }
   return true;
-}
-
-function UploadIcon() {
-  return <Upload aria-hidden="true" className="h-4 w-4" />;
-}
-
-function CameraIcon() {
-  return <Camera aria-hidden="true" className="h-4 w-4" />;
 }
 
 function SendIcon() {

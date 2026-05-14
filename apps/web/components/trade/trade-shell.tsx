@@ -135,7 +135,7 @@ export function TradeShell({
 
           <nav aria-label="Trade navigation" className="hidden items-center gap-1.5 lg:flex">
             {mainNav.map((item) => (
-              <DesktopNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} />
+              <DesktopNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} pathname={pathname} />
             ))}
           </nav>
 
@@ -199,7 +199,7 @@ export function TradeShell({
       >
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
           {mobileNav.map((item) => (
-            <MobileNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} />
+            <MobileNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} pathname={pathname} />
           ))}
         </div>
       </nav>
@@ -256,10 +256,12 @@ function TradeOnboardingCard({ onDismiss }: Readonly<{ onDismiss: () => void }>)
   );
 }
 
-function DesktopNavLink({ active, item }: Readonly<{ active: boolean; item: NavItem }>) {
+function DesktopNavLink({ active, item, pathname }: Readonly<{ active: boolean; item: NavItem; pathname: string }>) {
   const Icon = item.icon;
+  const demoteSellCta =
+    (pathname === "/trade/saved" || pathname.startsWith("/trade/dashboard")) && item.href === "/trade/sell";
 
-  if (item.kind === "primary") {
+  if (item.kind === "primary" && !demoteSellCta) {
     return (
       <Link
         className={`inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-4 text-sm font-semibold text-stone-950 shadow-md shadow-amber-900/20 transition duration-200 hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 ${
@@ -290,15 +292,28 @@ function DesktopNavLink({ active, item }: Readonly<{ active: boolean; item: NavI
       className={`inline-flex h-11 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${className}`}
       href={item.href}
     >
-      <Icon aria-hidden="true" className={`h-4 w-4 ${active ? "text-amber-800" : ""}`} />
-      {item.label}
+      <Icon
+        aria-hidden="true"
+        className={`h-4 w-4 ${
+          (item.href === "/trade/saved" || item.href === "/trade/dashboard") && active
+            ? "text-[#A85F00]"
+            : active
+              ? "text-amber-800"
+              : ""
+        }`}
+      />
+      <span className={(item.href === "/trade/saved" || item.href === "/trade/dashboard") && active ? "text-[#111111]" : ""}>
+        {item.label}
+      </span>
     </Link>
   );
 }
 
-function MobileNavLink({ active, item }: Readonly<{ active: boolean; item: NavItem }>) {
+function MobileNavLink({ active, item, pathname }: Readonly<{ active: boolean; item: NavItem; pathname: string }>) {
   const Icon = item.icon;
-  const isGold = item.kind === "primary";
+  const demoteSellCta =
+    (pathname === "/trade/saved" || pathname.startsWith("/trade/dashboard")) && item.href === "/trade/sell";
+  const isGold = item.kind === "primary" && !demoteSellCta;
 
   return (
     <Link
@@ -312,7 +327,9 @@ function MobileNavLink({ active, item }: Readonly<{ active: boolean; item: NavIt
           isGold
             ? "bg-gradient-to-br from-amber-400 to-amber-600 text-stone-950 shadow-sm"
             : active
-              ? "bg-[#f5f0e6] text-amber-900 ring-1 ring-amber-200/80"
+              ? item.href === "/trade/saved" || item.href === "/trade/dashboard"
+                ? "bg-[#f5f0e6] text-[#A85F00] ring-1 ring-amber-200/80"
+                : "bg-[#f5f0e6] text-amber-900 ring-1 ring-amber-200/80"
               : "bg-transparent text-stone-500"
         }`}
       >
@@ -363,9 +380,28 @@ function UtilityLink({
   );
 }
 
+const TRADE_APP_ROUTE_SEGMENTS = new Set([
+  "sell",
+  "saved",
+  "want",
+  "dashboard",
+  "notifications",
+  "profile",
+  "moderation",
+  "evaluation",
+  "launch-checklist",
+]);
+
 function isActiveRoute(pathname: string, href: string): boolean {
   if (href === "/trade") {
-    return pathname === "/trade" || /^\/trade\/[^/]+$/.test(pathname);
+    if (pathname === "/trade") {
+      return true;
+    }
+    const detail = pathname.match(/^\/trade\/([^/]+)$/);
+    if (!detail) {
+      return false;
+    }
+    return !TRADE_APP_ROUTE_SEGMENTS.has(detail[1]!);
   }
   if (href === "/trade/want") {
     return pathname.startsWith("/trade/want") || pathname.startsWith("/wanted-posts");

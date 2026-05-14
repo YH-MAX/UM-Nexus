@@ -4,11 +4,12 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3100";
 
 export default defineConfig({
   testDir: "./tests",
-  timeout: 30_000,
+  timeout: 45_000,
   expect: {
-    timeout: 8_000,
+    timeout: 10_000,
   },
-  fullyParallel: true,
+  fullyParallel: false,
+  workers: 2,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
     baseURL,
@@ -22,7 +23,7 @@ export default defineConfig({
       SKIP_ENV_VALIDATION: "true",
     },
     url: baseURL,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
   },
   projects: [

@@ -20,15 +20,14 @@ test.describe("guest marketplace behavior", () => {
     await page.getByPlaceholder(/Search textbooks/i).fill("calculator");
     await expect(page.getByPlaceholder(/Search textbooks/i)).toHaveValue("calculator");
 
-    await page.getByRole("button", { name: "Electronics" }).click();
+    await page.getByRole("button", { name: "Electronics" }).first().click();
     await expect(page.getByRole("button", { name: /Clear all filters/i })).toBeVisible();
   });
 
-  test("sell page keeps manual listing available without AI", async ({ page }) => {
+  test("sell page asks guest users to sign in", async ({ page }) => {
     await page.goto("/trade/sell");
 
-    await expect(page.getByRole("heading", { name: /Sell an item/i })).toBeVisible();
-    await expect(page.getByText(/Create a campus listing manually first/i)).toBeVisible();
-    await expect(page.getByText(/AI is optional/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Sign in required/i })).toBeVisible();
+    await expect(page.getByText(/Sign in with your UM account before creating seller listings/i)).toBeVisible();
   });
 });

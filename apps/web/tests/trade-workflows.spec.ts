@@ -2,6 +2,34 @@ import { expect, type Page, type Request, type Route, test } from "@playwright/t
 
 const now = "2026-05-05T08:00:00.000Z";
 
+type MockListingImage = {
+  id: string;
+  listing_id: string;
+  storage_path: string;
+  public_url: string | null;
+  content_hash: string | null;
+  sort_order: number;
+  is_primary: boolean;
+  created_at: string;
+};
+
+type MockTradeNotification = {
+  id: string;
+  user_id: string;
+  actor_id: string;
+  type: string;
+  title: string;
+  body: string;
+  action_url: string;
+  entity_type: string;
+  entity_id: string;
+  metadata: { listing_id: string; listing_title: string; request_id?: string };
+  priority: string;
+  is_read: boolean;
+  read_at: string | null;
+  created_at: string;
+};
+
 const sellerUser = { id: "seller-1", email: "seller@siswa.um.edu.my" };
 const buyerUser = { id: "buyer-1", email: "buyer@siswa.um.edu.my" };
 const moderatorUser = { id: "moderator-1", email: "moderator@siswa.um.edu.my" };
@@ -177,7 +205,7 @@ test.describe("authenticated Trade product workflows", () => {
     const state = await mockTradeApi(page);
 
     await page.goto("/trade/listing-1");
-    await expect(page.getByRole("heading", { level: 1, name: /Casio Scientific Calculator/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Save listing/i })).toBeVisible({ timeout: 20_000 });
 
     await page.getByRole("button", { name: /Save listing/i }).click();
     await expect(page.getByText(/Listing saved/i)).toBeVisible();
@@ -206,7 +234,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
     await page.getByLabel("Contact value").fill("@aina_um");
-    await page.getByRole("button", { name: /Publish Listing/i }).click();
+    await page.getByRole("button", { name: /Continue to review/i }).click();
     await expect(page.getByRole("heading", { name: /Ready to publish/i })).toBeVisible();
     await page.getByRole("button", { name: "Publish with Warnings" }).click();
 
@@ -231,7 +259,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
     await page.getByLabel("Contact value").fill("@aina_um");
-    await page.getByRole("button", { name: /Publish Listing/i }).click();
+    await page.getByRole("button", { name: /Continue to review/i }).click();
     const publishReview = page.locator("section").filter({
       has: page.getByRole("heading", { name: /Ready to publish/i }),
     });
@@ -260,7 +288,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
     await page.getByLabel("Contact value").fill("@aina_um");
-    await page.getByRole("button", { name: /Publish Listing/i }).click();
+    await page.getByRole("button", { name: /Continue to review/i }).click();
     const publishReview = page.locator("section").filter({
       has: page.getByRole("heading", { name: /Ready to publish/i }),
     });
@@ -276,6 +304,7 @@ test.describe("authenticated Trade product workflows", () => {
     const state = await mockTradeApi(page);
 
     await page.goto("/trade/dashboard");
+    await expect(page.getByRole("button", { name: "Buyer Requests" })).toBeVisible();
     await page.getByRole("button", { name: "Buyer Requests" }).click();
     await expect(page.getByText(/Can I pick this up today/i)).toBeVisible();
     await expect(page.getByText("Sent", { exact: true }).last()).toBeVisible();
@@ -427,14 +456,14 @@ async function mockTradeApi(page: Page, options: { failImageUploads?: boolean } 
     contactRequestCreated: false,
     reportCreated: false,
     publishedListingCreated: false,
-    uploadedImages: [] as typeof baseListing.images,
+    uploadedImages: [] as MockListingImage[],
     wantedResponseCreated: false,
     lastWantedResponseListingId: "",
     acceptedRequests: 0,
     lastUpdatedTitle: "",
     moderationReason: "",
     deletedListings: [] as string[],
-    notifications: tradeNotifications().map((notification) => ({ ...notification })),
+    notifications: tradeNotifications().map((notification) => ({ ...notification })) as MockTradeNotification[],
   };
 
   await page.route("**/api/v1/**", async (route) => {

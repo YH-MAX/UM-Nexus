@@ -1,9 +1,25 @@
 "use client";
 
 import Link from "next/link";
+import { Cormorant_Garamond } from "next/font/google";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Megaphone, Search, Send, X } from "lucide-react";
+import {
+  ArrowRight,
+  BadgeCheck,
+  Check,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Lightbulb,
+  Megaphone,
+  Search,
+  Send,
+  Shield,
+  Sparkles,
+  Tag,
+  X,
+} from "lucide-react";
 
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -22,6 +38,7 @@ import {
   listWantedPosts,
   pickupAreas,
   tradeCategories,
+  tradeSafetyMessage,
   updateWantedPostStatus,
   type CurrentProfile,
   type Listing,
@@ -62,6 +79,231 @@ const closeReasons = [
   { value: "no_longer_needed", label: "I no longer need it" },
   { value: "other", label: "Other" },
 ] as const;
+
+const wantDisplay = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  display: "swap",
+  variable: "--font-want-display",
+});
+
+const suggestionPresets = [
+  {
+    text: "Looking for a used monitor under RM200",
+    search: "monitor",
+    category: "electronics",
+    max_budget: "200",
+    pickup_area: "",
+  },
+  {
+    text: "Need a Data Structures textbook",
+    search: "Data Structures textbook",
+    category: "textbooks_notes",
+    max_budget: "",
+    pickup_area: "",
+  },
+  {
+    text: "Looking for a rice cooker near KK12",
+    search: "rice cooker",
+    category: "kitchen_appliances",
+    max_budget: "",
+    pickup_area: "kk12",
+  },
+] as const;
+
+const popularCategories = [
+  { value: "electronics", label: "Electronics" },
+  { value: "textbooks_notes", label: "Books" },
+  { value: "dorm_room", label: "Dorm" },
+  { value: "kitchen_appliances", label: "Kitchen" },
+  { value: "furniture", label: "Furniture" },
+] as const;
+
+function WantPageHero({
+  displayClass,
+  totalActive,
+}: Readonly<{
+  displayClass: string;
+  totalActive: number;
+}>) {
+  return (
+    <header className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+      <div className="min-w-0 max-w-3xl">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#C98A1D]">UM Nexus Trade</p>
+        <h1 className={`${displayClass} mt-2 text-4xl font-semibold leading-tight text-[#111111] sm:text-[2.75rem]`}>
+          Wanted board
+        </h1>
+        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[#6B6257] sm:text-base">
+          Browse buyer demand, post what you need, or respond safely when you have the right item.
+        </p>
+      </div>
+      <div className="grid w-full shrink-0 grid-cols-1 gap-3 sm:grid-cols-3 lg:max-w-[38rem] xl:max-w-[42rem]">
+        <div className="flex items-center gap-3 rounded-2xl border border-[#E8DED0] bg-white p-4 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FFF8EA] text-[#C98A1D]">
+            <Clock aria-hidden="true" className="h-5 w-5" strokeWidth={1.75} />
+          </span>
+          <div>
+            <p className="text-2xl font-bold tabular-nums text-[#111111]">{totalActive}</p>
+            <p className="text-xs font-semibold text-[#6B6257]">Active requests</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 rounded-2xl border border-[#E8DED0] bg-white p-4 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-stone-950 text-[#D99A2B]">
+            <BadgeCheck aria-hidden="true" className="h-5 w-5" strokeWidth={2} />
+          </span>
+          <div>
+            <p className="text-sm font-bold text-[#111111]">UM Verified</p>
+            <p className="text-xs font-semibold text-[#6B6257]">Students only</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 rounded-2xl border border-[#E8DED0] bg-white p-4 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FFF8EA] text-[#C98A1D]">
+            <Shield aria-hidden="true" className="h-5 w-5" strokeWidth={1.75} />
+          </span>
+          <div>
+            <p className="text-sm font-bold leading-snug text-[#111111]">Safe campus pickup</p>
+            <p className="text-xs font-semibold text-[#6B6257]">Meet in public areas</p>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function WantIntroCard({
+  onPost,
+  onPickSuggestion,
+}: Readonly<{
+  onPost: () => void;
+  onPickSuggestion: (preset: (typeof suggestionPresets)[number]) => void;
+}>) {
+  return (
+    <section className="rounded-2xl border border-[#D99A2B]/35 bg-gradient-to-br from-[#FFFBF2] via-[#FFF8EA] to-amber-50/40 p-6 shadow-sm sm:p-8">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)] lg:items-start">
+        <div>
+          <div className="flex items-center gap-2 text-[#C98A1D]">
+            <Sparkles aria-hidden="true" className="h-4 w-4" />
+            <p className="text-xs font-semibold uppercase tracking-[0.14em]">Looking for something?</p>
+          </div>
+          <h2 className="mt-3 text-xl font-bold leading-snug text-[#111111] sm:text-2xl">
+            Post what you need, and UM students who have it can send you an offer.
+          </h2>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-[#6B6257] sm:text-base">
+            Wanted requests help sellers understand real campus demand before they create a listing.
+          </p>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-stone-950 px-6 text-sm font-semibold text-white shadow-md transition hover:bg-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+              onClick={onPost}
+              type="button"
+            >
+              <Megaphone aria-hidden="true" className="h-4 w-4" />
+              Post a request
+            </button>
+            <Link
+              className="inline-flex items-center gap-1 text-sm font-semibold text-[#A85F00] underline-offset-4 hover:underline"
+              href="/safety"
+            >
+              How it works
+              <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+        <div className="grid gap-2">
+          {suggestionPresets.map((preset) => (
+            <button
+              className="group flex w-full items-center justify-between gap-3 rounded-xl border border-[#E8DED0] bg-white px-4 py-3 text-left text-sm font-medium text-[#111111] shadow-sm transition hover:border-[#C98A1D]/45 hover:shadow-md"
+              key={preset.text}
+              onClick={() => onPickSuggestion(preset)}
+              type="button"
+            >
+              <span className="min-w-0">{preset.text}</span>
+              <ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-[#C98A1D] opacity-70 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function WantSidebar({
+  mode,
+  onPickCategoryBrowse,
+  onPickCategoryPost,
+}: Readonly<{
+  mode: "browse" | "post";
+  onPickCategoryBrowse: (value: string) => void;
+  onPickCategoryPost: (value: string) => void;
+}>) {
+  const tips = [
+    "Mention your budget",
+    "Add preferred pickup place",
+    "Be specific about model/condition",
+    "Reply through UM Nexus Trade",
+  ];
+
+  return (
+    <aside className="flex min-w-0 flex-col gap-5 lg:sticky lg:top-24">
+      <section className="rounded-2xl border border-[#E8DED0] bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-[#C98A1D]">
+          <Lightbulb aria-hidden="true" className="h-5 w-5" />
+          <h3 className="text-base font-bold text-[#111111]">Tips for a good request</h3>
+        </div>
+        <ul className="mt-4 space-y-3">
+          {tips.map((tip) => (
+            <li className="flex items-start gap-2.5 text-sm text-[#6B6257]" key={tip}>
+              <Check aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+              {tip}
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="rounded-2xl border border-[#E8DED0] bg-white p-5 shadow-sm">
+        <div className="flex items-center gap-2 text-[#C98A1D]">
+          <Tag aria-hidden="true" className="h-5 w-5" />
+          <h3 className="text-base font-bold text-[#111111]">Popular categories</h3>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {popularCategories.map((cat) => (
+            <button
+              className="rounded-full border border-[#E8DED0] bg-[#FFFBF2] px-3.5 py-1.5 text-xs font-semibold text-[#111111] transition hover:border-[#C98A1D]/50 hover:bg-amber-50"
+              key={cat.value}
+              onClick={() => (mode === "browse" ? onPickCategoryBrowse(cat.value) : onPickCategoryPost(cat.value))}
+              type="button"
+            >
+              {cat.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-[#D99A2B]/40 bg-gradient-to-br from-[#FFFBF2] to-[#FFF8EA] p-5 shadow-sm">
+        <div className="flex gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#E8DED0] bg-white text-[#C98A1D]">
+            <Shield aria-hidden="true" className="h-5 w-5" />
+          </span>
+          <div>
+            <h3 className="text-base font-bold text-[#111111]">Trade safely on campus</h3>
+            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-[#6B6257]">{tradeSafetyMessage}</p>
+          </div>
+        </div>
+      </section>
+
+      {mode === "post" ? (
+        <section className="rounded-2xl border border-[#E8DED0] bg-white p-5 shadow-sm">
+          <h3 className="text-base font-bold text-[#111111]">What sellers see</h3>
+          <ul className="mt-3 space-y-2 text-sm text-[#6B6257]">
+            <li className="rounded-lg border border-[#E8DED0] bg-[#FAF7F0] px-3 py-2">Your request appears on the signed-in Wanted board.</li>
+            <li className="rounded-lg border border-[#E8DED0] bg-[#FAF7F0] px-3 py-2">Sellers can send you an offer or create a listing from your request.</li>
+            <li className="rounded-lg border border-[#E8DED0] bg-[#FAF7F0] px-3 py-2">Seller contact details stay hidden until you accept an offer.</li>
+          </ul>
+        </section>
+      ) : null}
+    </aside>
+  );
+}
 
 export default function WantPage() {
   const router = useRouter();
@@ -264,184 +506,248 @@ export default function WantPage() {
     }
   }
 
+  function applySuggestion(preset: (typeof suggestionPresets)[number]) {
+    setFilters((current) => ({
+      ...current,
+      search: preset.search,
+      category: preset.category,
+      max_budget: preset.max_budget,
+      pickup_area: preset.pickup_area,
+    }));
+    setMode("browse");
+  }
+
   return (
-    <TradeShell
-      title="Wanted board"
-      description="Browse buyer demand, post what you need, or respond safely when you have the right item."
-    >
-      {!user ? (
-        <RequireAuthCard description="Sign in with your UM account to browse and post wanted requests." intent="post_wanted" returnTo="/trade/want" />
-      ) : null}
+    <div className={user ? wantDisplay.variable : undefined}>
+      <TradeShell
+        description="Browse buyer demand, post what you need, or respond safely when you have the right item."
+        hideHero={Boolean(user)}
+        title="Wanted board"
+      >
+        {!user ? (
+          <RequireAuthCard description="Sign in with your UM account to browse and post wanted requests." intent="post_wanted" returnTo="/trade/want" />
+        ) : null}
 
-      {user ? (
-        <div className="grid gap-5">
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
-              <div>
-                <p className="text-sm font-semibold text-emerald-800">Looking for something?</p>
-                <h2 className="mt-2 text-2xl font-semibold text-slate-950">Post what you need, and UM students who have it can send you an offer.</h2>
-                <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-                  Wanted requests help sellers understand real campus demand before they create a listing.
-                </p>
+        {user ? (
+          <div className="mx-auto w-full max-w-[90rem] space-y-7 pb-6">
+            <WantPageHero displayClass={wantDisplay.className} totalActive={total} />
+
+            {notice ? (
+              <div className="flex gap-3 rounded-2xl border border-emerald-200/80 bg-emerald-50/90 p-4 text-emerald-950 shadow-sm">
+                <CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="text-sm font-medium">{notice}</p>
               </div>
-              <div className="grid gap-2 text-sm text-slate-700">
-                {[
-                  "Looking for a used monitor under RM200",
-                  "Need a Data Structures textbook",
-                  "Looking for a rice cooker near KK12",
-                ].map((example) => (
-                  <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" key={example}>
-                    {example}
-                  </p>
-                ))}
+            ) : null}
+            {error ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-900 shadow-sm" role="alert">
+                {error}
               </div>
-            </div>
-          </section>
+            ) : null}
 
-          <section className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${mode === "browse" ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"}`}
-                onClick={() => setMode("browse")}
-                type="button"
-              >
-                Browse Wanted
-              </button>
-              <button
-                className={`rounded-lg px-4 py-2 text-sm font-semibold transition ${mode === "post" ? "bg-slate-950 text-white" : "text-slate-700 hover:bg-slate-50"}`}
-                onClick={() => setMode("post")}
-                type="button"
-              >
-                Post Wanted Request
-              </button>
-            </div>
-            <p className="px-3 text-sm text-slate-500">
-              {total} active request{total === 1 ? "" : "s"} · {ownActiveCount} yours
-            </p>
-          </section>
-
-          {notice ? (
-            <div className="trade-alert trade-alert-success flex gap-3">
-              <CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>{notice}</p>
-            </div>
-          ) : null}
-          {error ? (
-            <div className="trade-alert trade-alert-danger">
-              {error}
-            </div>
-          ) : null}
-
-          {mode === "browse" ? (
-            <section className="grid gap-5">
-              <div className="trade-card grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-6">
-                <label className="relative block min-w-0 md:col-span-2 xl:col-span-2">
-                  <Search aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <input
-                    className="trade-input pl-10"
-                    placeholder="Search monitors, books, rice cookers..."
-                    value={filters.search}
-                    onChange={(event) => updateFilter("search", event.target.value)}
-                  />
-                </label>
-                <SelectField label="Category" value={filters.category} options={[{ value: "", label: "All categories" }, ...tradeCategories]} onChange={(value) => updateFilter("category", value)} />
-                <SelectField label="Pickup" value={filters.pickup_area} options={[{ value: "", label: "Any pickup" }, ...pickupAreas]} onChange={(value) => updateFilter("pickup_area", value)} />
-                <TextField label="Max budget" type="number" value={filters.max_budget} onChange={(value) => updateFilter("max_budget", value)} />
-                <SelectField
-                  label="Sort"
-                  value={filters.sort}
-                  options={[
-                    { value: "latest", label: "Newest" },
-                    { value: "budget_high", label: "Highest budget" },
-                    { value: "budget_low", label: "Lowest budget" },
-                  ]}
-                  onChange={(value) => updateFilter("sort", value)}
-                />
-                {hasFilters ? (
-                  <button className="trade-button-secondary md:col-span-2 xl:col-span-6" onClick={() => setFilters(initialFilters)} type="button">
-                    <X aria-hidden="true" className="h-4 w-4" />
-                    Clear wanted filters
-                  </button>
-                ) : null}
-              </div>
-
-              {isLoadingBoard ? (
-                <div className="trade-card p-5" aria-busy="true" role="status">
-                  <div className="flex items-center gap-3 text-sm font-semibold text-slate-600">
-                    <span className="trade-loading-block h-10 w-10 shrink-0" />
-                    Loading wanted board...
-                  </div>
-                </div>
-              ) : posts.length === 0 ? (
-                <div className="trade-empty-panel">
-                  <h2 className="text-lg font-semibold text-slate-950">No wanted requests found</h2>
-                  <p className="mt-2 text-sm text-slate-600">Try clearing filters or post the first request for this category.</p>
-                  <button className="trade-button-primary mt-5" onClick={() => setMode("post")} type="button">
-                    <Megaphone aria-hidden="true" className="h-4 w-4" />
-                    Post Wanted Request
-                  </button>
-                </div>
-              ) : (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {posts.map((post) => (
-                    <WantedCard
-                      isMine={post.buyer_id === myUserId}
-                      isUpdating={isUpdatingPost === post.id}
-                      key={post.id}
-                      post={post}
-                      onRespond={() => setResponsePost(post)}
-                      onRequestClose={setClosePost}
-                      onStatusChange={changeWantedStatus}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          ) : (
-            <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-              {!profileReady ? (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 lg:col-span-2">
-                  Complete your profile before posting wanted requests. You can keep browsing and responding to demand now.
-                </div>
-              ) : null}
-              <form className="trade-card grid gap-5 p-5" onSubmit={handleSubmit}>
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Wanted request</p>
-                  <h2 className="mt-2 text-xl font-semibold text-slate-950">Tell sellers what you need</h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Keep it concrete: item, budget, pickup area, urgency, and acceptable alternatives.
-                  </p>
-                </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <TextField label="Title" required value={form.title} onChange={(value) => updateField("title", value)} />
-                  <TextField label="Desired item or model" value={form.desired_item_name} onChange={(value) => updateField("desired_item_name", value)} />
-                  <SelectField label="Category" value={form.category} options={tradeCategories} onChange={(value) => updateField("category", value)} />
-                  <TextField label="Maximum budget (MYR)" type="number" value={form.max_budget} onChange={(value) => updateField("max_budget", value)} />
-                  <SelectField label="Preferred pickup area" value={form.preferred_pickup_area} options={pickupAreas} onChange={(value) => updateField("preferred_pickup_area", value)} />
-                  <TextField label="Residential college / KK" value={form.residential_college} onChange={(value) => updateField("residential_college", value)} />
-                </div>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-slate-800">Need details, urgency, and acceptable alternatives</span>
-                  <textarea className="trade-input min-h-32" value={form.description} onChange={(event) => updateField("description", event.target.value)} />
-                </label>
-                <button className="trade-button-primary w-full md:w-fit" disabled={isSubmitting || !profileReady} type="submit">
-                  <Megaphone aria-hidden="true" className="h-4 w-4" />
-                  {isSubmitting ? "Posting..." : "Post Wanted Request"}
+            <div className="flex flex-col gap-4 rounded-2xl border border-[#E8DED0] bg-white p-3 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  className={`inline-flex min-h-11 items-center justify-center rounded-full px-5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                    mode === "browse"
+                      ? "bg-stone-950 text-white shadow-md"
+                      : "border border-transparent bg-transparent text-[#111111] hover:bg-[#FAF7F0]"
+                  }`}
+                  onClick={() => setMode("browse")}
+                  type="button"
+                >
+                  Browse Wanted
                 </button>
-              </form>
+                <button
+                  className={`inline-flex min-h-11 items-center justify-center rounded-full px-5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                    mode === "post"
+                      ? "bg-stone-950 text-white shadow-md"
+                      : "border border-transparent bg-transparent text-[#111111] hover:bg-[#FAF7F0]"
+                  }`}
+                  onClick={() => setMode("post")}
+                  type="button"
+                >
+                  Post Wanted Request
+                </button>
+              </div>
+              <p className="px-1 text-sm text-[#6B6257] sm:text-right">
+                {total} active request{total === 1 ? "" : "s"} · {ownActiveCount} yours
+              </p>
+            </div>
 
-              <aside className="trade-card h-fit p-5">
-                <h2 className="text-lg font-semibold text-slate-950">What sellers see</h2>
-                <div className="mt-4 grid gap-3 text-sm text-slate-700">
-                  {["Your request appears on the signed-in Wanted board.", "Sellers can send you an offer or create a listing from your request.", "Seller contact details stay hidden until you accept an offer."].map((example) => (
-                    <p className="rounded-lg border border-slate-200 bg-slate-50 p-3" key={example}>{example}</p>
-                  ))}
+            {mode === "browse" ? (
+              <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] lg:items-start lg:gap-9">
+                <div className="min-w-0 space-y-6">
+                  <WantIntroCard onPickSuggestion={applySuggestion} onPost={() => setMode("post")} />
+
+                  <section className="rounded-2xl border border-[#E8DED0] bg-white p-5 shadow-sm sm:p-6">
+                    <div className="grid gap-4 xl:grid-cols-6">
+                      <label className="grid min-w-0 gap-1.5 xl:col-span-2">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6B6257]">Search</span>
+                        <div className="relative">
+                          <Search
+                            aria-hidden="true"
+                            className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400"
+                          />
+                          <input
+                            className="trade-input min-h-[46px] w-full rounded-xl border-[#E8DED0] bg-white pl-11"
+                            placeholder="Search monitors, books, rice cookers..."
+                            value={filters.search}
+                            onChange={(event) => updateFilter("search", event.target.value)}
+                          />
+                        </div>
+                      </label>
+                      <SelectField
+                        label="Category"
+                        options={[{ value: "", label: "All categories" }, ...tradeCategories]}
+                        value={filters.category}
+                        onChange={(value) => updateFilter("category", value)}
+                      />
+                      <SelectField
+                        label="Pickup"
+                        options={[{ value: "", label: "Any pickup" }, ...pickupAreas]}
+                        value={filters.pickup_area}
+                        onChange={(value) => updateFilter("pickup_area", value)}
+                      />
+                      <div className="grid min-w-0 gap-1.5">
+                        <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6B6257]">Max budget</span>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-stone-500">
+                            RM
+                          </span>
+                          <input
+                            className="trade-input min-h-[46px] w-full rounded-xl border-[#E8DED0] bg-white pl-12"
+                            inputMode="decimal"
+                            min={0}
+                            placeholder="Any"
+                            type="number"
+                            value={filters.max_budget}
+                            onChange={(event) => updateFilter("max_budget", event.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <SelectField
+                        label="Sort"
+                        options={[
+                          { value: "latest", label: "Newest" },
+                          { value: "budget_high", label: "Highest budget" },
+                          { value: "budget_low", label: "Lowest budget" },
+                        ]}
+                        value={filters.sort}
+                        onChange={(value) => updateFilter("sort", value)}
+                      />
+                      {hasFilters ? (
+                        <button
+                          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#E8DED0] bg-[#FAF7F0] px-4 text-sm font-semibold text-[#111111] transition hover:bg-amber-50 xl:col-span-6"
+                          onClick={() => setFilters(initialFilters)}
+                          type="button"
+                        >
+                          <X aria-hidden="true" className="h-4 w-4" />
+                          Clear filters
+                        </button>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  {isLoadingBoard ? (
+                    <div className="rounded-2xl border border-[#E8DED0] bg-white p-6 shadow-sm" aria-busy="true" role="status">
+                      <div className="flex items-center gap-3 text-sm font-semibold text-[#6B6257]">
+                        <span className="trade-loading-block h-10 w-10 shrink-0 rounded-full" />
+                        Loading wanted board…
+                      </div>
+                    </div>
+                  ) : posts.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-[#E8DED0] bg-[#FFFBF2]/60 px-6 py-14 text-center shadow-sm">
+                      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-[#E8DED0] bg-white text-[#C98A1D] shadow-sm">
+                        <Search aria-hidden="true" className="h-7 w-7" />
+                      </div>
+                      <h2 className="mt-5 text-lg font-bold text-[#111111]">No wanted requests found</h2>
+                      <p className="mx-auto mt-2 max-w-md text-sm text-[#6B6257]">
+                        Try clearing filters or post the first request for this category.
+                      </p>
+                      <button
+                        className="mt-8 inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 px-6 text-sm font-semibold text-white shadow-md transition hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                        onClick={() => setMode("post")}
+                        type="button"
+                      >
+                        <Megaphone aria-hidden="true" className="h-4 w-4" />
+                        Post Wanted Request
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {posts.map((post) => (
+                        <WantedCard
+                          isMine={post.buyer_id === myUserId}
+                          isUpdating={isUpdatingPost === post.id}
+                          key={post.id}
+                          post={post}
+                          onRespond={() => setResponsePost(post)}
+                          onRequestClose={setClosePost}
+                          onStatusChange={changeWantedStatus}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </aside>
-            </section>
-          )}
 
-          {responsePost ? (
+                <WantSidebar
+                  mode="browse"
+                  onPickCategoryBrowse={(value) => updateFilter("category", value)}
+                  onPickCategoryPost={(value) => updateField("category", value)}
+                />
+              </div>
+            ) : (
+              <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(280px,380px)] lg:items-start lg:gap-9">
+                <div className="min-w-0 space-y-5">
+                  {!profileReady ? (
+                    <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-[#FFFBF2] p-4 text-sm font-semibold text-amber-950 shadow-sm">
+                      Complete your profile before posting wanted requests. You can keep browsing and responding to demand now.
+                    </div>
+                  ) : null}
+                  <form className="rounded-2xl border border-[#E8DED0] bg-white p-6 shadow-sm sm:p-7" onSubmit={handleSubmit}>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#C98A1D]">Wanted request</p>
+                      <h2 className="mt-2 text-xl font-bold text-[#111111]">Tell sellers what you need</h2>
+                      <p className="mt-2 text-sm leading-relaxed text-[#6B6257]">
+                        Keep it concrete: item, budget, pickup area, urgency, and acceptable alternatives.
+                      </p>
+                    </div>
+                    <div className="mt-6 grid gap-4 md:grid-cols-2">
+                      <TextField label="Title" required value={form.title} onChange={(value) => updateField("title", value)} />
+                      <TextField label="Desired item or model" value={form.desired_item_name} onChange={(value) => updateField("desired_item_name", value)} />
+                      <SelectField label="Category" options={tradeCategories} value={form.category} onChange={(value) => updateField("category", value)} />
+                      <TextField label="Maximum budget (MYR)" type="number" value={form.max_budget} onChange={(value) => updateField("max_budget", value)} />
+                      <SelectField label="Preferred pickup area" options={pickupAreas} value={form.preferred_pickup_area} onChange={(value) => updateField("preferred_pickup_area", value)} />
+                      <TextField label="Residential college / KK" value={form.residential_college} onChange={(value) => updateField("residential_college", value)} />
+                    </div>
+                    <label className="mt-5 grid gap-2">
+                      <span className="text-sm font-semibold text-[#111111]">Need details, urgency, and acceptable alternatives</span>
+                      <textarea
+                        className="trade-input min-h-32 resize-y rounded-xl border-[#E8DED0] bg-white"
+                        value={form.description}
+                        onChange={(event) => updateField("description", event.target.value)}
+                      />
+                    </label>
+                    <button
+                      className="trade-button-primary mt-6 min-h-12 rounded-xl px-6 shadow-md"
+                      disabled={isSubmitting || !profileReady}
+                      type="submit"
+                    >
+                      <Megaphone aria-hidden="true" className="h-4 w-4" />
+                      {isSubmitting ? "Posting..." : "Post Wanted Request"}
+                    </button>
+                  </form>
+                </div>
+
+                <WantSidebar
+                  mode="post"
+                  onPickCategoryBrowse={(value) => updateFilter("category", value)}
+                  onPickCategoryPost={(value) => updateField("category", value)}
+                />
+              </div>
+            )}
+
+            {responsePost ? (
             <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
               <button aria-label="Close response form" className="absolute inset-0 bg-slate-950/40" onClick={() => setResponsePost(null)} type="button" />
               <form className="trade-modal-panel max-w-lg" onSubmit={sendWantedResponse}>
@@ -540,6 +846,7 @@ export default function WantPage() {
         </div>
       ) : null}
     </TradeShell>
+    </div>
   );
 }
 
@@ -563,56 +870,94 @@ function WantedCard({
   const responseCount = post.response_count ?? 0;
 
   return (
-    <article className="trade-card grid gap-4 p-5">
+    <article className="group grid gap-4 rounded-2xl border border-[#E8DED0] bg-white p-5 shadow-sm transition hover:border-[#D99A2B]/35 hover:shadow-md">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
-            <StatusPill>{formatCategory(post.category)}</StatusPill>
-            <StatusPill tone={isActive ? "good" : "warn"}>{wantedStatusLabel(post.status)}</StatusPill>
-            {isMine ? <StatusPill>yours</StatusPill> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-[#E8DED0] bg-[#FFFBF2] px-2.5 py-0.5 text-xs font-semibold text-[#6B6257]">
+              {formatCategory(post.category)}
+            </span>
+            <StatusPill className="border-0" tone={isActive ? "good" : "warn"}>
+              {wantedStatusLabel(post.status)}
+            </StatusPill>
+            {isMine ? (
+              <span className="rounded-full border border-amber-200/80 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-900">
+                Yours
+              </span>
+            ) : null}
           </div>
-          <Link className="mt-3 block text-lg font-semibold text-slate-950 transition hover:text-emerald-800" href={`/wanted-posts/${post.id}`}>
+          <Link
+            className="mt-3 block text-lg font-bold leading-snug text-[#111111] transition group-hover:text-[#A85F00]"
+            href={`/wanted-posts/${post.id}`}
+          >
             {post.title}
           </Link>
-          <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{post.description ?? "No description provided."}</p>
-          <p className="mt-2 text-xs font-semibold text-slate-500">
-            Posted by UM student · {formatRelativeTime(post.created_at)}
-          </p>
+          <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-[#6B6257]">{post.description ?? "No description provided."}</p>
+          <p className="mt-2 text-xs font-medium text-stone-500">Posted by UM student · {formatRelativeTime(post.created_at)}</p>
         </div>
-        <div className="shrink-0 rounded-lg bg-emerald-50 px-3 py-2 text-right">
-          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-emerald-700">Budget</p>
-          <p className="text-base font-bold text-emerald-900">{formatMoney(post.max_budget, post.currency)}</p>
+        <div className="shrink-0 rounded-xl border border-[#E8DED0] bg-[#FFF8EA] px-3 py-2 text-right">
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#C98A1D]">Budget</p>
+          <p className="text-lg font-bold text-[#111111]">{formatMoney(post.max_budget, post.currency)}</p>
         </div>
       </div>
-      <div className="grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-        <span>Item: <strong className="font-semibold text-slate-800">{post.desired_item_name ?? "Flexible"}</strong></span>
-        <span>Pickup: <strong className="font-semibold text-slate-800">{formatPickupLocation(post.preferred_pickup_area)}</strong></span>
-        <span>College: <strong className="font-semibold text-slate-800">{post.residential_college ?? "TBD"}</strong></span>
-        <span>Offers: <strong className="font-semibold text-slate-800">{responseCount}</strong></span>
+      <div className="grid gap-2 text-sm text-[#6B6257] sm:grid-cols-2">
+        <span>
+          Item: <strong className="font-semibold text-[#111111]">{post.desired_item_name ?? "Flexible"}</strong>
+        </span>
+        <span>
+          Pickup: <strong className="font-semibold text-[#111111]">{formatPickupLocation(post.preferred_pickup_area)}</strong>
+        </span>
+        <span>
+          College: <strong className="font-semibold text-[#111111]">{post.residential_college ?? "TBD"}</strong>
+        </span>
+        <span>
+          Offers: <strong className="font-semibold text-[#111111]">{responseCount}</strong>
+        </span>
       </div>
-      <p className={`rounded-lg border px-3 py-2 text-sm ${isActive ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
-        {isActive ? "Active · sellers can send offers" : "Closed · no new offers"}
+      <p
+        className={`rounded-xl border px-3 py-2 text-sm ${
+          isActive ? "border-emerald-200/80 bg-emerald-50/80 text-emerald-900" : "border-[#E8DED0] bg-[#FAF7F0] text-[#6B6257]"
+        }`}
+      >
+        {isActive ? "Open · sellers can send offers" : "Closed · no new offers"}
       </p>
       {isStale ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+        <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 p-3 text-sm text-amber-950">
           <p className="font-semibold">This request has been active for 14+ days.</p>
           <p className="mt-1">Close this request when you no longer need the item.</p>
-          <button className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100" disabled={isUpdating} onClick={() => onRequestClose(post)} type="button">
+          <button
+            className="mt-3 rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-semibold text-amber-900 transition hover:bg-amber-100"
+            disabled={isUpdating}
+            onClick={() => onRequestClose(post)}
+            type="button"
+          >
             Close Request
           </button>
         </div>
       ) : null}
-      <div className="flex flex-wrap gap-2">
-        <Link className="trade-button-primary" href={`/trade/sell?wanted_id=${post.id}`}>
-          I Have This Item
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Link
+          className="inline-flex min-h-11 items-center justify-center rounded-xl bg-stone-950 px-4 text-sm font-semibold text-[#F5E6C8] shadow-sm transition hover:bg-stone-900"
+          href={`/trade/sell?wanted_id=${post.id}`}
+        >
+          I have this item
         </Link>
         {!isMine ? (
-          <button className="trade-button-secondary" onClick={onRespond} type="button">
+          <button
+            className="trade-button-secondary min-h-11 rounded-xl border-[#E8DED0] bg-white"
+            onClick={onRespond}
+            type="button"
+          >
             <Send aria-hidden="true" className="h-4 w-4" />
             Send Offer
           </button>
         ) : (
-          <button className="trade-button-secondary" disabled={isUpdating} onClick={() => (post.status === "active" ? onRequestClose(post) : void onStatusChange(post, "active"))} type="button">
+          <button
+            className="trade-button-secondary min-h-11 rounded-xl border-[#E8DED0] bg-white"
+            disabled={isUpdating}
+            onClick={() => (post.status === "active" ? onRequestClose(post) : void onStatusChange(post, "active"))}
+            type="button"
+          >
             {post.status === "active" ? "Close Request" : "Reopen Request"}
           </button>
         )}
