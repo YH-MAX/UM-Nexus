@@ -23,6 +23,7 @@ import {
 } from "@/lib/auth/allowed-email-domains";
 import { AUTH_DOMAIN_REJECTED_KEY, AUTH_OAUTH_ERROR_KEY } from "@/lib/auth/auth-storage-keys";
 import { applyIntentToReturnTo, sanitizeIntent, sanitizeReturnTo } from "@/lib/auth/return-intent";
+import { getBetaSignupStatus, joinBetaWaitlist, type BetaSignupStatus } from "@/lib/trade/api";
 
 type AuthFormProps = {
   mode: "login" | "signup";
@@ -62,8 +63,11 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOAuthSubmitting, setIsOAuthSubmitting] = useState(false);
+  const [isWaitlistSubmitting, setIsWaitlistSubmitting] = useState(false);
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isEmailFormVisible, setIsEmailFormVisible] = useState(false);
+  const [waitlistReason, setWaitlistReason] = useState("");
+  const [betaStatus, setBetaStatus] = useState<BetaSignupStatus | null>(null);
 
   const isSignup = mode === "signup";
   const returnTo = sanitizeReturnTo(searchParams.get("returnTo"));
@@ -90,7 +94,8 @@ export function AuthForm({ mode }: AuthFormProps) {
   const emailToggleLabel = isSignup ? "Sign up with email" : "Sign in with email";
   const submitLabel = isSignup ? "Create account" : "Sign in";
   const pendingLabel = isSignup ? "Creating account..." : "Signing in...";
-  const anyPending = isSubmitting || isOAuthSubmitting;
+  const isSignupClosed = isSignup && betaStatus?.signup_open === false;
+  const anyPending = isSubmitting || isOAuthSubmitting || isWaitlistSubmitting;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -120,9 +125,37 @@ export function AuthForm({ mode }: AuthFormProps) {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    if (!isSignup) {
+      return;
+    }
+
+    getBetaSignupStatus()
+      .then((status) => {
+        if (isMounted) {
+          setBetaStatus(status);
+        }
+      })
+      .catch(() => {
+        // The backend remains the source of truth; keep signup usable if the status check fails.
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isSignup]);
+
   function handleGoogle() {
     setError(null);
     setStatusMessage(null);
+
+    if (isSignupClosed) {
+      setError("UM Nexus beta is currently full. Please join the waitlist.");
+      return;
+    }
+
     setIsOAuthSubmitting(true);
 
     if (typeof window === "undefined") {
@@ -151,6 +184,11 @@ export function AuthForm({ mode }: AuthFormProps) {
     event.preventDefault();
     setError(null);
     setStatusMessage(null);
+
+    if (isSignupClosed) {
+      setError("UM Nexus beta is currently full. Please join the waitlist.");
+      return;
+    }
 
     const domainError = getAllowedEmailDomainError(email, allowedDomains);
     if (domainError) {
@@ -219,6 +257,181 @@ export function AuthForm({ mode }: AuthFormProps) {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleWaitlistSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setStatusMessage(null);
+
+    const domainError = getAllowedEmailDomainError(email, allowedDomains);
+    if (domainError) {
+      setError(domainError);
+      return;
+    }
+
+    setIsWaitlistSubmitting(true);
+
+    try {
+      await joinBetaWaitlist({
+        email,
+        reason: waitlistReason.trim() || undefined,
+      });
+      setStatusMessage("You are on the UM Nexus beta waitlist. We will contact you when a spot opens.");
+      setWaitlistReason("");
+    } catch (waitlistError) {
+      setError(
+        formatAuthErrorMessage(
+          waitlistError instanceof Error ? waitlistError.message : undefined,
+        ),
+      );
+    } finally {
+      setIsWaitlistSubmitting(false);
+    }
+  }
+
+  if (isSignupClosed) {
+    return (
+      <article
+        aria-labelledby={`${mode}-card-title`}
+        className="luxury-glass-dark relative w-full overflow-hidden rounded-[28px] p-6 sm:p-8"
+        style={{ background: "rgba(20, 20, 20, 0.55)" }}
+      >
+        <header>
+          <p
+            className="luxury-eyebrow"
+            style={{ color: "rgba(214, 179, 106, 0.85)" }}
+          >
+            Limited beta
+          </p>
+          <h1
+            className="luxury-font-display mt-3 text-3xl font-medium leading-tight sm:text-4xl"
+            id={`${mode}-card-title`}
+            style={{ color: "#F5F5F4" }}
+          >
+            The first {betaStatus.max_users} tester spots are full
+          </h1>
+          <p
+            className="mt-3 text-sm leading-6"
+            style={{ color: "rgba(245, 245, 244, 0.65)" }}
+          >
+            Join the waitlist with your UM email and we will invite the next batch once
+            capacity opens.
+          </p>
+        </header>
+
+        <form className="mt-7 space-y-5" onSubmit={handleWaitlistSubmit}>
+          <div className="space-y-2">
+            <label
+              className="luxury-eyebrow block"
+              htmlFor={`${mode}-waitlist-email`}
+              style={{ color: "rgba(245, 245, 244, 0.85)", letterSpacing: "0.22em" }}
+            >
+              UM email
+            </label>
+            <div className="relative">
+              <Mail
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2"
+                style={{ color: "rgba(245, 245, 244, 0.45)" }}
+              />
+              <input
+                autoComplete="email"
+                className="luxury-input"
+                id={`${mode}-waitlist-email`}
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@siswa.um.edu.my"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              className="luxury-eyebrow block"
+              htmlFor={`${mode}-waitlist-reason`}
+              style={{ color: "rgba(245, 245, 244, 0.85)", letterSpacing: "0.22em" }}
+            >
+              What would you like to test?
+            </label>
+            <textarea
+              className="luxury-input min-h-[112px] resize-y py-3"
+              id={`${mode}-waitlist-reason`}
+              maxLength={1000}
+              onChange={(event) => setWaitlistReason(event.target.value)}
+              placeholder="Example: selling used textbooks, finding campus pickup deals, testing wanted posts..."
+              value={waitlistReason}
+            />
+          </div>
+
+          <button
+            aria-busy={isWaitlistSubmitting}
+            className="luxury-button-gold"
+            disabled={anyPending}
+            type="submit"
+          >
+            {isWaitlistSubmitting ? (
+              <>
+                <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                Joining waitlist...
+              </>
+            ) : (
+              "Join waitlist"
+            )}
+          </button>
+        </form>
+
+        {error ? (
+          <div
+            aria-live="polite"
+            className="mt-5 flex gap-3 rounded-2xl border px-4 py-3 text-sm leading-6"
+            role="alert"
+            style={{
+              background: "rgba(244, 63, 94, 0.10)",
+              borderColor: "rgba(244, 63, 94, 0.35)",
+              color: "#fecdd3",
+            }}
+          >
+            <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>{error}</p>
+          </div>
+        ) : null}
+
+        {statusMessage ? (
+          <div
+            aria-live="polite"
+            className="mt-5 flex gap-3 rounded-2xl border px-4 py-3 text-sm leading-6"
+            role="status"
+            style={{
+              background: "rgba(214, 179, 106, 0.10)",
+              borderColor: "rgba(214, 179, 106, 0.35)",
+              color: "#f5e7c4",
+            }}
+          >
+            <CheckCircle2 aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>{statusMessage}</p>
+          </div>
+        ) : null}
+
+        <div className="luxury-rule my-7" />
+
+        <p
+          className="text-center text-sm"
+          style={{ color: "rgba(245, 245, 244, 0.65)" }}
+        >
+          Already invited or already have an account?{" "}
+          <Link
+            className="font-medium underline underline-offset-4 transition hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-200"
+            href={oppositeHref}
+            style={{ color: "#D6B36A" }}
+          >
+            Sign in
+          </Link>
+        </p>
+      </article>
+    );
   }
 
   return (

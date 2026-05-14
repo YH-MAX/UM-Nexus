@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth.jwt import TokenClaims
@@ -20,6 +20,41 @@ def ensure_allowed_email_domain(email: str) -> None:
         )
 
 
+def is_beta_invited_email(email: str) -> bool:
+    settings = get_settings()
+    return email.strip().lower() in settings.beta_invite_emails
+
+
+def get_beta_user_count(db: Session) -> int:
+    return db.scalar(select(func.count()).select_from(User)) or 0
+
+
+def get_beta_signup_status(db: Session) -> dict[str, int | bool]:
+    settings = get_settings()
+    current_users = get_beta_user_count(db)
+    max_users = settings.beta_max_users
+    signup_open = max_users <= 0 or current_users < max_users
+    return {
+        "signup_open": signup_open,
+        "current_users": current_users,
+        "max_users": max_users,
+    }
+
+
+def ensure_beta_capacity(db: Session, email: str) -> None:
+    settings = get_settings()
+    max_users = settings.beta_max_users
+
+    if max_users <= 0 or is_beta_invited_email(email):
+        return
+
+    if get_beta_user_count(db) >= max_users:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="UM Nexus beta is currently full. Please join the waitlist.",
+        )
+
+
 def ensure_local_user(db: Session, token_claims: TokenClaims) -> User:
     normalized_email = token_claims.email.lower()
     ensure_allowed_email_domain(normalized_email)
@@ -32,6 +67,7 @@ def ensure_local_user(db: Session, token_claims: TokenClaims) -> User:
     user = db.scalar(stmt)
 
     if user is None:
+        ensure_beta_capacity(db, normalized_email)
         user = User(
             id=str(token_claims.sub),
             email=normalized_email,

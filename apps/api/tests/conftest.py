@@ -93,6 +93,8 @@ def reset_database() -> Generator[None, None, None]:
     original_trade_contact_request_daily_limit = settings.trade_contact_request_daily_limit
     original_trade_report_daily_limit = settings.trade_report_daily_limit
     original_trade_wanted_post_daily_limit = settings.trade_wanted_post_daily_limit
+    original_beta_max_users = settings.beta_max_users
+    original_beta_invite_emails = settings.beta_invite_emails
     temp_upload_dir = tempfile.mkdtemp(prefix="umnexus-test-uploads-")
     settings.allowed_email_domains = ("siswa.um.edu.my",)
     settings.upload_storage_dir = temp_upload_dir
@@ -111,6 +113,8 @@ def reset_database() -> Generator[None, None, None]:
     settings.trade_contact_request_daily_limit = 20
     settings.trade_report_daily_limit = 10
     settings.trade_wanted_post_daily_limit = 5
+    settings.beta_max_users = 50
+    settings.beta_invite_emails = ()
     celery_app.conf.task_always_eager = True
     session_module.SessionLocal = TestingSessionLocal
     trade_task_module.SessionLocal = TestingSessionLocal
@@ -138,6 +142,8 @@ def reset_database() -> Generator[None, None, None]:
     settings.trade_contact_request_daily_limit = original_trade_contact_request_daily_limit
     settings.trade_report_daily_limit = original_trade_report_daily_limit
     settings.trade_wanted_post_daily_limit = original_trade_wanted_post_daily_limit
+    settings.beta_max_users = original_beta_max_users
+    settings.beta_invite_emails = original_beta_invite_emails
     shutil.rmtree(temp_upload_dir, ignore_errors=True)
 
 

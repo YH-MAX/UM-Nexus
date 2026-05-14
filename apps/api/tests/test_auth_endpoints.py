@@ -3,7 +3,8 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from app.auth.jwt import TokenVerificationError
-from app.models import AppRole, Profile, User
+from app.core.config import get_settings
+from app.models import AppRole, BetaWaitlistEntry, Profile, User
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
@@ -28,6 +29,79 @@ def test_first_authenticated_request_creates_local_user_profile(client, db_sessi
     assert user is not None
     assert profile is not None
     assert profile.app_role == AppRole.STUDENT
+
+
+def test_beta_status_reports_capacity(client, db_session) -> None:
+    settings = get_settings()
+    settings.beta_max_users = 2
+    for index in range(2):
+        user = User(id=str(uuid4()), email=f"member-{index}@siswa.um.edu.my")
+        user.profile = Profile(app_role=AppRole.STUDENT)
+        db_session.add(user)
+    db_session.commit()
+
+    response = client.get("/api/v1/auth/beta-status")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "signup_open": False,
+        "current_users": 2,
+        "max_users": 2,
+    }
+
+
+def test_beta_capacity_blocks_new_local_user(client, db_session, token_verifier) -> None:
+    settings = get_settings()
+    settings.beta_max_users = 1
+    existing_user = User(id=str(uuid4()), email="existing@siswa.um.edu.my")
+    existing_user.profile = Profile(app_role=AppRole.STUDENT)
+    db_session.add(existing_user)
+    db_session.commit()
+
+    response = client.get("/api/v1/auth/me", headers=AUTH_HEADERS)
+
+    assert response.status_code == 403
+    assert "beta is currently full" in response.json()["detail"]
+    assert db_session.scalar(select(User).where(User.email == token_verifier.claims.email)) is None
+
+
+def test_beta_invited_email_can_join_after_capacity(client, db_session, token_verifier) -> None:
+    settings = get_settings()
+    settings.beta_max_users = 1
+    settings.beta_invite_emails = ("tester@siswa.um.edu.my",)
+    existing_user = User(id=str(uuid4()), email="existing@siswa.um.edu.my")
+    existing_user.profile = Profile(app_role=AppRole.STUDENT)
+    db_session.add(existing_user)
+    db_session.commit()
+
+    response = client.get("/api/v1/auth/me", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert db_session.scalar(select(User).where(User.email == "tester@siswa.um.edu.my")) is not None
+
+
+def test_join_beta_waitlist_stores_um_email(client, db_session) -> None:
+    response = client.post(
+        "/api/v1/auth/beta-waitlist",
+        json={"email": "FutureTester@SISWA.UM.EDU.MY", "reason": "I want to test listings."},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["email"] == "futuretester@siswa.um.edu.my"
+    entry = db_session.scalar(
+        select(BetaWaitlistEntry).where(BetaWaitlistEntry.email == "futuretester@siswa.um.edu.my")
+    )
+    assert entry is not None
+    assert entry.reason == "I want to test listings."
+
+
+def test_join_beta_waitlist_rejects_non_um_email(client) -> None:
+    response = client.post(
+        "/api/v1/auth/beta-waitlist",
+        json={"email": "future@example.com", "reason": "I want to test listings."},
+    )
+
+    assert response.status_code == 403
 
 
 def test_invalid_token_returns_401(client, token_verifier) -> None:

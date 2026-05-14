@@ -74,6 +74,8 @@ class Settings(BaseSettings):
     trade_contact_request_daily_limit: int = 20
     trade_report_daily_limit: int = 10
     trade_wanted_post_daily_limit: int = 5
+    beta_max_users: int = 50
+    beta_invite_emails: Annotated[tuple[str, ...], NoDecode] = ()
 
     model_config = SettingsConfigDict(
         env_file=find_env_file(),
@@ -156,6 +158,23 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return normalize_csv_values(value)
         return normalize_csv_values(value)
+
+    @field_validator("beta_invite_emails", mode="before")
+    @classmethod
+    def parse_beta_invite_emails(cls, value: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    parsed = [stripped.strip("[]")]
+                if isinstance(parsed, list):
+                    return normalize_csv_values(parsed, lowercase=True)
+            return normalize_csv_values([stripped], lowercase=True)
+        if isinstance(value, list):
+            return normalize_csv_values(value, lowercase=True)
+        return normalize_csv_values(value, lowercase=True)
 
     @model_validator(mode="after")
     def validate_zai_provider_selection(self) -> "Settings":

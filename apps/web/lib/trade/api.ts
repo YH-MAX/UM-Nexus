@@ -11,6 +11,18 @@ export type ListingImage = {
   created_at: string;
 };
 
+export type BetaSignupStatus = {
+  signup_open: boolean;
+  current_users: number;
+  max_users: number;
+};
+
+export type BetaWaitlistEntry = {
+  id: string;
+  email: string;
+  reason: string | null;
+};
+
 export type Listing = {
   id: string;
   seller_id: string;
@@ -1010,6 +1022,20 @@ export function isProfileComplete(profile: CurrentProfile | null | undefined): b
       profile?.faculty?.trim() &&
       (profile?.college_or_location || profile?.residential_college)?.trim(),
   );
+}
+
+export async function getBetaSignupStatus(): Promise<BetaSignupStatus> {
+  return fetchJson<BetaSignupStatus>("/auth/beta-status");
+}
+
+export async function joinBetaWaitlist(payload: {
+  email: string;
+  reason?: string;
+}): Promise<BetaWaitlistEntry> {
+  return fetchJson<BetaWaitlistEntry>("/auth/beta-waitlist", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getCurrentUser(): Promise<CurrentUserResponse> {
