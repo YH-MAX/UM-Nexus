@@ -73,6 +73,7 @@ class Settings(BaseSettings):
         env_file=find_env_file(),
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
 
     @field_validator("database_url", mode="before")
@@ -83,6 +84,34 @@ class Settings(BaseSettings):
         if value.startswith("postgresql://") and "+psycopg" not in value:
             return value.replace("postgresql://", "postgresql+psycopg://", 1)
         return value
+
+    @field_validator("supabase_url", mode="before")
+    @classmethod
+    def normalize_supabase_url(cls, value: object) -> str:
+        return str(value).strip().rstrip("/")
+
+    @field_validator("supabase_anon_key", "supabase_service_role_key", mode="before")
+    @classmethod
+    def normalize_supabase_jwt_secrets(cls, value: object) -> str:
+        raw = str(value).strip()
+        if raw.lower().startswith("bearer "):
+            raw = raw[7:].strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
+            raw = raw[1:-1].strip()
+        return raw
+
+    @field_validator("supabase_storage_bucket", mode="before")
+    @classmethod
+    def normalize_supabase_storage_bucket(cls, value: object) -> str:
+        return str(value).strip()
+
+    @field_validator("supabase_jwks_url", mode="before")
+    @classmethod
+    def normalize_optional_supabase_jwks_url(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        stripped = str(value).strip()
+        return stripped or None
 
     @field_validator("allowed_email_domains", mode="before")
     @classmethod

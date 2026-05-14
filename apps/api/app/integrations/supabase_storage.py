@@ -46,9 +46,14 @@ class SupabaseStorageClient:
 
         normalized_path = _normalize_storage_path(storage_path)
         upload_url = self._object_url(normalized_path)
+        service_role = self.settings.supabase_service_role_key
+        publishable = self.settings.supabase_anon_key
+        # Supabase gateways expect `apikey` to be the project's publishable (anon) JWT when available;
+        # `Authorization` carries the elevated credential for Storage writes.
+        apikey_header = publishable or service_role
         headers = {
-            "Authorization": f"Bearer {self.settings.supabase_service_role_key}",
-            "apikey": self.settings.supabase_service_role_key,
+            "Authorization": f"Bearer {service_role}",
+            "apikey": apikey_header,
             "Content-Type": mime_type,
             "x-upsert": "true",
         }
@@ -63,9 +68,14 @@ class SupabaseStorageClient:
 
         if response.status_code not in {200, 201}:
             body_preview = response.text[:300].replace("\n", " ").strip()
-            raise ExternalProviderError(
-                f"Supabase Storage upload failed with status {response.status_code}: {body_preview}"
-            )
+            message = f"Supabase Storage upload failed with status {response.status_code}: {body_preview}"
+            lowered = body_preview.lower()
+            if "signature verification" in lowered or '"unauthorized"' in lowered:
+                message += (
+                    " Ensure SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_ANON_KEY (or "
+                    "SUPABASE_PUBLISHABLE_KEY) are from the same Supabase project, with no extra spaces or line breaks."
+                )
+            raise ExternalProviderError(message)
 
         return SupabaseStoredFile(
             storage_bucket=self.bucket_name,
