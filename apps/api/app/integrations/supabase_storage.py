@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
+import json
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import quote
 
 import httpx
@@ -109,6 +112,21 @@ class SupabaseStorageClient:
             joined = ", ".join(missing)
             raise ConfigurationError(f"Missing required Supabase Storage settings: {joined}.")
 
+        claims = _decode_jwt_payload_if_jwt_shaped(self.settings.supabase_service_role_key)
+        if claims is None:
+            return
+
+        role = str(claims.get("role") or "")
+        if role != "service_role":
+            raise ConfigurationError("SUPABASE_SERVICE_ROLE_KEY must be a Supabase service_role key.")
+
+        configured_ref = _project_ref_from_supabase_url(self.settings.supabase_url)
+        token_ref = str(claims.get("ref") or "")
+        if configured_ref and token_ref and configured_ref != token_ref:
+            raise ConfigurationError(
+                "SUPABASE_SERVICE_ROLE_KEY belongs to a different Supabase project than SUPABASE_URL."
+            )
+
 
 async def upload_listing_image_to_supabase(
     *,
@@ -134,3 +152,28 @@ def _normalize_storage_path(storage_path: str) -> str:
 
 def _quote_storage_path(storage_path: str) -> str:
     return "/".join(quote(part, safe="") for part in _normalize_storage_path(storage_path).split("/"))
+
+
+def _decode_jwt_payload_if_jwt_shaped(token: str) -> dict[str, Any] | None:
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+
+    try:
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        decoded = base64.urlsafe_b64decode(payload.encode("ascii"))
+        claims = json.loads(decoded.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
+        raise ConfigurationError("SUPABASE_SERVICE_ROLE_KEY is not a valid JWT. Copy the service_role key again.") from exc
+
+    if not isinstance(claims, dict):
+        raise ConfigurationError("SUPABASE_SERVICE_ROLE_KEY is not a valid Supabase JWT payload.")
+    return claims
+
+
+def _project_ref_from_supabase_url(supabase_url: str) -> str | None:
+    host = supabase_url.strip().removeprefix("https://").removeprefix("http://").split("/", 1)[0]
+    suffix = ".supabase.co"
+    if not host.endswith(suffix):
+        return None
+    return host[: -len(suffix)] or None

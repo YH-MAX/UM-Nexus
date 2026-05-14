@@ -1,7 +1,9 @@
 import asyncio
 
 import httpx
+import pytest
 
+from app.core.exceptions import ConfigurationError
 from app.core.config import Settings
 from app.integrations.supabase_storage import SupabaseStorageClient
 
@@ -95,6 +97,18 @@ def test_supabase_storage_upload_sends_publishable_key_as_apikey_when_configured
     assert request.headers["apikey"] == settings.supabase_anon_key
     assert request.headers["content-type"] == "image/jpeg"
     assert request.headers["x-upsert"] == "true"
+
+
+def test_supabase_storage_rejects_malformed_service_role_jwt() -> None:
+    settings = Settings(
+        _env_file=None,
+        supabase_url="https://project-ref.supabase.co",
+        supabase_service_role_key="eyJhbGciOiJIUzI1NiJ9.15Y.not-a-signature",
+        supabase_storage_bucket="listing-images",
+    )
+
+    with pytest.raises(ConfigurationError, match="SUPABASE_SERVICE_ROLE_KEY is not a valid JWT"):
+        SupabaseStorageClient(settings=settings)
 
 
 def test_settings_normalizes_supabase_url_and_secrets() -> None:
