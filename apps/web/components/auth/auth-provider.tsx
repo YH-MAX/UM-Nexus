@@ -9,7 +9,22 @@ import {
 } from "react";
 import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
 
+import {
+  getAllowedEmailDomainsFromEnv,
+  isAllowedEmailDomain,
+} from "@/lib/auth/allowed-email-domains";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser-client";
+
+const allowedEmailDomains = getAllowedEmailDomainsFromEnv();
+const AUTH_DOMAIN_REJECTED_KEY = "um_nexus_auth_domain_error";
+
+function sessionHasAllowedEmail(session: Session | null): boolean {
+  const email = session?.user?.email;
+  if (!email) {
+    return false;
+  }
+  return isAllowedEmailDomain(email, allowedEmailDomains);
+}
 
 type AuthContextValue = {
   isLoading: boolean;
@@ -44,18 +59,45 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return;
       }
 
-      if (error) {
+      if (error || !data.session) {
         setSession(null);
-      } else {
-        setSession(data.session);
+        setIsLoading(false);
+        return;
       }
 
+      if (!sessionHasAllowedEmail(data.session)) {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(
+            AUTH_DOMAIN_REJECTED_KEY,
+            data.session.user.email ? "domain" : "email",
+          );
+        }
+        void supabase.auth.signOut();
+        setSession(null);
+        setIsLoading(false);
+        return;
+      }
+
+      setSession(data.session);
       setIsLoading(false);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (nextSession && !sessionHasAllowedEmail(nextSession)) {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(
+            AUTH_DOMAIN_REJECTED_KEY,
+            nextSession.user.email ? "domain" : "email",
+          );
+        }
+        void supabase.auth.signOut();
+        setSession(null);
+        setIsLoading(false);
+        return;
+      }
+
       setSession(nextSession);
       setIsLoading(false);
     });

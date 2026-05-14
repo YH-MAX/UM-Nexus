@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -28,6 +28,8 @@ type AuthFormProps = {
 };
 
 const allowedDomains = getAllowedEmailDomainsFromEnv();
+
+const AUTH_DOMAIN_REJECTED_KEY = "um_nexus_auth_domain_error";
 
 const trustPoints = [
   { icon: ShieldCheck, label: "Verified UM identities" },
@@ -91,6 +93,25 @@ export function AuthForm({ mode }: AuthFormProps) {
   const pendingLabel = isSignup ? "Creating account..." : "Signing in...";
   const anyPending = isSubmitting || isOAuthSubmitting;
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const reason = window.sessionStorage.getItem(AUTH_DOMAIN_REJECTED_KEY);
+    if (!reason) {
+      return;
+    }
+    window.sessionStorage.removeItem(AUTH_DOMAIN_REJECTED_KEY);
+    if (reason === "email") {
+      setError("Your account must have a University of Malaya email address to use UM Nexus Trade.");
+    } else {
+      setError(
+        getAllowedEmailDomainError("not-allowed@example.com", allowedDomains) ??
+          "Use a University of Malaya email address.",
+      );
+    }
+  }, []);
+
   async function handleGoogle() {
     setError(null);
     setStatusMessage(null);
@@ -131,12 +152,10 @@ export function AuthForm({ mode }: AuthFormProps) {
     setError(null);
     setStatusMessage(null);
 
-    if (isSignup) {
-      const domainError = getAllowedEmailDomainError(email, allowedDomains);
-      if (domainError) {
-        setError(domainError);
-        return;
-      }
+    const domainError = getAllowedEmailDomainError(email, allowedDomains);
+    if (domainError) {
+      setError(domainError);
+      return;
     }
 
     setIsSubmitting(true);
