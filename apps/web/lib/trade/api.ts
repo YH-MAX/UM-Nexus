@@ -1,4 +1,5 @@
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser-client";
+import { getPublicListingsPage, invalidatePublicListings, publicCacheGeneration, rememberPublicListing, rememberPublicListingsPage } from "@/lib/trade/public-listing-cache";
 
 export type ListingImage = {
   id: string;
@@ -875,17 +876,21 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const authHeaders = await getAuthHeaders();
+async function fetchJson<T>(path: string, init?: RequestInit, skipSessionLookup = false): Promise<T> {
+  const authHeaders = skipSessionLookup ? {} : await getAuthHeaders();
+  const mutating = init?.method && !["GET", "HEAD", "OPTIONS"].includes(init.method) && path !== "/analytics/events";
+  if (mutating) invalidatePublicListings();
   const response = await fetchWithTimeout(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
-      "Content-Type": "application/json",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...authHeaders,
       ...init?.headers,
     },
     cache: "no-store",
   });
+
+  if (mutating) invalidatePublicListings();
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
@@ -1060,10 +1065,10 @@ export async function updateMyProfile(payload: {
   });
 }
 
-export async function getListings(
+function listingsQuery(
   filters: Record<string, string> = {},
   pagination: { limit?: number; offset?: number } = {},
-): Promise<ListingsPage> {
+): string {
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([key, value]) => {
     if (value) {
@@ -1076,12 +1081,46 @@ export async function getListings(
   if (pagination.offset !== undefined && pagination.offset > 0) {
     params.set("offset", String(pagination.offset));
   }
-  const query = params.toString();
-  return fetchJson<ListingsPage>(`/listings${query ? `?${query}` : ""}`);
+  params.sort();
+  return params.toString();
+}
+
+export function getCachedListings(filters: Record<string, string> = {}, pagination: { limit?: number; offset?: number } = {}) {
+  return getPublicListingsPage(listingsQuery(filters, pagination));
+}
+
+const publicListingRequests = new Map<string, Promise<ListingsPage>>();
+
+export async function getListings(
+  filters: Record<string, string> = {},
+  pagination: { limit?: number; offset?: number } = {},
+): Promise<ListingsPage> {
+  const query = listingsQuery(filters, pagination);
+  const cached = getPublicListingsPage(query);
+  if (cached) return cached;
+  const generation = publicCacheGeneration();
+  const key = `${generation}:${query}`;
+  const pending = publicListingRequests.get(key);
+  if (pending) return pending;
+  // This endpoint is public, so it needs neither a session lookup nor a bearer token.
+  const request = fetchJson<ListingsPage>(`/listings${query ? `?${query}` : ""}`, undefined, true)
+    .then((page) => { rememberPublicListingsPage(query, page, generation); return page; })
+    .finally(() => { publicListingRequests.delete(key); });
+  publicListingRequests.set(key, request);
+  return request;
 }
 
 export async function getListing(id: string): Promise<Listing> {
-  return fetchJson<Listing>(`/listings/${id}`);
+  const generation = publicCacheGeneration();
+  const headers = await getAuthHeaders();
+  try {
+    const listing = await fetchJson<Listing>(`/listings/${id}`, { headers }, true);
+    if (!headers.Authorization) rememberPublicListing(listing, generation);
+    return listing;
+  } catch (error) {
+    invalidatePublicListings();
+    throw error;
+  }
 }
 
 export async function createListing(payload: ListingPayload, options: { publish?: boolean } = {}): Promise<Listing> {
@@ -1164,11 +1203,13 @@ export async function uploadListingImage(
   formData.append("is_primary", String(options.isPrimary ?? false));
 
   const authHeaders = await getAuthHeaders();
+  invalidatePublicListings();
   const response = await fetchWithTimeout(`${API_BASE_URL}/listings/${listingId}/images`, {
     method: "POST",
     body: formData,
     headers: authHeaders,
   });
+  invalidatePublicListings();
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
@@ -1184,10 +1225,12 @@ export async function uploadListingImage(
 
 export async function removeListingImage(listingId: string, imageId: string): Promise<void> {
   const authHeaders = await getAuthHeaders();
+  invalidatePublicListings();
   const response = await fetchWithTimeout(`${API_BASE_URL}/listings/${listingId}/images/${imageId}`, {
     method: "DELETE",
     headers: authHeaders,
   });
+  invalidatePublicListings();
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(getApiErrorMessage(body, response.status));

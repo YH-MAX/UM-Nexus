@@ -21,7 +21,7 @@ export default async function ListingDetailPage({
     return <ExampleListingDetail item={item} related={related} />;
   }
 
-  return <ListingDetailClient listingId={id} />;
+  return <ListingDetailClient key={id} listingId={id} />;
 }
 
 export async function generateMetadata({ params }: ListingDetailPageProps) {

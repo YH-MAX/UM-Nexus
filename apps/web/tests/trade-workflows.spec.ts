@@ -200,6 +200,146 @@ const sentWantedResponse = {
 };
 
 test.describe("authenticated Trade product workflows", () => {
+  test("seller item renders while insights and favorites are still pending", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route(/\/api\/v1\/(ai\/trade\/result\/|listings\/[^/]+\/matches|users\/me\/favorites)/, async (route) => {
+      await held;
+      await route.fallback();
+    });
+    try {
+      await page.goto("/trade/listing-1");
+      await expect(page.getByRole("heading", { name: baseListing.title, level: 1 })).toBeVisible();
+      await expect(page.getByText(baseListing.description, { exact: true })).toBeVisible();
+      await expect(page.getByText("Loading seller insights…", { exact: true })).toBeVisible();
+    } finally { release(); }
+  });
+
+  test("failed seller insights do not hide the item", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    await page.route(/\/api\/v1\/(ai\/trade\/result\/|listings\/[^/]+\/matches)/, (route) => json(route, { detail: "Insights unavailable" }, 503));
+    await page.goto("/trade/listing-1");
+    await expect(page.getByRole("heading", { name: baseListing.title, level: 1 })).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "Some seller insights could not load" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Edit Listing", exact: true })).toBeVisible();
+  });
+
+  test("returning save intent waits for the account's existing favorites", async ({ page }) => {
+    await loginAs(page, buyerUser);
+    const state = await mockTradeApi(page);
+    state.favorites.push("listing-1");
+    const saves: string[] = [];
+    page.on("request", (request) => { if (request.method() === "POST" && request.url().endsWith("/listings/listing-1/favorite")) saves.push(request.url()); });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route("**/api/v1/users/me/favorites", async (route) => { await held; await route.fallback(); });
+    try {
+      await page.goto("/trade/listing-1?intent=save_listing&listingId=listing-1");
+      await expect(page.getByRole("heading", { name: baseListing.title, level: 1 })).toBeVisible();
+      expect(saves).toEqual([]);
+    } finally { release(); }
+    await expect(page.getByRole("button", { name: /Saved/i })).toBeVisible();
+    expect(saves).toEqual([]);
+  });
+
+  test("buyers skip seller insights and contact still loads directly", async ({ page }) => {
+    await loginAs(page, buyerUser);
+    await mockTradeApi(page);
+    const insights: string[] = [];
+    page.on("request", (request) => { if (/\/api\/v1\/(ai\/trade\/result\/|listings\/[^/]+\/matches)/.test(request.url())) insights.push(request.url()); });
+    await page.goto("/trade/listing-1");
+    await expect(page.getByRole("link", { name: "Message on Telegram" }).first()).toBeVisible();
+    expect(insights).toEqual([]);
+  });
+
+  test("browse snapshot renders before fresh detail and is removed on a new 404", async ({ page }) => {
+    await mockTradeApi(page);
+    await page.goto("/trade");
+    await expect(page.getByRole("heading", { name: baseListing.title, exact: true })).toBeVisible();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    await page.route("**/api/v1/listings/listing-1", async (route) => { await held; await json(route, { detail: "Listing no longer available" }, 404); });
+    try {
+      await page.locator('a[href="/trade/listing-1"]').first().click();
+      await expect(page.getByText(baseListing.description, { exact: true })).toBeVisible();
+    } finally { release(); }
+    await expect(page.getByText("Listing no longer available", { exact: true })).toBeVisible();
+    await expect(page.getByText(baseListing.description, { exact: true })).toHaveCount(0);
+  });
+
+  test("public browse cache reuses fresh pages then expires after 30 seconds", async ({ page }) => {
+    await page.clock.install();
+    await mockTradeApi(page);
+    const reads: Request[] = [];
+    page.on("request", (request) => { if (/\/api\/v1\/listings\?/.test(request.url())) reads.push(request); });
+    await page.goto("/trade");
+    await expect(page.getByRole("heading", { name: baseListing.title, exact: true })).toBeVisible();
+    expect(reads).toHaveLength(1);
+    expect(reads[0].headers().authorization).toBeUndefined();
+    expect(reads[0].headers()["content-type"]).toBeUndefined();
+    await page.locator('a[href="/trade/listing-1"]').first().click();
+    await page.getByRole("link", { name: "Back to listings", exact: true }).click();
+    await expect(page).toHaveURL(/\/trade$/);
+    await expect(page.getByRole("link", { name: "Back to listings", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: baseListing.title, exact: true })).toBeVisible();
+    expect(reads).toHaveLength(1);
+    await Promise.all([
+      page.waitForResponse((response) => response.url().endsWith("/api/v1/listings/listing-1")),
+      page.locator('a[href="/trade/listing-1"]').first().click(),
+    ]);
+    await page.clock.fastForward(31_000);
+    await page.getByRole("link", { name: "Back to listings", exact: true }).click();
+    await expect.poll(() => reads.length).toBe(2);
+  });
+
+  test("a late failed initial read cannot hide a newer seller update", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    await page.goto("/trade");
+    await expect(page.getByRole("heading", { name: baseListing.title, exact: true })).toBeVisible();
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let updated = false;
+    let updatedReads = 0;
+    await page.route("**/api/v1/listings/listing-1", async (route) => {
+      if (!updated) { await held; return json(route, { detail: "Outdated response" }, 404); }
+      updatedReads++;
+      return json(route, { ...baseListing, status: "hidden" });
+    });
+    await page.route("**/api/v1/listings/listing-1/status", (route) => { updated = true; return json(route, { ...baseListing, status: "hidden" }); });
+    try {
+      await page.locator('a[href="/trade/listing-1"]').first().click();
+      await page.getByRole("button", { name: "Hide", exact: true }).click();
+      await expect.poll(() => updatedReads).toBeGreaterThan(0);
+      await expect(page.getByText("Listing marked hidden.", { exact: true })).toBeVisible();
+      const oldResponse = page.waitForResponse((response) => response.status() === 404 && response.url().endsWith("/listings/listing-1"));
+      release();
+      await oldResponse;
+      await expect(page.getByText("Outdated response", { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("heading", { name: baseListing.title, level: 1 })).toBeVisible();
+    } finally { release(); }
+  });
+
+  test("editing an item invalidates its cached public browse page", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    let feedReads = 0;
+    page.on("request", (request) => { if (/\/api\/v1\/listings\?/.test(request.url())) feedReads++; });
+    await page.goto("/trade");
+    await expect(page.getByRole("heading", { name: baseListing.title, exact: true })).toBeVisible();
+    await page.locator('a[href="/trade/listing-1"]').first().click();
+    await page.getByRole("link", { name: "Edit Listing", exact: true }).click();
+    await page.getByLabel("Title").fill("Updated calculator");
+    await page.getByRole("button", { name: /Save changes/i }).click();
+    await expect(page.getByText(/Listing changes saved/i)).toBeVisible();
+    await page.getByRole("link", { name: "Back to listing", exact: true }).click();
+    await page.getByRole("link", { name: "Back to listings", exact: true }).click();
+    await expect.poll(() => feedReads).toBe(2);
+  });
+
   test("buyer can save, contact directly, and report from listing detail", async ({ page }) => {
     await loginAs(page, buyerUser);
     const state = await mockTradeApi(page);

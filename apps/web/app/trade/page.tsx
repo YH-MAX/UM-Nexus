@@ -35,6 +35,7 @@ import {
   formatPickupLocation,
   formatRelativeTime,
   getFavorites,
+  getCachedListings,
   getListings,
   removeFavorite,
   type Listing,
@@ -65,12 +66,12 @@ const emptyPage: ListingsPage = { items: [], total: 0, limit: PAGE_SIZE, offset:
 
 export default function TradePage() {
   const { user } = useAuth();
-  const [allListings, setAllListings] = useState<Listing[]>([]);
-  const [page, setPage] = useState<ListingsPage>(emptyPage);
+  const [allListings, setAllListings] = useState<Listing[]>(() => getCachedListings({ sort: "latest" }, { limit: PAGE_SIZE, offset: 0 })?.items ?? []);
+  const [page, setPage] = useState<ListingsPage>(() => getCachedListings({ sort: "latest" }, { limit: PAGE_SIZE, offset: 0 }) ?? emptyPage);
   const [filters, setFilters] = useState<ListingFilters>(initialFilters);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !getCachedListings({ sort: "latest" }, { limit: PAGE_SIZE, offset: 0 }));
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +96,6 @@ export default function TradePage() {
 
   useEffect(() => {
     let isMounted = true;
-    setIsLoading(true);
 
     const activeFilters = buildQueryFilters({
       search: debouncedSearch,
@@ -107,6 +107,14 @@ export default function TradePage() {
       max_price: filters.max_price,
       sort: filters.sort,
     });
+
+    const cached = getCachedListings(activeFilters, { limit: PAGE_SIZE, offset: 0 });
+    setIsLoading(!cached);
+    if (cached) {
+      setPage(cached);
+      setAllListings(cached.items);
+      setError(null);
+    }
 
     void getListings(activeFilters, { limit: PAGE_SIZE, offset: 0 })
       .then((result) => {

@@ -31,6 +31,7 @@ import { SafetyNotice } from "@/components/trade/safety-notice";
 import { StatusPill, statusTone } from "@/components/trade/status-pill";
 import { TradeResultCard } from "@/components/trade/trade-result-card";
 import { TradeShell } from "@/components/trade/trade-shell";
+import { getPublicListingSnapshot } from "@/lib/trade/public-listing-cache";
 import {
   addFavorite,
   applyRecommendedPrice,
@@ -67,12 +68,18 @@ type ListingDetailPageProps = Readonly<{
 export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useAuth();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const processedIntentRef = useRef<string | null>(null);
-  const [listing, setListing] = useState<Listing | null>(null);
+  const [listing, setListing] = useState<Listing | null>(() => getPublicListingSnapshot(listingId) ?? null);
   const [resultStatus, setResultStatus] = useState<TradeResultStatus | null>(null);
   const [matches, setMatches] = useState<TradeMatch[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => !getPublicListingSnapshot(listingId));
+  const loadGeneration = useRef(0);
+  const [secondaryRevision, setSecondaryRevision] = useState(0);
+  const [secondaryLoading, setSecondaryLoading] = useState(true);
+  const [secondaryError, setSecondaryError] = useState<string | null>(null);
+  const [favoritesScope, setFavoritesScope] = useState<string | null>(null);
+  const isFavoriteLoading = Boolean(user && favoritesScope !== `${user.id}:${listingId}`);
   const [isEnriching, setIsEnriching] = useState(false);
   const [isActing, setIsActing] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -82,42 +89,75 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
-    const [nextListing, nextResult, nextMatches] = await Promise.all([
-      getListing(listingId),
-      getTradeResultStatus(listingId),
-      getListingMatches(listingId, { limit: 10, minScore: 58 }),
-    ]);
+    const generation = ++loadGeneration.current;
+    let nextListing: Listing;
+    try {
+      nextListing = await getListing(listingId);
+    } catch (error) {
+      if (generation !== loadGeneration.current) return;
+      throw error;
+    }
+    if (generation !== loadGeneration.current) return;
     setListing(nextListing);
     setSimulationPrice(String(Math.round(nextListing.price)));
-    setResultStatus(nextResult);
-    setMatches(nextMatches);
-    if (user) {
-      const favorites = await getFavorites().catch(() => []);
-      setIsSaved(favorites.some((favorite) => favorite.listing_id === listingId));
-    } else {
-      setIsSaved(false);
-    }
-  }, [listingId, user]);
+    setIsLoading(false);
+    setSecondaryRevision((revision) => revision + 1);
+  }, [listingId]);
 
   useEffect(() => {
+    if (isAuthLoading) return;
     let isMounted = true;
+    const snapshot = getPublicListingSnapshot(listingId);
+    setListing(snapshot ?? null);
+    setIsLoading(!snapshot);
+    setError(null);
 
     void loadData()
       .catch((nextError) => {
         if (isMounted) {
+          setListing(null);
           setError(nextError instanceof Error ? nextError.message : "Unable to load listing.");
-        }
-      })
-      .finally(() => {
-        if (isMounted) {
           setIsLoading(false);
         }
       });
 
     return () => {
       isMounted = false;
+      // Invalidate asynchronous reads from the previous route/account, not a DOM ref.
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      loadGeneration.current++;
     };
-  }, [loadData]);
+  }, [isAuthLoading, listingId, loadData, user?.id]);
+
+  // Favorites and seller-only intelligence never block the item or its contact action.
+  useEffect(() => {
+    let active = true;
+    setIsSaved(false);
+    setFavoritesScope(null);
+    if (user?.id) {
+      void getFavorites().then((favorites) => {
+        if (active) setIsSaved(favorites.some((favorite) => favorite.listing_id === listingId));
+      }).catch(() => {}).finally(() => { if (active) setFavoritesScope(`${user.id}:${listingId}`); });
+    }
+    return () => { active = false; };
+  }, [listingId, user?.id]);
+
+  const isSeller = Boolean(user && listing && user.id === listing.seller_id);
+  useEffect(() => {
+    let active = true;
+    setResultStatus(null);
+    setMatches([]);
+    setSecondaryError(null);
+    setSecondaryLoading(isSeller);
+    if (isSeller && secondaryRevision > 0) {
+      const failed = () => { if (active) setSecondaryError("Some seller insights could not load. Your item and contact details are still available."); };
+      void Promise.allSettled([
+        getTradeResultStatus(listingId).then((result) => { if (active) setResultStatus(result); }).catch(failed),
+        getListingMatches(listingId, { limit: 10, minScore: 58 }).then((items) => { if (active) setMatches(items); }).catch(failed),
+      ]).finally(() => { if (active) setSecondaryLoading(false); });
+    }
+    return () => { active = false; };
+  }, [isSeller, listingId, secondaryRevision, user?.id]);
 
   useEffect(() => {
     void trackProductEvent({
@@ -133,13 +173,16 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     }
 
     const timer = window.setTimeout(() => {
-      void loadData().catch((nextError) => {
-        setError(nextError instanceof Error ? nextError.message : "Unable to refresh enrichment status.");
-      });
+      void getTradeResultStatus(listingId).then((result) => {
+        if (!active) return;
+        setResultStatus(result);
+        if (result.status === "completed") void loadData().catch(() => {});
+      }).catch(() => { if (active) setSecondaryError("Unable to refresh seller insights. Your item is still available."); });
     }, 1500);
 
-    return () => window.clearTimeout(timer);
-  }, [loadData, resultStatus?.status]);
+    let active = true;
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [listingId, loadData, resultStatus]);
 
   useEffect(() => {
     if (!user || !listing || processedIntentRef.current === searchParams.toString()) {
@@ -151,6 +194,10 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       return;
     }
     processedIntentRef.current = searchParams.toString();
+    if (intent === "save_listing" && isFavoriteLoading) {
+      processedIntentRef.current = null;
+      return;
+    }
     if (intent === "save_listing" && !isSaved) {
       void handleFavorite().then(() => {
         setActionNotice("Listing saved.");
@@ -164,7 +211,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       router.replace(`/trade/${listing.id}`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSaved, listing, router, searchParams, user]);
+  }, [isFavoriteLoading, isSaved, listing, router, searchParams, user]);
 
   async function runAction(action: () => Promise<void>, fallback: string) {
     setIsActing(true);
@@ -361,7 +408,6 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     }, "Unable to submit decision feedback.");
   }
 
-  const isSeller = Boolean(user && listing && user.id === listing.seller_id);
   const contactAvailable = Boolean(listing && ["available", "reserved"].includes(listing.status));
   const sellerContact = useSellerContact(listingId, user?.id, Boolean(user && !isSeller && contactAvailable));
 
@@ -440,6 +486,9 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
               <SafetyNotice />
 
               {isSeller ? (
+                <>
+                {secondaryLoading ? <p className="trade-helper-text" role="status">Loading seller insights…</p> : null}
+                {secondaryError ? <p className="trade-alert trade-alert-warning" role="alert">{secondaryError}</p> : null}
                 <SellerIntelligencePanel
                   isActing={isActing}
                   isEnriching={isEnriching}
@@ -455,6 +504,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                   onSimulate={handleSimulatePrice}
                   onSimulationPriceChange={setSimulationPrice}
                 />
+                </>
               ) : (
       <section className="trade-card p-5 text-center">
                   <p className="text-sm font-semibold text-slate-900">Looking for more campus items?</p>
