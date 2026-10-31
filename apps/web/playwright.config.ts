@@ -4,6 +4,7 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3100";
 
 export default defineConfig({
   testDir: "./tests",
+  testIgnore: "**/pwa/**",
   timeout: 45_000,
   expect: {
     timeout: 10_000,

@@ -114,8 +114,8 @@ export function TradeShell({
   }
 
   return (
-    <main className="trade-page-surface pb-24 md:pb-0">
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#090807] shadow-lg shadow-black/25">
+    <main className="trade-page-surface pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#090807] pt-[env(safe-area-inset-top)] shadow-lg shadow-black/25">
         <div className="trade-container flex min-h-[72px] items-center justify-between gap-3 py-3 lg:min-h-[76px]">
           <Link
             className="flex min-w-0 max-w-[min(100%,14rem)] items-center gap-3 rounded-xl pr-2 text-white transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 sm:max-w-none"

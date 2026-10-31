@@ -50,7 +50,7 @@ export function AuthPageShell({ children }: AuthPageShellProps) {
         style={{ background: "radial-gradient(circle, rgba(197,154,67,0.20), transparent 70%)" }}
       />
 
-      <header className="absolute inset-x-0 top-0 z-20 px-4 pt-5 sm:px-8 sm:pt-7">
+      <header className="absolute inset-x-0 top-0 z-20 px-4 pt-[calc(1.25rem+env(safe-area-inset-top))] sm:px-8 sm:pt-[calc(1.75rem+env(safe-area-inset-top))]">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
           <Link
             aria-label="UM Nexus Trade — home"
@@ -66,7 +66,7 @@ export function AuthPageShell({ children }: AuthPageShellProps) {
           </Link>
 
           <Link
-            className="hidden cursor-pointer items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-[11px] font-medium uppercase text-stone-200 transition hover:border-white/25 hover:text-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-200 sm:inline-flex"
+            className="pwa-browser-only hidden cursor-pointer items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-[11px] font-medium uppercase text-stone-200 transition hover:border-white/25 hover:text-stone-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-amber-200 sm:inline-flex"
             href="/"
             style={{ letterSpacing: "0.22em" }}
           >

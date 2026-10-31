@@ -163,7 +163,7 @@ const campusBadges = [
 export default function HomePage() {
   return (
     <div
-      className={`${luxuryDisplay.variable} ${luxuryBody.variable} luxury-surface luxury-font-body`}
+      className={`${luxuryDisplay.variable} ${luxuryBody.variable} luxury-surface luxury-font-body pwa-landing`}
     >
       <FloatingNav />
 

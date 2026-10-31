@@ -8,7 +8,8 @@
     "start": "next start --hostname 0.0.0.0 --port 3000",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0",
     "test:e2e": "playwright test",
-    "test:smoke": "playwright test tests/smoke.spec.ts"
+    "test:smoke": "playwright test tests/smoke.spec.ts",
+    "test:pwa": "playwright test --config playwright.pwa.config.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.6.1",

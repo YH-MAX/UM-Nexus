@@ -3,6 +3,7 @@ import type { Viewport } from "next";
 import { Geist } from "next/font/google";
 
 import { Providers } from "@/app/providers";
+import { PwaRuntime } from "@/components/pwa-runtime";
 
 import "./globals.css";
 
@@ -13,6 +14,8 @@ const geistSans = Geist({
 
 export const metadata: Metadata = {
   applicationName: "UM Nexus",
+  appleWebApp: { capable: true, title: "UM Nexus", statusBarStyle: "default" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
   title: {
     default: "UM Nexus Trade",
     template: "%s | UM Nexus",
@@ -29,7 +32,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#020617",
+  themeColor: "#090807",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 type RootLayoutProps = Readonly<{
@@ -41,6 +47,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
     <html className={geistSans.variable} lang="en">
       <body className="min-h-screen antialiased" suppressHydrationWarning>
         <Providers>{children}</Providers>
+        <PwaRuntime />
       </body>
     </html>
   );

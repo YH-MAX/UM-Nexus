@@ -568,7 +568,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
 
             {/* Mobile sticky bottom CTA */}
             {!isSeller && user && ["available", "reserved"].includes(listing.status) ? (
-              <div className="fixed inset-x-0 bottom-[74px] z-40 px-4 md:hidden">
+              <div className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-40 px-4 md:hidden">
                 {profileIncomplete ? (
                   <Link
                     className="trade-button-primary block w-full py-3 text-center shadow-lg shadow-emerald-900/20"
