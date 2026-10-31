@@ -44,7 +44,7 @@ npm run test:pwa
 
 | 设置 | 值 |
 |---|---|
-| Name | `um-nexus-web`，如有冲突以实际名称为准 |
+| Name | `um-nexus-pwa`，如有冲突以实际名称为准 |
 | Language / Runtime | Docker |
 | Root Directory | 留空，从仓库根目录解析下面的路径 |
 | Dockerfile Path | `apps/web/Dockerfile` |

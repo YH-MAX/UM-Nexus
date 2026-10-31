@@ -46,7 +46,7 @@ services:
         value: "5242880"
 
   - type: web
-    name: um-nexus-web
+    name: um-nexus-pwa
     runtime: docker
     plan: free
     dockerContext: ./apps/web
