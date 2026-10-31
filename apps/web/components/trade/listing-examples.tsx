@@ -8,6 +8,7 @@ import type { ListingFilters } from "@/components/trade/marketplace-filter-panel
 import { formatCategory, formatMoney } from "@/lib/trade/api";
 import { findListingExamples, listingExamples } from "@/lib/trade/listing-examples";
 import photoData from "@/lib/trade/example-photos.json";
+import { exampleImages, exampleCardSizes } from "@/lib/trade/example-images";
 
 type ExamplePhoto = {
   kind?: string;
@@ -63,12 +64,13 @@ function ExampleCollection({ filters, viewMode }: Readonly<{ filters: ListingFil
         {examples.slice(0, limit).map((item) => {
           const Icon = categoryIcons[item.category as keyof typeof categoryIcons];
           const photo = examplePhotos[item.id];
+          const image = exampleImages[item.id];
           return (
             <article aria-label={`Demo item: ${item.title}`} className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-sm ${viewMode === "list" ? "sm:flex" : ""}`} key={item.id}>
               <Link aria-label={`View ${item.title}`} href={`/trade/${item.id}`} className={`relative flex items-center justify-center overflow-hidden bg-[#f1ede7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600 ${viewMode === "list" ? "h-40 sm:h-auto sm:w-44 sm:shrink-0" : "aspect-[4/3]"}`}>
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img alt={photo.alt} className="absolute inset-0 h-full w-full object-contain" decoding="async" height={480} loading="lazy" src={photo.src} width={640} />
+                  <img alt={photo.alt} className="absolute inset-0 h-full w-full object-contain" decoding="async" height={image.card.height} loading="lazy" sizes={viewMode === "list" ? "(min-width: 640px) 176px, calc(100vw - 48px)" : exampleCardSizes} src={image.card.src} srcSet={image.cardSrcSet} width={image.card.width} />
                 ) : <Icon aria-hidden="true" className="h-16 w-16 text-amber-800/70" strokeWidth={1.25} />}
                 <span className="absolute left-3 top-3 rounded-full border border-amber-200 bg-white/95 px-3 py-1 text-xs font-semibold text-amber-900 shadow-sm">Demo · not for sale</span>
                 <span className="absolute bottom-3 rounded-full bg-white/95 px-2 py-0.5 text-[11px] text-stone-600 shadow-sm">{photo?.kind === "ai" ? "AI reference photo" : photo ? "Reference photo" : "Category illustration"}</span>

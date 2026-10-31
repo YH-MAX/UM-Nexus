@@ -25,7 +25,7 @@ Writes invalidate public data before and after their response, including image u
 | Priority | Location | Recommendation |
 | --- | --- | --- |
 | Implemented | Browser public listing data | Keep the small cache and measure repeat navigation before expanding it. |
-| Next | Reference images and other public static media | Introduce content-versioned filenames, then long-lived browser caching. Consider CDN delivery if image latency remains significant. Do not mark mutable filenames immutable. |
+| Implemented in the following image release | Reference images and seller photos | Bundled photos now have hashed responsive variants with long-lived browser caching; seller photos use restricted Next.js optimization. See [responsive listing images](responsive-listing-images.md). Consider CDN delivery only if image latency remains significant. |
 | Later, if measurements justify it | Anonymous backend listing-feed queries | Consider a short cache keyed by filters, sort and pagination, with invalidation for publish/edit/status/moderation/image changes. First profile database queries and connection latency. |
 | Only when sharing between processes is needed | Redis or another shared store | No evidence currently justifies the extra service. A shared store becomes useful when multiple instances need coordinated cache entries and invalidation. |
 | Keep fresh | Contact destinations, permissions, account/profile, favorites and notifications | Do not place these responses into a shared public/CDN/service-worker cache. Scope any future private query cache by account and clear it on sign-out. |

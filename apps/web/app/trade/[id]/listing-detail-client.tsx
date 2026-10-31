@@ -31,6 +31,7 @@ import { SafetyNotice } from "@/components/trade/safety-notice";
 import { StatusPill, statusTone } from "@/components/trade/status-pill";
 import { TradeResultCard } from "@/components/trade/trade-result-card";
 import { TradeShell } from "@/components/trade/trade-shell";
+import { ListingPhoto } from "@/components/trade/listing-photo";
 import { getPublicListingSnapshot } from "@/lib/trade/public-listing-cache";
 import {
   addFavorite,
@@ -603,8 +604,7 @@ function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
     <section className="trade-card overflow-hidden">
       <div className="relative flex aspect-[4/3] items-center justify-center bg-slate-100">
         {primaryImage?.public_url ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img alt={listing.title} className="h-full w-full object-cover" src={primaryImage.public_url} />
+          <ListingPhoto alt={listing.title} className="h-full w-full object-cover" eager image={primaryImage} sizes="(min-width: 1024px) 65vw, calc(100vw - 32px)" />
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400">
             <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -628,10 +628,9 @@ function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
       {galleryImages.length > 0 ? (
         <div className="grid gap-3 border-t border-slate-100 bg-white p-3 sm:grid-cols-4">
           {galleryImages.map((image) => (
-            <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-100" key={image.id}>
+            <div className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100" key={image.id}>
               {image.public_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img alt={listing.title} className="aspect-square w-full object-cover" src={image.public_url} />
+                <ListingPhoto alt={listing.title} className="aspect-square w-full object-cover" image={image} sizes="(min-width: 1024px) 16vw, (min-width: 640px) 25vw, calc(100vw - 56px)" />
               ) : (
                 <div className="flex aspect-square flex-col items-center justify-center gap-1 bg-slate-50 text-slate-400">
                   <ImageIcon aria-hidden="true" className="h-6 w-6" />

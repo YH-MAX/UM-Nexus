@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import photos from "../../lib/trade/example-photos.json";
 import { listingExamples } from "../../lib/trade/listing-examples";
+import { exampleImages } from "../../lib/trade/example-images";
 
 test("120 disclosed demo items are pageable and never contact fake sellers", async ({ page }) => {
   const writes: string[] = [];
@@ -57,7 +58,7 @@ test("all 120 demo details resolve directly and unknown examples show not found"
       const response = await request.get(`/trade/${item.id}`);
       expect(response.status(), item.id).toBe(200);
       const html = await response.text();
-      expect(html).toContain(`/example-photos/${item.id}.webp`);
+      expect(html).toContain(exampleImages[item.id].full.src);
       expect(html).toContain("Demo · not for sale.");
       expect(html).toContain('content="noindex, follow"');
     }));

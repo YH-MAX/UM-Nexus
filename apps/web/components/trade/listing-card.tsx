@@ -14,6 +14,7 @@ import {
 } from "@/lib/trade/api";
 
 import { StatusPill, statusTone } from "./status-pill";
+import { ListingPhoto } from "./listing-photo";
 
 type ListingCardProps = Readonly<{
   listing: Listing;
@@ -78,11 +79,11 @@ export function ListingCard({
       }`}
     >
       {primaryImage?.public_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
+        <ListingPhoto
+          image={primaryImage}
           alt={listing.title}
           className="h-full w-full object-cover transition duration-200 ease-out group-hover:scale-[1.04]"
-          src={primaryImage.public_url}
+          sizes={isList ? "(min-width: 640px) 176px, calc(100vw - 48px)" : "(min-width: 1280px) 280px, (min-width: 1024px) 25vw, (min-width: 640px) 50vw, calc(100vw - 48px)"}
         />
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-[#f4e9d8] via-[#ebe4dc] to-[#e8dfd4] text-stone-500">

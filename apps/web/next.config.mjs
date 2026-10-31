@@ -19,6 +19,19 @@ if (process.env.SKIP_ENV_VALIDATION !== "true") {
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  images: {
+    qualities: [75],
+    minimumCacheTTL: 86400,
+    deviceSizes: [480, 640, 960, 1280, 1920],
+    imageSizes: [96, 160, 240, 320, 400],
+    localPatterns: [{ pathname: "/example-photos/optimized/**", search: "" }],
+    remotePatterns: process.env.NEXT_PUBLIC_SUPABASE_URL ? [{
+      protocol: "https",
+      hostname: new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname,
+      port: "",
+      pathname: "/storage/v1/object/public/listing-images/**",
+    }] : [],
+  },
   allowedDevOrigins: ["127.0.0.1:3100", "localhost:3100", "http://127.0.0.1:3100", "http://localhost:3100"],
   async redirects() {
     return [
@@ -31,6 +44,10 @@ const nextConfig = {
   },
   async headers() {
     return [
+      {
+        source: "/example-photos/optimized/:file",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
       {
         source: "/sw.js",
         headers: [
