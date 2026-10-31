@@ -21,6 +21,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { CategoryPill } from "@/components/trade/category-pill";
 import { EmptyState } from "@/components/trade/empty-state";
 import { ListingCard } from "@/components/trade/listing-card";
+import { ListingExamples } from "@/components/trade/listing-examples";
 import { LoadingSkeleton } from "@/components/trade/loading-skeleton";
 import { MarketplaceBrowseSidebar } from "@/components/trade/marketplace-browse-sidebar";
 import {
@@ -510,6 +511,7 @@ export default function TradePage() {
                 ) : null}
               </>
             )}
+            <ListingExamples filters={{ ...filters, search: debouncedSearch }} viewMode={viewMode} />
           </div>
         </div>
 

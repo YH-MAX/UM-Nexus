@@ -13,6 +13,8 @@
 
 ## 当前方案
 
+商品页包含 120 个明确标注的虚构商品示例，用于提供发帖灵感。示例独立于真实商品，展示参考价与“发布类似商品”入口，没有卖家、库存、联系或收藏操作，不写入生产数据库、真实商品数量和价格训练数据。
+
 - `apps/web`：Next.js 网页与 PWA，Render **Free Web Service**。
 - `apps/api`：沿用现有 FastAPI 服务，Render **Free Web Service**。
 - 数据库、登录、商品图片：沿用现有 Supabase 项目，商品图片放 `listing-images` Storage bucket。

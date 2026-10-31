@@ -1,0 +1,76 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+import { Armchair, BookOpen, CookingPot, Gift, Laptop, Lightbulb, PlusCircle, Shirt, Trophy } from "lucide-react";
+
+import type { ListingFilters } from "@/components/trade/marketplace-filter-panel";
+import { formatCategory, formatMoney } from "@/lib/trade/api";
+import { findListingExamples, listingExamples } from "@/lib/trade/listing-examples";
+
+const categoryIcons = {
+  textbooks_notes: BookOpen,
+  electronics: Laptop,
+  dorm_room: Lightbulb,
+  kitchen_appliances: CookingPot,
+  furniture: Armchair,
+  clothing: Shirt,
+  sports_hobby: Trophy,
+  free_items: Gift,
+};
+
+export function ListingExamples({ filters, viewMode }: Readonly<{ filters: ListingFilters; viewMode: "grid" | "list" }>) {
+  // Remount on filter changes so a new search always starts with one page.
+  return <ExampleCollection filters={filters} key={JSON.stringify(filters)} viewMode={viewMode} />;
+}
+
+function ExampleCollection({ filters, viewMode }: Readonly<{ filters: ListingFilters; viewMode: "grid" | "list" }>) {
+  const [limit, setLimit] = useState(24);
+  const examples = findListingExamples(filters);
+  if (!examples.length) return null;
+
+  return (
+    <section aria-labelledby="listing-examples-heading" className="space-y-5 border-t border-stone-200 pt-8">
+      <div className="flex flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">Campus inspiration · {listingExamples.length} examples</p>
+          <h2 className="mt-2 text-xl font-semibold text-stone-950" id="listing-examples-heading">Have something like this?</h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
+            Demo items for posting inspiration, not real offers. Prices are illustrative. Share your own item and photos to start a real campus trade.
+          </p>
+        </div>
+        <Link className="trade-button-primary shrink-0" href="/trade/sell">
+          <PlusCircle aria-hidden="true" className="h-4 w-4" /> Post your own item
+        </Link>
+      </div>
+
+      <p aria-live="polite" className="text-sm text-stone-500">Showing {Math.min(limit, examples.length)} of {examples.length} demo items · separate from live listings</p>
+      <div className={viewMode === "grid" ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : "flex flex-col gap-4"}>
+        {examples.slice(0, limit).map((item) => {
+          const Icon = categoryIcons[item.category as keyof typeof categoryIcons];
+          return (
+            <article aria-label={`Demo item: ${item.title}`} className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-sm ${viewMode === "list" ? "sm:flex" : ""}`} key={item.id}>
+              <div aria-hidden="true" className={`relative flex items-center justify-center bg-gradient-to-br from-[#f4e9d8] via-[#ebe4dc] to-[#e8dfd4] ${viewMode === "list" ? "h-40 sm:h-auto sm:w-44 sm:shrink-0" : "aspect-[4/3]"}`}>
+                <span className="absolute left-3 top-3 rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-900">Demo · not for sale</span>
+                <Icon className="h-16 w-16 text-amber-800/70" strokeWidth={1.25} />
+                <span className="absolute bottom-3 text-[11px] text-stone-600">Category illustration</span>
+              </div>
+              <div className="flex min-w-0 flex-1 flex-col p-4">
+                <p className="text-xs font-medium text-stone-500">{formatCategory(item.category)}</p>
+                <h3 className="mt-2 text-base font-semibold leading-snug text-stone-950">{item.title}</h3>
+                <p className="mt-3 text-sm text-stone-600">Example price <span className="font-semibold text-amber-800">{item.price === 0 ? "Free" : formatMoney(item.price)}</span></p>
+                <p className="mb-4 mt-2 text-xs leading-5 text-stone-500">Fictional example · no seller or pickup available.</p>
+                <Link aria-label={`Post your own item like ${item.title}`} className="trade-button-secondary mt-auto w-full text-center text-xs" href="/trade/sell">Post a similar item</Link>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {limit < examples.length ? (
+        <div className="flex justify-center">
+          <button className="trade-button-secondary min-h-12 rounded-2xl" onClick={() => setLimit((value) => value + 24)} type="button">More demo items ({examples.length - limit} remaining)</button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
