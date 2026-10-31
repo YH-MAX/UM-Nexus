@@ -45,12 +45,12 @@ function ExampleCollection({ filters, viewMode }: Readonly<{ filters: ListingFil
   if (!examples.length) return null;
 
   return (
-    <section aria-labelledby="listing-examples-heading" className="space-y-5 border-t border-stone-200 pt-8">
-      <div className="flex flex-col gap-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-5 sm:flex-row sm:items-center sm:justify-between">
+    <section aria-labelledby="listing-examples-heading" className="nexus-examples space-y-3 border-t border-slate-100 pt-5">
+      <div className="nexus-example-intro flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">Campus inspiration · {listingExamples.length} examples</p>
-          <h2 className="mt-2 text-xl font-semibold text-stone-950" id="listing-examples-heading">Have something like this?</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
+          <h2 className="mt-1 text-lg font-semibold text-slate-950" id="listing-examples-heading">Have something like this?</h2>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">
             Demo items for posting inspiration, not real offers. Prices and reference photos are illustrative. Share your own item and photos to start a real campus trade.
           </p>
         </div>
@@ -60,30 +60,30 @@ function ExampleCollection({ filters, viewMode }: Readonly<{ filters: ListingFil
       </div>
 
       <p aria-live="polite" className="text-sm text-stone-500">Showing {Math.min(limit, examples.length)} of {examples.length} demo items · separate from live listings</p>
-      <div className={viewMode === "grid" ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : "flex flex-col gap-4"}>
+      <div className={viewMode === "grid" ? "nexus-listing-grid grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4" : "flex flex-col gap-4"}>
         {examples.slice(0, limit).map((item) => {
           const Icon = categoryIcons[item.category as keyof typeof categoryIcons];
           const photo = examplePhotos[item.id];
           const image = exampleImages[item.id];
           return (
-            <article aria-label={`Demo item: ${item.title}`} className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-sm ${viewMode === "list" ? "sm:flex" : ""}`} key={item.id}>
+            <article aria-label={`Demo item: ${item.title}`} className={`nexus-listing-card overflow-hidden rounded-xl border border-slate-200 bg-white ${viewMode === "list" ? "sm:flex" : ""}`} key={item.id}>
               <Link aria-label={`View ${item.title}`} href={`/trade/${item.id}`} className={`relative flex items-center justify-center overflow-hidden bg-[#f1ede7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600 ${viewMode === "list" ? "h-40 sm:h-auto sm:w-44 sm:shrink-0" : "aspect-[4/3]"}`}>
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img alt={photo.alt} className="absolute inset-0 h-full w-full object-contain" decoding="async" height={image.card.height} loading="lazy" sizes={viewMode === "list" ? "(min-width: 640px) 176px, calc(100vw - 48px)" : exampleCardSizes} src={image.card.src} srcSet={image.cardSrcSet} width={image.card.width} />
                 ) : <Icon aria-hidden="true" className="h-16 w-16 text-amber-800/70" strokeWidth={1.25} />}
-                <span className="absolute left-3 top-3 rounded-full border border-amber-200 bg-white/95 px-3 py-1 text-xs font-semibold text-amber-900 shadow-sm">Demo · not for sale</span>
-                <span className="absolute bottom-3 rounded-full bg-white/95 px-2 py-0.5 text-[11px] text-stone-600 shadow-sm">{photo?.kind === "ai" ? "AI reference photo" : photo ? "Reference photo" : "Category illustration"}</span>
+                <span className="absolute left-1.5 top-1.5 rounded-full border border-amber-200 bg-white/95 px-2 py-0.5 text-[9px] font-medium text-amber-900 shadow-sm">Demo · not for sale</span>
+                <span className="absolute bottom-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[9px] text-stone-600 shadow-sm">{photo?.kind === "ai" ? "AI reference photo" : photo ? "Reference photo" : "Category illustration"}</span>
               </Link>
-              <div className="flex min-w-0 flex-1 flex-col p-4">
-                <p className="text-xs font-medium text-stone-500">{formatCategory(item.category)}</p>
-                <h3 className="mt-2 text-base font-semibold leading-snug text-stone-950"><Link className="hover:underline focus-visible:underline" href={`/trade/${item.id}`}>{item.title}</Link></h3>
-                <p className="mt-3 text-sm text-stone-600">Example price <span className="font-semibold text-amber-800">{item.price === 0 ? "Free" : formatMoney(item.price)}</span></p>
-                <p className="mb-4 mt-2 text-xs leading-5 text-stone-500">Fictional example · no seller or pickup available.</p>
-                <Link aria-label={`View details of ${item.title}`} className="trade-button-secondary mt-auto w-full text-center text-xs" href={`/trade/${item.id}`}>View item</Link>
-                <Link aria-label={`Post your own item like ${item.title}`} className="mt-3 text-center text-xs font-medium text-amber-800 underline underline-offset-4" href="/trade/sell">Post a similar item</Link>
+              <div className="flex min-w-0 flex-1 flex-col p-2.5 sm:p-3">
+                <p className="hidden text-xs font-medium text-slate-500 sm:block">{formatCategory(item.category)}</p>
+                <h3 className="mt-1 line-clamp-2 text-[13px] font-semibold leading-snug sm:text-sm text-stone-950"><Link className="hover:underline focus-visible:underline" href={`/trade/${item.id}`}>{item.title}</Link></h3>
+                <p className="mt-1 text-sm text-slate-950"><span className="font-semibold">{item.price === 0 ? "Free" : formatMoney(item.price)}</span></p>
+                <p className="mt-1 text-[10px] text-slate-500">Illustrative price · demo item</p>
+                <Link aria-label={`View details of ${item.title}`} className="mt-2 inline-flex min-h-8 items-center text-xs font-medium text-teal-800" href={`/trade/${item.id}`}>View item</Link>
+                <Link aria-label={`Post your own item like ${item.title}`} className="mt-1 text-[10px] text-slate-500 underline underline-offset-4" href="/trade/sell">Post a similar item</Link>
                 {photo ? (
-                  <details className="mt-3 text-[11px] leading-5 text-stone-500">
+                  <details className="mt-2 text-[10px] leading-5 text-slate-500">
                     <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">{photo.kind === "ai" ? "About this photo" : "Photo credit"}</summary>
                     {photo.kind === "ai" ? <p className="mt-1">AI-generated reference image for this fictional example. Not a seller&apos;s item photo.</p> : <p className="mt-1 break-words">
                       <a className="underline underline-offset-2" href={photo.sourceUrl} rel="noopener noreferrer" target="_blank">{photo.sourceTitle}</a>

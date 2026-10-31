@@ -20,33 +20,33 @@ export function ExampleListingDetail({ item, related }: Readonly<{ item: Listing
   const price = item.price === 0 ? "Free" : formatMoney(item.price);
 
   return (
-    <TradeShell title={item.title} description="Explore this example listing and get inspiration for your own campus post.">
-      <Link className="trade-button-ghost w-fit" href="/trade"><ArrowLeft aria-hidden="true" className="h-4 w-4" /> Back to marketplace</Link>
-      <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-950" role="note">
+    <TradeShell hideHero title={item.title} description="Explore this example listing and get inspiration for your own campus post.">
+      <Link className="trade-button-ghost hidden w-fit md:inline-flex" href="/trade"><ArrowLeft aria-hidden="true" className="h-4 w-4" /> Back to marketplace</Link>
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-950" role="note">
         <strong>Demo · not for sale.</strong> This is a fictional example, with no seller or pickup available. The photo and price are illustrative.
       </div>
-      <div className="mt-5 grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-        <div className="min-w-0 space-y-5">
-          <section aria-label="Item photo" className="trade-card overflow-hidden">
+      <div className="nexus-example-detail-grid">
+        <div className="contents">
+          <section aria-label="Item photo" className="nexus-example-media trade-card overflow-hidden">
             <button aria-label={`Enlarge photo of ${item.title}`} className="relative flex aspect-[4/3] w-full items-center justify-center bg-[#f1ede7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600" onClick={() => { setPhotoOpen(true); photoDialog.current?.showModal(); }} type="button">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img alt={photo.alt} className="h-full w-full object-contain" decoding="async" height={image.full.height} sizes="(min-width: 1024px) 60vw, calc(100vw - 32px)" src={image.full.src} srcSet={image.detailSrcSet} width={image.full.width} />
               <span className="absolute bottom-3 right-3 flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 text-xs font-medium shadow-sm"><Expand aria-hidden="true" className="h-4 w-4" /> View photo</span>
             </button>
-            <div className="p-4 text-xs leading-6 text-stone-500">
+            <div className="p-3 text-[10px] leading-5 text-slate-500" id="photo-credit">
               {photo.kind === "ai" ? <p>AI-generated reference photo, not a seller&apos;s item photo.</p> : <p>
                 Reference photo: <a className="underline" href={photo.sourceUrl} rel="noopener noreferrer" target="_blank">{photo.sourceTitle}</a>{" · "}{photo.author}{" · "}<a className="underline" href={photo.licenseUrl} rel="noopener noreferrer" target="_blank">{photo.license}</a>{" · "}{photo.changes}
               </p>}
             </div>
           </section>
-          <section aria-labelledby="example-description" className="trade-card p-5 sm:p-6">
+          <section aria-labelledby="example-description" className="nexus-example-description trade-card p-4 sm:p-6">
             <h2 className="text-xl font-semibold" id="example-description">About this item</h2>
             <p className="mt-3 text-sm leading-7 text-stone-600">{describeListingExample(item)}</p>
           </section>
         </div>
-        <section aria-label="Example item details" className="trade-card min-w-0 p-5 sm:p-6 lg:sticky lg:top-6">
+        <section aria-label="Example item details" className="nexus-example-summary trade-card min-w-0 p-4 sm:p-6">
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">Example listing</p>
-          <h2 className="mt-3 text-2xl font-semibold leading-tight text-stone-950">{item.title}</h2>
+          <h1 className="mt-2 text-xl font-semibold leading-tight text-slate-950">{item.title}</h1>
           <p className="mt-4 text-3xl font-bold text-emerald-800">{price}</p>
           <p className="mt-1 text-xs text-stone-500">Illustrative price · not a live offer</p>
           <dl className="my-6 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 border-y border-stone-100 py-5 text-sm">

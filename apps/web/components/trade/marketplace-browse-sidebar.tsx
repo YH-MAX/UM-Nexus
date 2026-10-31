@@ -77,8 +77,8 @@ export function MarketplaceBrowseSidebar({
               <button
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
                   active
-                    ? "bg-[#f5f0e6] font-medium text-stone-950 shadow-sm ring-1 ring-amber-200/60"
-                    : "text-stone-800 hover:bg-amber-50/80 hover:text-stone-950"
+                    ? "bg-[#edf6f3] font-medium text-teal-900 ring-1 ring-teal-100"
+                    : "text-stone-800 hover:bg-teal-50/80 hover:text-stone-950"
                 }`}
                 key={row.value || "all"}
                 onClick={() => onSelectCategory(row.value)}
@@ -99,7 +99,7 @@ export function MarketplaceBrowseSidebar({
 
       <div className="mt-auto rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50/90 to-[#fff9ed] p-4 shadow-sm">
         <div className="flex gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-200/90 bg-white text-amber-700 shadow-sm">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-200/90 bg-white text-teal-800 shadow-sm">
             <Shield aria-hidden="true" className="h-5 w-5" />
           </span>
           <div className="min-w-0">

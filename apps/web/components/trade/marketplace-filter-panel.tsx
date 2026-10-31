@@ -144,8 +144,8 @@ export function MarketplaceFilterPanel({
 
   return (
     <div className="rounded-2xl border border-stone-200 bg-[#fbfaf7]/90 p-4 shadow-sm backdrop-blur-sm sm:p-5">
-      <div className="flex flex-wrap items-end gap-3 md:gap-4 xl:flex-nowrap xl:gap-3">
-        <div className="grid min-w-[140px] flex-1 gap-1.5 sm:min-w-[160px]">
+      <div className="grid grid-cols-2 items-end gap-3 xl:grid-cols-3">
+        <div className="grid min-w-0 gap-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">Condition</span>
           <select
             className="trade-input min-h-[42px] rounded-xl border-stone-200 bg-white"
@@ -160,7 +160,7 @@ export function MarketplaceFilterPanel({
             ))}
           </select>
         </div>
-        <div className="grid min-w-[140px] flex-1 gap-1.5 sm:min-w-[160px]">
+        <div className="grid min-w-0 gap-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">Pickup</span>
           <select
             className="trade-input min-h-[42px] rounded-xl border-stone-200 bg-white"
@@ -175,7 +175,7 @@ export function MarketplaceFilterPanel({
             ))}
           </select>
         </div>
-        <div className="grid min-w-[140px] flex-1 gap-1.5 sm:min-w-[160px]">
+        <div className="grid min-w-0 gap-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">Status</span>
           <select
             className="trade-input min-h-[42px] rounded-xl border-stone-200 bg-white"
@@ -189,7 +189,7 @@ export function MarketplaceFilterPanel({
             ))}
           </select>
         </div>
-        <div className="grid min-w-[120px] flex-1 gap-1.5">
+        <div className="grid min-w-0 gap-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">Min price</span>
           <input
             className={`trade-input min-h-[42px] rounded-xl border-stone-200 bg-white ${priceError ? "border-rose-300" : ""}`}
@@ -201,7 +201,7 @@ export function MarketplaceFilterPanel({
             onChange={(event) => onUpdate("min_price", event.target.value)}
           />
         </div>
-        <div className="grid min-w-[120px] flex-1 gap-1.5">
+        <div className="grid min-w-0 gap-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-stone-500">Max price</span>
           <input
             className={`trade-input min-h-[42px] rounded-xl border-stone-200 bg-white ${priceError ? "border-rose-300" : ""}`}

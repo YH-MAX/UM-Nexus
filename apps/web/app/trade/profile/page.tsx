@@ -20,6 +20,7 @@ import {
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
 import { TradeShell } from "@/components/trade/trade-shell";
+import { ProfileOverview } from "@/components/trade/profile-overview";
 import {
   contactMethods,
   formatPickupLocation,
@@ -57,6 +58,7 @@ export default function TradeProfilePage() {
   const router = useRouter();
   const { isLoading: isAuthLoading, supabase, user } = useAuth();
   const [profile, setProfile] = useState<CurrentProfile | null>(null);
+  const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<ProfileForm>(initialForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -191,9 +193,10 @@ export default function TradeProfilePage() {
               Loading profile...
             </div>
           </div>
-        ) : user ? (
+        ) : user && !editing ? <ProfileOverview email={user.email ?? ""} key={user.id} onEdit={() => setEditing(true)} profile={profile} /> : user ? (
           <div className="flex min-w-0 flex-col gap-8 lg:gap-10 xl:flex-row xl:items-start">
             <div className="min-w-0 flex-1">
+              <button className="trade-button-ghost mb-3" onClick={() => setEditing(false)} type="button">← Back to profile</button>
               <ProfileHero />
 
               {!profileComplete ? <ProfileIncompleteBanner /> : null}
@@ -227,8 +230,8 @@ function ProfileHero() {
   return (
     <header className="mb-6 min-w-0">
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">UM Nexus Trade</p>
-      <h1 className="mt-2 font-serif text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-        Complete your trade profile
+      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+        Edit your profile
       </h1>
       <p className="mt-3 max-w-2xl text-base leading-relaxed text-stone-600 sm:text-lg">
         Build a trusted identity so fellow students can connect with confidence.

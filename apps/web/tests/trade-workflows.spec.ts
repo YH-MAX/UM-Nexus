@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { exampleImages } from "../lib/trade/example-images";
 import { expect, type Page, type Request, type Route, test } from "@playwright/test";
 
 const now = "2026-05-05T08:00:00.000Z";
@@ -200,6 +202,53 @@ const sentWantedResponse = {
 };
 
 test.describe("authenticated Trade product workflows", () => {
+  test("reference design supports home, explore, photo gallery and profile", async ({ page, isMobile }, testInfo) => {
+    await loginAs(page, buyerUser);
+    await mockTradeApi(page, { withPhotos: true });
+    await page.goto("/trade");
+    await expect(page.getByText("Buy · Sell · Connect", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: baseListing.title, exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath("reference-home.png"), fullPage: false });
+    await page.getByRole("link", { name: "Explore", exact: true }).click();
+    await expect(page).toHaveURL(/\/trade\/explore$/);
+    await expect(page.getByRole("heading", { name: "All Items", exact: true }).first()).toBeVisible();
+    if (isMobile) {
+      const cards = page.getByRole("article", { name: /^Demo item:/ });
+      const first = await cards.nth(0).boundingBox();
+      const second = await cards.nth(1).boundingBox();
+      expect(first && second && Math.abs(first.y - second.y) < 2 && second.x > first.x).toBeTruthy();
+    }
+    await page.screenshot({ path: testInfo.outputPath("reference-explore.png"), fullPage: false });
+    await page.locator('a[href="/trade/listing-1"]').first().click();
+    await expect(page.getByRole("heading", { name: baseListing.title, level: 1 })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Message on Telegram" }).first()).toBeVisible();
+    await page.getByRole("button", { name: "Next photo", exact: true }).click();
+    await page.getByRole("button", { name: "Enlarge item photo", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Item photo gallery" }).getByRole("img", { name: baseListing.title, exact: true })).toHaveAttribute("src", exampleImages["example-electronics-2"].full.src);
+    await page.getByRole("button", { name: "View photo 1", exact: true }).click();
+    await page.getByRole("button", { name: "Close item photo", exact: true }).click();
+    await page.screenshot({ path: testInfo.outputPath("reference-detail.png"), fullPage: false });
+    await page.getByRole("link", { name: "Profile", exact: true }).click();
+    await expect(page.getByRole("link", { name: "My Listings", exact: true })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Saved Items", exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("reference-profile.png"), fullPage: false });
+    await page.getByRole("button", { name: "Account Settings", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Edit your profile", exact: true })).toBeVisible();
+  });
+
+  test("reference posting form keeps photo selection and contact fields usable", async ({ page }, testInfo) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    await page.goto("/trade/sell");
+    await page.locator('input[type="file"]').first().setInputFiles({ name: "calculator.webp", mimeType: "image/webp", buffer: readFileSync("public" + exampleImages["example-electronics-1"].full.src) });
+    await expect(page.getByRole("img", { name: "Main listing photo", exact: true })).toBeVisible();
+    await expect(page.getByLabel("Title")).toBeVisible();
+    await expect(page.getByLabel("Contact method")).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("reference-post.png"), fullPage: false });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
   test("seller item renders while insights and favorites are still pending", async ({ page }) => {
     await loginAs(page, sellerUser);
     await mockTradeApi(page);
@@ -281,9 +330,9 @@ test.describe("authenticated Trade product workflows", () => {
     expect(reads[0].headers().authorization).toBeUndefined();
     expect(reads[0].headers()["content-type"]).toBeUndefined();
     await page.locator('a[href="/trade/listing-1"]').first().click();
-    await page.getByRole("link", { name: "Back to listings", exact: true }).click();
+    await page.getByRole("link", { name: "Back to marketplace", exact: true }).click();
     await expect(page).toHaveURL(/\/trade$/);
-    await expect(page.getByRole("link", { name: "Back to listings", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Back to marketplace", exact: true })).toHaveCount(0);
     await expect(page.getByRole("heading", { name: baseListing.title, exact: true })).toBeVisible();
     expect(reads).toHaveLength(1);
     await Promise.all([
@@ -291,7 +340,7 @@ test.describe("authenticated Trade product workflows", () => {
       page.locator('a[href="/trade/listing-1"]').first().click(),
     ]);
     await page.clock.fastForward(31_000);
-    await page.getByRole("link", { name: "Back to listings", exact: true }).click();
+    await page.getByRole("link", { name: "Back to marketplace", exact: true }).click();
     await expect.poll(() => reads.length).toBe(2);
   });
 
@@ -336,7 +385,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByRole("button", { name: /Save changes/i }).click();
     await expect(page.getByText(/Listing changes saved/i)).toBeVisible();
     await page.getByRole("link", { name: "Back to listing", exact: true }).click();
-    await page.getByRole("link", { name: "Back to listings", exact: true }).click();
+    await page.getByRole("link", { name: "Back to marketplace", exact: true }).click();
     await expect.poll(() => feedReads).toBe(2);
   });
 
@@ -369,7 +418,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByLabel("Title").fill("Desk lamp near KK12");
     await page.getByLabel("Price").fill("25");
     await page.getByLabel("Category").selectOption("dorm_room");
-    await page.getByLabel("Condition").selectOption("good");
+    await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
     await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
     await page.getByLabel("Contact value").fill("@aina_um");
@@ -388,7 +437,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByLabel("Title").fill("Desk lamp near KK12");
     await page.getByLabel("Price").fill("25");
     await page.getByLabel("Category").selectOption("dorm_room");
-    await page.getByLabel("Condition").selectOption("good");
+    await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
     await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
     await page.getByLabel("Contact method").selectOption("email");
@@ -443,7 +492,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByLabel("Title").fill("Desk lamp near KK12");
     await page.getByLabel("Price").fill("25");
     await page.getByLabel("Category").selectOption("dorm_room");
-    await page.getByLabel("Condition").selectOption("good");
+    await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
     await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
     await page.getByLabel("Contact value").fill("@aina_um");
@@ -472,7 +521,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByLabel("Title").fill("Desk lamp near KK12");
     await page.getByLabel("Price").fill("25");
     await page.getByLabel("Category").selectOption("dorm_room");
-    await page.getByLabel("Condition").selectOption("good");
+    await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
     await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
     await page.getByLabel("Contact value").fill("@aina_um");
@@ -526,7 +575,7 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page.getByRole("heading", { name: /Inbox/i })).toBeVisible();
     await expect(page.getByText("Earlier")).toBeVisible();
     await expect(page.getByText(/New buyer interest/i)).toBeVisible();
-    await expect(page.getByText("Request").first()).toBeVisible();
+    await expect(page.getByText("Request", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("urgent")).toBeVisible();
 
     await page.getByRole("link", { name: /Open/i }).first().click();
@@ -640,7 +689,11 @@ async function loginAs(page: Page, user: { id: string; email: string }) {
   }, user);
 }
 
-async function mockTradeApi(page: Page, options: { failImageUploads?: boolean; contactMethod?: "telegram" | "whatsapp" | "email"; contactUnavailable?: boolean } = {}) {
+async function mockTradeApi(page: Page, options: { failImageUploads?: boolean; contactMethod?: "telegram" | "whatsapp" | "email"; contactUnavailable?: boolean; withPhotos?: boolean } = {}) {
+  const photographedListing = { ...baseListing, images: [
+    { ...baseListing.images[0], public_url: exampleImages["example-electronics-1"].full.src },
+    { ...baseListing.images[0], id: "image-2", is_primary: false, public_url: exampleImages["example-electronics-2"].full.src },
+  ] };
   const state = {
     favorites: [] as string[],
     contactRequestCreated: false,
@@ -693,7 +746,7 @@ async function mockTradeApi(page: Page, options: { failImageUploads?: boolean; c
     }
 
     if (method === "GET" && path === "/listings") {
-      return json(route, { items: [baseListing], total: 1, limit: 24, offset: 0, has_more: false });
+      return json(route, { items: [options.withPhotos ? photographedListing : baseListing], total: 1, limit: 24, offset: 0, has_more: false });
     }
 
     if (method === "GET" && path === "/wanted-posts") {
@@ -768,7 +821,7 @@ async function mockTradeApi(page: Page, options: { failImageUploads?: boolean; c
         route,
         path.endsWith("listing-new")
           ? { ...baseListing, id: "listing-new", title: "Desk lamp near KK12", images: state.uploadedImages }
-          : baseListing,
+          : options.withPhotos ? photographedListing : baseListing,
       );
     }
 

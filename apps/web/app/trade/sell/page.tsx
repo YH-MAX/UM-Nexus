@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { sellDisplay } from "@/lib/fonts/display";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   type ChangeEvent,
@@ -660,11 +659,10 @@ export default function SellPage() {
 
       {user ? (
         <div className="space-y-8 pb-4">
-          <SellMarketplaceHero displayClassName={sellDisplay.className} />
+          <SellMarketplaceHero />
 
           <WorkflowProgress steps={workflowSteps} />
 
-          <SellAiAssistantBanner onTryAssistant={scrollToAiAssistant} />
 
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:items-start">
             <div className="grid min-w-0 gap-6">
@@ -690,7 +688,8 @@ export default function SellPage() {
                 onUpdateDraftField={updateDraftField}
               />
 
-              <div ref={aiAssistantPanelRef}>
+              <div className="space-y-3" ref={aiAssistantPanelRef}>
+                <SellAiAssistantBanner onTryAssistant={scrollToAiAssistant} />
                 <AgentConversationPanel
                   activeClue={activeClue}
                   activeValue={activeValue}
@@ -750,55 +749,13 @@ export default function SellPage() {
   );
 }
 
-function SellMarketplaceHero({ displayClassName }: Readonly<{ displayClassName: string }>) {
-  return (
-    <header className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
-      <div className="min-w-0 max-w-3xl">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#C98A1D]">UM Nexus Trade</p>
-        <h1 className={`${displayClassName} mt-2 text-4xl font-semibold leading-tight text-stone-950 sm:text-[2.75rem]`}>
-          Sell to the UM community. <span aria-hidden="true">✨</span>
-        </h1>
-        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[#6B6257] sm:text-base">
-          List textbooks, electronics, dorm essentials, and more for verified UM students. Our AI assistant helps you write
-          better titles, descriptions and set a fair price.
-        </p>
-      </div>
-      <div className="grid w-full grid-cols-1 gap-4 sm:grid-cols-3 sm:gap-4 lg:max-w-[38rem] xl:max-w-[40rem]">
-        <div className="flex items-start gap-4 rounded-[1.25rem] border border-stone-200/70 bg-white p-5 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#D4AF6A]/55 bg-[#faf8f3] text-[#5c4320]">
-            <Clock aria-hidden="true" className="h-[22px] w-[22px]" strokeWidth={1.75} />
-          </span>
-          <div className="min-w-0 pt-0.5">
-            <p className="text-[15px] font-bold leading-snug tracking-tight text-stone-950">Takes 2–3 mins</p>
-            <p className="mt-1 text-sm leading-snug text-stone-600">Streamlined steps</p>
-          </div>
-        </div>
-        <div className="flex items-start gap-4 rounded-[1.25rem] border border-stone-200/70 bg-white p-5 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-stone-950 text-[#D4AF6A] shadow-inner">
-            <BadgeCheck aria-hidden="true" className="h-[22px] w-[22px]" strokeWidth={2.25} />
-          </span>
-          <div className="min-w-0 pt-0.5">
-            <p className="text-[15px] font-bold leading-snug tracking-tight text-stone-950">Verified UM community</p>
-            <p className="mt-1 text-sm leading-snug text-stone-600">UM email only</p>
-          </div>
-        </div>
-        <div className="flex items-start gap-4 rounded-[1.25rem] border border-stone-200/70 bg-white p-5 shadow-[0_1px_3px_rgba(17,16,14,0.06)]">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#D4AF6A]/55 bg-[#faf8f3] text-[#5c4320]">
-            <ShieldCheck aria-hidden="true" className="h-[22px] w-[22px]" strokeWidth={1.75} />
-          </span>
-          <div className="min-w-0 pt-0.5">
-            <p className="text-[15px] font-bold leading-snug tracking-tight text-stone-950">Safe & trusted</p>
-            <p className="mt-1 text-sm leading-snug text-stone-600">Campus pickup guidance</p>
-          </div>
-        </div>
-      </div>
-    </header>
-  );
+function SellMarketplaceHero() {
+  return <header className="hidden md:block"><h1 className="text-xl font-semibold text-slate-950 md:text-2xl">Post an Item</h1><p className="mt-1 text-xs text-slate-500">Give your item a new home in the UM community.</p></header>;
 }
 
 function SellAiAssistantBanner({ onTryAssistant }: Readonly<{ onTryAssistant: () => void }>) {
   return (
-    <section className="flex flex-col gap-4 rounded-2xl border border-[#D99A2B]/50 bg-gradient-to-r from-amber-50/90 via-[#fff9ed] to-amber-50/70 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <section className="flex flex-col gap-4 rounded-2xl border border-[#D99A2B]/50 bg-gradient-to-r from-teal-50 via-white to-emerald-50 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-1 gap-3">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-white text-amber-700 shadow-sm">
           <Sparkles aria-hidden="true" className="h-5 w-5" />
@@ -817,7 +774,7 @@ function SellAiAssistantBanner({ onTryAssistant }: Readonly<{ onTryAssistant: ()
       </div>
       <div className="flex shrink-0 items-center gap-2 self-stretch sm:self-auto">
         <button
-          className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-stone-900 bg-stone-950 px-5 py-2.5 text-sm font-semibold text-amber-300 shadow-md transition hover:bg-stone-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 sm:flex-initial"
+          className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border border-stone-900 bg-stone-950 px-5 py-2.5 text-sm font-semibold text-amber-300 shadow-md transition hover:bg-[#0b4541] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 sm:flex-initial"
           onClick={onTryAssistant}
           type="button"
         >
@@ -853,8 +810,8 @@ function SellLivePreviewCard({
   const displayName =
     currentProfile?.display_name?.trim() ||
     currentProfile?.full_name?.trim() ||
-    "Aiman";
-  const faculty = currentProfile?.faculty?.trim() || "FST";
+    "Your name";
+  const faculty = currentProfile?.faculty?.trim() || "Your faculty";
   const verified = currentProfile?.verified_um_email === true;
 
   const titlePreview = draft.title.trim() || "IKEA Desk Lamp";
@@ -1222,7 +1179,7 @@ function ManualListingPanel({
   ];
 
   return (
-    <section className="rounded-2xl border border-stone-200/90 bg-white p-5 shadow-sm sm:p-6">
+    <section className="nexus-post-form rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#C98A1D]">2. Product details</p>
@@ -1242,35 +1199,13 @@ function ManualListingPanel({
             <span className="text-xs text-stone-400">{titleLen}/80</span>
           </div>
           <input
-            className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white"
+            className="trade-input min-h-[44px] rounded-lg border-stone-200 bg-white"
             id="sell-title"
             maxLength={80}
             placeholder="e.g. IKEA Desk Lamp, Calculus Textbook"
             value={draft.title}
             onChange={(event) => onUpdateDraftField("title", event.target.value)}
           />
-        </div>
-
-        <div className="grid gap-2">
-          <label className="text-sm font-semibold text-stone-900" htmlFor="sell-price">
-            Price <span className="text-rose-600">*</span>
-          </label>
-          <div className="relative">
-            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-stone-500">
-              RM
-            </span>
-            <input
-              className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white pl-12"
-              id="sell-price"
-              inputMode="decimal"
-              min="0"
-              placeholder="e.g. 45"
-              step="0.01"
-              type="number"
-              value={Number.isFinite(draft.price) && draft.price > 0 ? draft.price : ""}
-              onChange={(event) => onUpdateDraftField("price", Number(event.target.value))}
-            />
-          </div>
         </div>
 
         <EditableSelect
@@ -1286,14 +1221,31 @@ function ManualListingPanel({
             }
           }}
         />
-        <EditableSelect
-          allowEmpty
-          emptyLabel="Choose condition"
-          label="Condition *"
-          options={conditionOptions}
-          value={draft.condition_label ?? ""}
-          onChange={(value) => onUpdateDraftField("condition_label", value)}
-        />
+        <fieldset className="min-w-0" disabled={disabled}><legend className="mb-2 text-sm font-semibold text-slate-900">Condition *</legend><div className="grid grid-cols-4 gap-2">{conditionOptions.map((option) => <label className="cursor-pointer" htmlFor={`sell-condition-${option.value}`} key={option.value}><input checked={draft.condition_label === option.value} className="peer sr-only" id={`sell-condition-${option.value}`} name="listing-condition" onChange={() => onUpdateDraftField("condition_label", option.value)} type="radio" value={option.value} /><span className={`flex min-h-11 items-center justify-center rounded-lg border px-2 text-xs peer-focus-visible:ring-2 peer-focus-visible:ring-teal-500 ${draft.condition_label === option.value ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>{option.label}</span></label>)}</div></fieldset>
+
+        <div className="grid gap-2">
+          <label className="text-sm font-semibold text-stone-900" htmlFor="sell-price">
+            Price <span className="text-rose-600">*</span>
+          </label>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-stone-500">
+              RM
+            </span>
+            <input
+              className="trade-input min-h-[44px] rounded-lg border-stone-200 bg-white pl-12"
+              id="sell-price"
+              inputMode="decimal"
+              min="0"
+              placeholder="e.g. 45"
+              step="0.01"
+              type="number"
+              value={Number.isFinite(draft.price) && draft.price > 0 ? draft.price : ""}
+              onChange={(event) => onUpdateDraftField("price", Number(event.target.value))}
+            />
+          </div>
+        </div>
+
+
 
         <div className="grid gap-2 lg:col-span-2">
           <label className="text-sm font-semibold text-stone-900" htmlFor="sell-pickup">
@@ -1326,7 +1278,7 @@ function ManualListingPanel({
             Pickup notes <span className="font-normal text-stone-400">(optional)</span>
           </label>
           <input
-            className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white"
+            className="trade-input min-h-[44px] rounded-lg border-stone-200 bg-white"
             id="sell-pickup-note"
             placeholder="e.g. KK1 lobby, after 6pm, weekdays"
             value={draft.pickup_note ?? ""}
@@ -1415,7 +1367,7 @@ function ManualListingPanel({
       <div className="mt-8 flex flex-col gap-3 border-t border-stone-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <button
-            className="trade-button-secondary min-h-[46px] rounded-xl border-stone-200 bg-white px-6"
+            className="trade-button-secondary min-h-[44px] rounded-lg border-stone-200 bg-white px-6"
             disabled={disabled || isSavingDraft}
             onClick={() => void onSaveDraft()}
             type="button"
@@ -1425,7 +1377,7 @@ function ManualListingPanel({
           <p className="text-xs text-[#6B6257] sm:ml-2">Your draft is saved automatically</p>
         </div>
         <button
-          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-stone-950 px-6 text-sm font-semibold text-[#E8C66A] shadow-md transition hover:bg-stone-900 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-[#105651] px-6 text-sm font-semibold text-white shadow-md transition hover:bg-[#0b4541] disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled || isPublishing}
           onClick={onPublish}
           type="button"
@@ -1438,63 +1390,11 @@ function ManualListingPanel({
   );
 }
 
-function WorkflowProgress({
-  steps,
-}: Readonly<{
-  steps: Array<{ label: string; subtitle: string; complete: boolean }>;
-}>) {
-  const firstIncomplete = steps.findIndex((step) => !step.complete);
-  const activeIndex = firstIncomplete === -1 ? steps.length - 1 : firstIncomplete;
-
-  return (
-    <section className="rounded-2xl border border-stone-200/90 bg-white p-4 shadow-sm sm:p-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {steps.map((step, index) => {
-          const isDone = step.complete;
-          const isActive = activeIndex === index && !isDone;
-          return (
-            <div
-              className={`flex items-center gap-3 rounded-xl border px-3 py-3 transition ${
-                isDone
-                  ? "border-emerald-200/80 bg-emerald-50/60"
-                  : isActive
-                    ? "border-stone-900 bg-stone-950 text-white shadow-md"
-                    : "border-stone-100 bg-[#faf7f0]/80 text-stone-700"
-              }`}
-              key={step.label}
-            >
-              <span
-                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                  isDone
-                    ? "bg-emerald-600 text-white"
-                    : isActive
-                      ? "bg-[#C98A1D] text-stone-950"
-                      : "bg-stone-200 text-stone-600"
-                }`}
-              >
-                {index + 1}
-              </span>
-              <div className="min-w-0">
-                <p className={`truncate text-sm font-semibold ${isActive ? "text-white" : "text-stone-950"}`}>{step.label}</p>
-                <p className={`truncate text-xs ${isActive ? "text-amber-100/90" : "text-[#6B6257]"}`}>{step.subtitle}</p>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
+function WorkflowProgress({ steps }: Readonly<{ steps: Array<{ label: string; subtitle: string; complete: boolean }> }>) {
+  return <ol aria-label="Listing progress" className="hidden md:flex gap-2 overflow-x-auto border-b border-slate-100 pb-3">{steps.map((step, index) => <li className={`flex shrink-0 items-center gap-1.5 text-[10px] sm:text-xs ${step.complete ? "text-teal-800" : "text-slate-500"}`} key={step.label}><span className={`flex h-5 w-5 items-center justify-center rounded-full ${step.complete ? "bg-teal-700 text-white" : "bg-slate-100"}`}>{step.complete ? <Check aria-hidden="true" className="h-3 w-3" /> : index + 1}</span>{step.label}</li>)}</ol>;
 }
 
-function PhotoUploadPanel({
-  cameraInputRef,
-  className,
-  disabled,
-  fileInputRef,
-  images,
-  onFileChange,
-  onRemoveImage,
-}: Readonly<{
+function PhotoUploadPanel({ cameraInputRef, className, disabled, fileInputRef, images, onFileChange, onRemoveImage }: Readonly<{
   cameraInputRef: React.RefObject<HTMLInputElement>;
   className?: string;
   disabled: boolean;
@@ -1503,146 +1403,15 @@ function PhotoUploadPanel({
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onRemoveImage: (previewUrl: string) => void;
 }>) {
-  const main = images[0] ?? null;
-  const secondary = images.slice(1, 5);
-
-  function renderSlot(index: number) {
-    const image = secondary[index - 1] ?? null;
-    if (image) {
-      return (
-        <div className="group relative aspect-square overflow-hidden rounded-xl border border-stone-200 bg-stone-100" key={image.previewUrl}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img alt={`Upload ${index + 1}`} className="h-full w-full object-cover" src={image.previewUrl} />
-          <button
-            aria-label={`Remove photo ${index + 1}`}
-            className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-stone-700 shadow-sm transition hover:bg-rose-50 hover:text-rose-700"
-            disabled={disabled}
-            onClick={() => onRemoveImage(image.previewUrl)}
-            type="button"
-          >
-            <CloseIcon />
-          </button>
-        </div>
-      );
-    }
-    return (
-      <button
-        className="flex aspect-square flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-stone-300 bg-[#faf7f0] px-2 text-center text-xs font-semibold text-[#6B6257] transition hover:border-[#C98A1D]/60 hover:bg-amber-50/50 disabled:cursor-not-allowed disabled:opacity-60"
-        disabled={disabled}
-        key={`slot-${index}`}
-        onClick={() => fileInputRef.current?.click()}
-        type="button"
-      >
-        <Plus aria-hidden="true" className="h-4 w-4 text-amber-700" />
-        <span>{index === 4 ? "Add more" : "Add photo"}</span>
-        <span className="text-[10px] font-medium text-stone-400">{index === 4 ? "Up to 5 photos" : "Optional"}</span>
-      </button>
-    );
-  }
-
-  return (
-    <section className={`rounded-2xl border border-stone-200/90 bg-white p-5 shadow-sm sm:p-6 ${className ?? ""}`}>
-      <input
-        accept="image/jpeg,image/png,image/webp"
-        className="hidden"
-        disabled={disabled}
-        multiple
-        onChange={onFileChange}
-        ref={fileInputRef}
-        type="file"
-      />
-      <input
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        disabled={disabled}
-        onChange={onFileChange}
-        ref={cameraInputRef}
-        type="file"
-      />
-
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#C98A1D]">1. Photos</p>
-          <h2 className="mt-2 text-xl font-semibold text-stone-950">Great photos sell faster</h2>
-          <p className="mt-2 max-w-xl text-sm leading-relaxed text-[#6B6257]">
-            Add clear, bright photos from multiple angles.
-          </p>
-        </div>
-        <button
-          className="inline-flex h-11 shrink-0 items-center justify-center gap-2 self-start rounded-xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-900 shadow-sm transition hover:border-amber-300 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={disabled || images.length >= 5}
-          onClick={() => cameraInputRef.current?.click()}
-          type="button"
-        >
-          <Camera aria-hidden="true" className="h-4 w-4" />
-          Use camera
-        </button>
-      </div>
-
-      <div className="mt-6 flex flex-col gap-4 lg:flex-row">
-        <div className="relative min-h-[260px] flex-1 overflow-hidden rounded-2xl border border-stone-200 bg-gradient-to-br from-stone-800 via-stone-900 to-black lg:min-h-[300px]">
-          {main ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img alt="Main listing photo" className="h-full min-h-[260px] w-full object-cover lg:min-h-[300px]" src={main.previewUrl} />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/10 to-transparent" />
-            </>
-          ) : (
-            <button
-              className="flex h-full min-h-[260px] w-full flex-col items-center justify-center gap-3 p-6 text-center transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60 lg:min-h-[300px]"
-              disabled={disabled}
-              onClick={() => fileInputRef.current?.click()}
-              type="button"
-            >
-              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-200">
-                Main photo
-              </span>
-              <Upload aria-hidden="true" className="h-10 w-10 text-amber-300/90" />
-              <p className="text-lg font-semibold text-white">Add main photo</p>
-              <p className="max-w-xs text-sm text-stone-300">This will be your cover image.</p>
-              <p className="max-w-sm text-xs leading-5 text-stone-400">
-                Recommended: Square images, good lighting, clean background
-              </p>
-            </button>
-          )}
-          {main ? (
-            <>
-              <span className="absolute left-4 top-4 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold text-white backdrop-blur-sm">
-                Main photo
-              </span>
-              <button
-                aria-label="Remove main photo"
-                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/95 text-stone-700 shadow-md hover:bg-rose-50 hover:text-rose-700"
-                disabled={disabled}
-                onClick={() => onRemoveImage(main.previewUrl)}
-                type="button"
-              >
-                <CloseIcon />
-              </button>
-              <button
-                className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl bg-white/95 px-4 py-2 text-sm font-semibold text-stone-900 shadow-lg backdrop-blur-sm"
-                disabled={disabled || images.length >= 5}
-                onClick={() => fileInputRef.current?.click()}
-                type="button"
-              >
-                <Upload aria-hidden="true" className="h-4 w-4" />
-                Replace
-              </button>
-            </>
-          ) : null}
-        </div>
-
-        <div className="grid w-full shrink-0 grid-cols-2 gap-3 sm:max-w-md lg:w-[280px] lg:max-w-none">
-          {[1, 2, 3, 4].map((i) => renderSlot(i))}
-        </div>
-      </div>
-
-      <p className="mt-4 text-sm text-[#6B6257]">
-        <span className="font-semibold text-stone-800">Tip:</span> Items with 3+ photos get up to 3x more interest.
-      </p>
-    </section>
-  );
+  return <section aria-label="Listing photos" className={`nexus-photo-upload ${className ?? ""}`}>
+    <input accept="image/jpeg,image/png,image/webp" className="hidden" disabled={disabled} multiple onChange={onFileChange} ref={fileInputRef} type="file" />
+    <input accept="image/*" capture="environment" className="hidden" disabled={disabled} onChange={onFileChange} ref={cameraInputRef} type="file" />
+    <div className="mb-3 flex items-center justify-between"><h2 className="text-sm font-semibold">Photos <span className="text-rose-600">*</span></h2><button className="flex min-h-9 items-center gap-1.5 text-xs text-teal-800" disabled={disabled || images.length >= 5} onClick={() => cameraInputRef.current?.click()} type="button"><Camera aria-hidden="true" className="h-4 w-4" />Use camera</button></div>
+    <div className="flex gap-2 overflow-x-auto pb-1">{images.map((image, index) => <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-slate-200 sm:h-28 sm:w-28" key={image.previewUrl}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img alt={index === 0 ? "Main listing photo" : `Upload ${index + 1}`} className="h-full w-full object-cover" src={image.previewUrl} /><button aria-label={index === 0 ? "Remove main photo" : `Remove photo ${index + 1}`} className="absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-slate-700" disabled={disabled} onClick={() => onRemoveImage(image.previewUrl)} type="button"><X aria-hidden="true" className="h-4 w-4" /></button>{index === 0 ? <span className="absolute bottom-0 inset-x-0 bg-black/50 text-center text-[9px] text-white">Cover photo</span> : null}
+    </div>)}{images.length < 5 ? <button className="flex h-24 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 bg-slate-50 text-slate-500 sm:h-28 sm:w-28" disabled={disabled} onClick={() => fileInputRef.current?.click()} type="button"><Plus aria-hidden="true" className="h-6 w-6" /><span className="text-[10px]">Add photo</span><span className="text-[9px]">({images.length}/5)</span></button> : null}</div>
+  </section>;
 }
 
 function AgentConversationPanel({

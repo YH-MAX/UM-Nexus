@@ -4,7 +4,7 @@ test.describe("guest marketplace behavior", () => {
   test("guest can browse but protected actions ask for sign in", async ({ page }) => {
     await page.goto("/trade");
 
-    await expect(page.getByRole("heading", { name: /Browse UM Listings/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Latest listings/i })).toBeVisible();
     await expect(page.getByPlaceholder(/Search textbooks/i)).toBeVisible();
 
     await page.goto("/trade/saved");

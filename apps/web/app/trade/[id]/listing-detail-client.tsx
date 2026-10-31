@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
   AlertCircle,
   BadgeCheck,
   BellRing,
@@ -414,6 +416,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
 
   return (
     <TradeShell
+      hideHero
       title={listing?.title ?? "Listing detail"}
       description="Review the item, seller, pickup location, and safety details before contacting the seller."
     >
@@ -436,20 +439,20 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
         <>
           {/* Back navigation */}
           <Link
-            className="trade-button-ghost w-fit min-h-9 px-2.5 text-slate-600"
+            aria-label="Back to marketplace" className="trade-button-ghost hidden w-fit min-h-9 px-2.5 text-slate-600 md:inline-flex"
             href="/trade"
           >
             <ArrowLeft aria-hidden="true" className="h-4 w-4" />
             Back to listings
           </Link>
 
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_390px] lg:items-start">
+          <div className="nexus-detail-grid">
             {/* Left column */}
-            <div className="grid gap-5">
-              <ImageGallery listing={listing} />
+            <div className="contents">
+              <ImageGallery isSaved={isSaved} listing={listing} onFavorite={handleFavorite} />
 
               {/* Description with metadata chips */}
-              <section className="trade-card p-5 sm:p-6">
+              <section className="nexus-detail-description trade-card p-4 sm:p-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="trade-kicker">Item details</p>
@@ -479,14 +482,14 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                 </p>
               </section>
 
-              {listing.risk_level && listing.risk_level !== "low" ? <RiskWarning listing={listing} /> : null}
+              {listing.risk_level && listing.risk_level !== "low" ? <div className="nexus-detail-risk"><RiskWarning listing={listing} /></div> : null}
 
               {/* Seller card — enhanced with verified badge */}
-              <SellerCard listing={listing} />
+              <div className="nexus-detail-seller"><SellerCard listing={listing} /></div>
 
-              <SafetyNotice />
+              <div className="nexus-detail-safety"><SafetyNotice /></div>
 
-              {isSeller ? (
+              <div className="nexus-detail-insights">{isSeller ? (
                 <>
                 {secondaryLoading ? <p className="trade-helper-text" role="status">Loading seller insights…</p> : null}
                 {secondaryError ? <p className="trade-alert trade-alert-warning" role="alert">{secondaryError}</p> : null}
@@ -516,7 +519,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
                     Browse marketplace
                   </Link>
                 </section>
-              )}
+              )}</div>
             </div>
 
             {/* Right sticky card */}
@@ -535,7 +538,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
 
             {/* Mobile sticky bottom CTA */}
             {!isSeller && user && ["available", "reserved"].includes(listing.status) ? (
-              <div className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-40 px-4 md:hidden">
+              <div className="fixed inset-x-0 bottom-[calc(86px+env(safe-area-inset-bottom))] z-40 px-4 md:hidden">
                 <DirectContactAction state={sellerContact} />
               </div>
             ) : null}
@@ -596,53 +599,22 @@ function ListingMissingState() {
 
 // ─── ImageGallery ────────────────────────────────────────────────────────────
 
-function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
-  const primaryImage = listing.images.find((image) => image.is_primary) ?? listing.images[0] ?? null;
-  const galleryImages = listing.images.filter((image) => image.id !== primaryImage?.id);
+function ImageGallery({ listing, isSaved, onFavorite }: Readonly<{ listing: Listing; isSaved: boolean; onFavorite: () => Promise<void> }>) {
+  const images = [...listing.images].sort((a, b) => Number(b.is_primary) - Number(a.is_primary));
+  const [selected, setSelected] = useState(0);
+  const [open, setOpen] = useState(false);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const image = images[selected] ?? images[0];
+  return <section aria-label="Product photos" className="nexus-detail-media relative trade-card overflow-hidden">
+    <button aria-label="Enlarge item photo" className="relative flex aspect-[4/3] w-full items-center justify-center bg-slate-100" disabled={!image?.public_url} onClick={() => { setOpen(true); dialog.current?.showModal(); }} type="button">
+      {image?.public_url ? <ListingPhoto alt={listing.title} className="h-full w-full object-cover" eager image={image} sizes="(min-width: 1024px) 65vw, calc(100vw - 32px)" /> : <span className="flex flex-col items-center gap-2 text-sm text-slate-400"><ImageIcon aria-hidden="true" className="h-8 w-8" />No photo yet</span>}
+      {images.length ? <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white">{Math.min(selected + 1, images.length)}/{images.length}</span> : null}
+    </button>
+    <button aria-label={isSaved ? "Unsave this item" : "Save this item"} className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-black/20 text-white" onClick={() => void onFavorite()} type="button"><Heart aria-hidden="true" className={`h-5 w-5 ${isSaved ? "fill-current" : ""}`} /></button>
+    {images.length > 1 ? <><button aria-label="Previous photo" className="absolute left-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white" onClick={() => setSelected((selected + images.length - 1) % images.length)} type="button"><ChevronLeft aria-hidden="true" className="h-5 w-5" /></button><button aria-label="Next photo" className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/30 text-white" onClick={() => setSelected((selected + 1) % images.length)} type="button"><ChevronRight aria-hidden="true" className="h-5 w-5" /></button></> : null}
 
-  return (
-    <section className="trade-card overflow-hidden">
-      <div className="relative flex aspect-[4/3] items-center justify-center bg-slate-100">
-        {primaryImage?.public_url ? (
-          <ListingPhoto alt={listing.title} className="h-full w-full object-cover" eager image={primaryImage} sizes="(min-width: 1024px) 65vw, calc(100vw - 32px)" />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400">
-            <span className="flex h-14 w-14 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm">
-              <ImageIcon aria-hidden="true" className="h-7 w-7" />
-            </span>
-            <span className="text-sm font-semibold">No photo yet</span>
-          </div>
-        )}
-        <div className="absolute left-3 top-3 flex flex-wrap gap-2">
-          <StatusPill className="bg-white/95 shadow-sm ring-1 ring-white/70" tone={statusTone(listing.status)}>
-            {listing.status.replaceAll("_", " ")}
-          </StatusPill>
-          <StatusPill className="bg-white/95 shadow-sm ring-1 ring-white/70">
-            {formatCategory(listing.category)}
-          </StatusPill>
-        </div>
-        <div className="absolute bottom-3 left-3 rounded-lg bg-white/95 px-3 py-2 text-sm font-semibold text-slate-900 shadow-sm ring-1 ring-white/70">
-          {formatMoney(listing.price, listing.currency)}
-        </div>
-      </div>
-      {galleryImages.length > 0 ? (
-        <div className="grid gap-3 border-t border-slate-100 bg-white p-3 sm:grid-cols-4">
-          {galleryImages.map((image) => (
-            <div className="relative aspect-square overflow-hidden rounded-lg border border-slate-200 bg-slate-100" key={image.id}>
-              {image.public_url ? (
-                <ListingPhoto alt={listing.title} className="aspect-square w-full object-cover" image={image} sizes="(min-width: 1024px) 16vw, (min-width: 640px) 25vw, calc(100vw - 56px)" />
-              ) : (
-                <div className="flex aspect-square flex-col items-center justify-center gap-1 bg-slate-50 text-slate-400">
-                  <ImageIcon aria-hidden="true" className="h-6 w-6" />
-                  <span className="text-xs">No photo</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </section>
-  );
+    <dialog aria-label="Item photo gallery" className="m-auto w-[calc(100%-24px)] max-w-4xl rounded-2xl bg-white p-3 backdrop:bg-black/80" onClose={() => setOpen(false)} ref={dialog}><form className="mb-2 flex justify-end" method="dialog"><button aria-label="Close item photo" className="trade-button-ghost" type="submit">Close</button></form>{open && image ? <div className="relative aspect-[4/3] max-h-[70dvh]"><ListingPhoto alt={listing.title} className="h-full w-full object-contain" eager image={image} sizes="90vw" /></div> : null}{images.length > 1 ? <div aria-label="Choose item photo" className="flex gap-2 overflow-x-auto border-t border-slate-100 p-2">{images.map((photo, index) => <button aria-label={`View photo ${index + 1}`} aria-pressed={index === selected} className={`relative h-16 w-20 shrink-0 overflow-hidden rounded-lg border-2 ${index === selected ? "border-teal-700" : "border-transparent"}`} key={photo.id} onClick={() => setSelected(index)} type="button"><ListingPhoto alt={`Photo ${index + 1} of ${listing.title}`} className="h-full w-full object-cover" image={photo} sizes="80px" /></button>)}</div> : null}</dialog>
+  </section>;
 }
 
 // ─── ListingSummaryCard ───────────────────────────────────────────────────────
@@ -671,7 +643,7 @@ function ListingSummaryCard({
   onStatus: (status: "available" | "reserved" | "sold" | "hidden" | "deleted") => Promise<void>;
 }>) {
   return (
-    <aside className="trade-card h-fit overflow-hidden lg:sticky lg:top-24">
+    <><section className="nexus-detail-price trade-card h-fit overflow-hidden">
       {/* Section 1: Status + price + title */}
       <div className="border-b border-slate-100 p-5">
         <div className="flex flex-wrap gap-2">
@@ -681,7 +653,7 @@ function ListingSummaryCard({
         <div className="mt-3">
           <PriceText currency={listing.currency} size="lg" value={listing.price} />
         </div>
-        <h2 className="mt-2 text-lg font-semibold leading-snug text-slate-950">{listing.title}</h2>
+        <h1 className="mt-2 text-xl font-semibold leading-snug text-slate-950">{listing.title}</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
           Contact the seller when you are ready to arrange a safe campus pickup.
         </p>
@@ -704,6 +676,7 @@ function ListingSummaryCard({
         </div>
       </div>
 
+      </section><aside className="nexus-detail-contact trade-card h-fit overflow-hidden">
       {/* Section 3: Contact / seller actions */}
       <div className="border-b border-slate-100 p-5">
         {user ? (
@@ -747,7 +720,7 @@ function ListingSummaryCard({
           Report seller
         </button>
       </div>
-    </aside>
+    </aside></>
   );
 }
 
@@ -803,36 +776,9 @@ function SellerActions({
 // ─── SellerCard ───────────────────────────────────────────────────────────────
 
 function SellerCard({ listing }: Readonly<{ listing: Listing }>) {
-  const isVerified = listing.seller?.profile?.verified_um_email === true;
-
-  return (
-    <section className="trade-card p-5 sm:p-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <p className="trade-kicker">Seller</p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold text-slate-950">{getSellerDisplayName(listing)}</h2>
-            {isVerified ? (
-              <span className="trade-chip-success">
-                <BadgeCheck aria-hidden="true" className="h-3.5 w-3.5" />
-                Verified UM
-              </span>
-            ) : null}
-          </div>
-          <p className="mt-1 text-sm leading-6 text-slate-600">
-            {listing.seller?.profile?.faculty ?? "University of Malaya student"} ·{" "}
-            {listing.seller?.profile?.college_or_location ?? listing.seller?.profile?.residential_college ?? "Campus pickup"}
-          </p>
-        </div>
-        <span className="trade-icon-frame">
-          <ShieldCheck aria-hidden="true" className="h-5 w-5" />
-        </span>
-      </div>
-      <p className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
-        Signed-in UM buyers can contact the seller directly using the contact method selected for this listing.
-      </p>
-    </section>
-  );
+  const name = getSellerDisplayName(listing);
+  const verified = listing.seller?.profile?.verified_um_email === true;
+  return <section aria-label="Seller information" className="trade-card flex items-center gap-3 p-3"><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#eaf4f0] text-sm font-semibold text-teal-900">{name.slice(0, 2).toUpperCase()}</div><div className="min-w-0"><h2 className="flex items-center gap-1.5 text-sm font-semibold">{name}{verified ? <BadgeCheck aria-label="Verified UM email" className="h-4 w-4 text-emerald-600" /> : null}</h2><p className="mt-1 text-xs text-slate-500">{verified ? "Verified UM email" : listing.seller?.profile?.faculty || "UM community member"}</p></div></section>;
 }
 
 // ─── SellerIntelligencePanel ──────────────────────────────────────────────────

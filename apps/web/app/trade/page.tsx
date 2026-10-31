@@ -1,10 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { marketplaceDisplay as displaySerif } from "@/lib/fonts/display";
+import { usePathname } from "next/navigation";
+import campusPhoto from "@/lib/trade/campus-photo.json";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  BookOpen,
+  House,
+  Shirt,
+  Monitor,
+  Megaphone,
+  ArrowRight,
   Filter,
   Grid3x3,
   ImageOff,
@@ -35,6 +42,8 @@ import {
   formatPickupLocation,
   formatRelativeTime,
   getFavorites,
+  conditionOptions,
+  pickupAreas,
   getCachedListings,
   getListings,
   removeFavorite,
@@ -60,6 +69,7 @@ const emptyPage: ListingsPage = { items: [], total: 0, limit: PAGE_SIZE, offset:
 
 export default function TradePage() {
   const { user } = useAuth();
+  const explore = usePathname() === "/trade/explore";
   const [allListings, setAllListings] = useState<Listing[]>(() => getCachedListings({ sort: "latest" }, { limit: PAGE_SIZE, offset: 0 })?.items ?? []);
   const [page, setPage] = useState<ListingsPage>(() => getCachedListings({ sort: "latest" }, { limit: PAGE_SIZE, offset: 0 }) ?? emptyPage);
   const [filters, setFilters] = useState<ListingFilters>(initialFilters);
@@ -254,7 +264,7 @@ export default function TradePage() {
   } as const;
 
   return (
-    <div className={displaySerif.variable}>
+    <div className="nexus-marketplace">
       <TradeShell hideHero title="Browse UM Listings">
         {error ? (
           <div className="trade-alert trade-alert-danger flex gap-3 rounded-2xl">
@@ -276,61 +286,41 @@ export default function TradePage() {
             onSelectCategory={(value) => updateFilter("category", value)}
           />
 
-          <div className="min-w-0 flex-1 space-y-6">
-            <header className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0 max-w-3xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700">UM Nexus Trade</p>
-                <h1
-                  className={`${displaySerif.className} mt-2 text-4xl font-semibold leading-[1.1] text-stone-950 sm:text-5xl`}
-                >
-                  Browse UM Listings
-                </h1>
-                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-stone-600 sm:text-base">
-                  Find textbooks, electronics, dorm items, and campus essentials from UM students.
-                </p>
-              </div>
-              <div className="flex w-full shrink-0 flex-col items-stretch gap-4 sm:flex-row sm:items-end sm:justify-end lg:w-auto lg:flex-col lg:items-end">
-                <Link
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-stone-950 px-6 text-sm font-semibold text-white shadow-md transition duration-200 hover:bg-stone-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
-                  href="/trade/sell"
-                >
-                  <PlusCircle aria-hidden="true" className="h-4 w-4" />
-                  Sell an item
-                </Link>
-                <div className="rounded-2xl border border-stone-200 bg-white/80 px-4 py-3 text-right shadow-sm backdrop-blur-sm">
-                  <p className="text-sm font-semibold text-stone-900">
-                    {isLoading ? "Loading listings…" : `${page.total} live result${page.total === 1 ? "" : "s"}`}
-                  </p>
-                  <p className="mt-1 flex items-center justify-end gap-2 text-xs text-stone-500">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_0_3px_rgba(16,185,129,0.25)]" />
-                    Updated {updatedLabel}
-                  </p>
-                </div>
-              </div>
-            </header>
+          <div className="min-w-0 flex-1 space-y-4">
+            {explore ? <h1 className="hidden text-2xl font-semibold md:block">All Items</h1> : <h1 className="sr-only">Browse UM Listings</h1>}
 
-            <div className="space-y-4">
-              <label className="relative block min-w-0">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2"><label className="relative block min-w-0 flex-1">
                 <Search
                   aria-hidden="true"
-                  className="pointer-events-none absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-stone-400"
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400"
                 />
                 <input
-                  className="trade-input min-h-[56px] rounded-2xl border-stone-200 bg-white pl-14 pr-4 text-base shadow-sm focus-visible:ring-amber-200"
+                  className="trade-input min-h-[42px] rounded-xl border-slate-200 bg-slate-50 pl-10 pr-3 text-sm shadow-none"
                   placeholder="Search textbooks, calculators, fans, monitors..."
                   value={filters.search}
                   onChange={(event) => updateFilter("search", event.target.value)}
                 />
-              </label>
-
-              <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              </label><button aria-label="Filters" className="nexus-icon-button shrink-0 border border-slate-200" onClick={() => setIsFilterOpen(true)} type="button"><SlidersHorizontal aria-hidden="true" className="h-4 w-4" /></button></div>
+              {!explore && !hasFilters ? <section aria-label="Campus marketplace" className="nexus-campus-banner relative isolate overflow-hidden rounded-xl bg-[#105651] text-white">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img alt={campusPhoto.alt} className="absolute inset-0 -z-20 h-full w-full object-cover" height={480} src={campusPhoto.src} width={1200} />
+                <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#063f4c]/90 via-[#075b64]/60 to-transparent" />
+                <div className="p-5 py-5 sm:p-8"><p className="text-xl font-semibold tracking-tight sm:text-3xl">Buy · Sell · Connect</p><p className="mt-1.5 text-xs text-white/95 sm:text-sm">For a better UM campus life.</p><Link className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-white underline underline-offset-4" href="/trade/explore">Explore the marketplace <ArrowRight aria-hidden="true" className="h-3 w-3" /></Link></div>
+                <details className="absolute bottom-1 right-2 max-w-[70%] text-right text-[9px] leading-4 text-white"><summary className="cursor-pointer">Photo credit</summary><p className="rounded bg-black/70 p-2"><a className="underline" href={campusPhoto.source} target="_blank" rel="noreferrer">Campus photo by {campusPhoto.author}</a> · <a className="underline" href={campusPhoto.licenseUrl} target="_blank" rel="noreferrer">{campusPhoto.license}</a> · {campusPhoto.changes}</p></details>
+              </section> : null}
+              {!explore ? <div aria-label="Campus categories" className="nexus-category-tiles flex gap-3 overflow-x-auto pb-1">
+                {[{ value: "", label: "All", icon: Grid3x3, color: "bg-blue-50 text-blue-600" }, { value: "electronics", label: "Electronics", icon: Monitor, color: "bg-indigo-50 text-indigo-600" }, { value: "textbooks_notes", label: "Books", icon: BookOpen, color: "bg-orange-50 text-orange-600" }, { value: "dorm_room", label: "Home & Living", icon: House, color: "bg-emerald-50 text-emerald-700" }, { value: "clothing", label: "Fashion", icon: Shirt, color: "bg-rose-50 text-rose-600" }].map(({ value, label, icon: Icon, color }) => <button aria-pressed={filters.category === value} className="flex min-w-[60px] flex-1 shrink-0 flex-col items-center gap-1.5 whitespace-nowrap text-[9px] font-medium text-slate-700" key={value} onClick={() => updateFilter("category", value)} type="button"><span className={`flex h-11 w-11 items-center justify-center rounded-xl ${color} ${filters.category === value ? "ring-1 ring-current" : ""}`}><Icon aria-hidden="true" className="h-5 w-5" /></span>{label}</button>)}
+                <Link aria-label="Wanted" className="flex min-w-[60px] shrink-0 flex-col items-center gap-1.5 text-[9px] font-medium text-slate-700" href="/trade/want"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><Megaphone aria-hidden="true" className="h-5 w-5" /></span>Wanted</Link>
+              </div> : null}
+              <div className={`${explore ? "flex" : "hidden"} min-w-0 gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}>
                 {categoryChips.map((category) => {
                   const active = filters.category === category.value;
                   return (
                     <button
                       className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
                         active
-                          ? "border-stone-950 bg-stone-950 text-white shadow-md"
+                          ? "border-stone-950 bg-[#105651] text-white"
                           : "border-stone-200 bg-white text-stone-700 hover:border-amber-200 hover:bg-amber-50"
                       }`}
                       key={category.value || "all"}
@@ -347,30 +337,17 @@ export default function TradePage() {
               </div>
             </div>
 
-            <div className="hidden lg:block">
-              <MarketplaceFilterPanel {...filterPanelProps} layout="bar" />
-            </div>
+            {explore ? <div aria-label="Quick filters" className="flex gap-2 overflow-x-auto pb-1 lg:hidden">
+              <select aria-label="Sort items" className="nexus-quick-select" value={filters.sort} onChange={(event) => updateFilter("sort", event.target.value)}><option value="latest">Sort: Latest</option><option value="price_low_high">Price: Low to high</option><option value="price_high_low">Price: High to low</option></select>
+              <select aria-label="Item condition" className="nexus-quick-select" value={filters.condition} onChange={(event) => updateFilter("condition", event.target.value)}><option value="">Condition</option>{conditionOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+              <button className="nexus-quick-select" onClick={() => setIsFilterOpen(true)} type="button">Price</button>
+              <select aria-label="Meetup location" className="nexus-quick-select max-w-32" value={filters.pickup_location} onChange={(event) => updateFilter("pickup_location", event.target.value)}><option value="">Location</option>{pickupAreas.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+            </div> : null}
+            {explore ? <div className="hidden lg:block"><MarketplaceFilterPanel {...filterPanelProps} layout="bar" /></div> : null}
 
-            <div className="flex items-center justify-between gap-3 lg:hidden">
-              <button
-                className="trade-button-secondary min-h-12 w-full justify-between rounded-2xl border-stone-200 bg-white"
-                onClick={() => setIsFilterOpen(true)}
-                type="button"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <SlidersHorizontal aria-hidden="true" className="h-4 w-4" />
-                  Filters
-                </span>
-                {hasFilters ? (
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-900">
-                    Active
-                  </span>
-                ) : null}
-              </button>
-            </div>
 
             {!isLoading ? (
-              <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white/90 px-4 py-3 shadow-sm backdrop-blur-sm">
+              <section className={`${hasFilters ? "flex" : "hidden md:flex"} flex-wrap items-center justify-between gap-3 text-xs`}>
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   {filters.search ? (
                     <span className="trade-chip border-stone-200 bg-stone-50 text-stone-700">
@@ -405,16 +382,10 @@ export default function TradePage() {
               </section>
             ) : null}
 
-            {!user && !isLoading && page.total > 0 ? (
-              <div className="trade-alert trade-alert-success rounded-2xl border-emerald-200/80">
-                <Link className="font-semibold text-emerald-900 underline underline-offset-2" href="/login">
-                  Sign in with your UM email
-                </Link>{" "}
-                to save listings or contact sellers.
-              </div>
-            ) : null}
 
-            {!isLoading && allListings.length > 0 ? (
+            {!explore ? <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Latest listings</h2><Link className="flex items-center text-xs font-medium text-teal-800" href="/trade/explore">See all <ArrowRight aria-hidden="true" className="ml-1 h-3 w-3" /></Link></div> : null}
+            <div className={`${explore ? "flex" : "hidden"} items-center justify-between gap-2`}><Link className="text-xs font-medium text-teal-800" href="/trade/want">Looking for something? Wanted board</Link><span className="hidden text-[10px] text-slate-500 sm:block">Updated {updatedLabel}</span></div>
+            {explore && !isLoading && allListings.length > 0 ? (
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="flex items-center gap-2 text-sm font-medium text-stone-700">
                   <Sparkles aria-hidden="true" className="h-4 w-4 text-amber-600" />
@@ -480,7 +451,7 @@ export default function TradePage() {
                 <section
                   className={
                     viewMode === "grid"
-                      ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                      ? "nexus-listing-grid grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-4"
                       : "flex flex-col gap-4"
                   }
                 >
@@ -518,14 +489,14 @@ export default function TradePage() {
         </div>
 
         {isFilterOpen ? (
-          <div className="fixed inset-0 z-[60] lg:hidden">
+          <div className="fixed inset-0 z-[60]">
             <button
               aria-label="Close filters"
               className="absolute inset-0 bg-stone-950/50 backdrop-blur-sm"
               onClick={() => setIsFilterOpen(false)}
               type="button"
             />
-            <div className="absolute inset-x-0 bottom-0 max-h-[86vh] overflow-y-auto rounded-t-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-2xl">
+            <div className="absolute inset-x-0 bottom-0 max-h-[86vh] overflow-y-auto rounded-t-3xl lg:bottom-10 lg:left-1/2 lg:right-auto lg:w-[520px] lg:-translate-x-1/2 lg:rounded-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-2xl">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Marketplace</p>

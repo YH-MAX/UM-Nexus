@@ -45,6 +45,10 @@ const nextConfig = {
   async headers() {
     return [
       {
+        source: "/brand/:file",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+      {
         source: "/example-photos/optimized/:file",
         headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
       },

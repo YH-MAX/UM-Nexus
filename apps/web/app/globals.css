@@ -2,6 +2,71 @@
 @tailwind components;
 @tailwind utilities;
 
+/* UM Nexus mobile design: white surfaces, teal actions and compact product cards. */
+.nexus-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; }
+.nexus-icon-button:hover { background: #f0f6f4; }
+.nexus-header { border-bottom: 1px solid #edf0f2; }
+.nexus-menu-row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 12px 16px; border-bottom: 1px solid #edf0f2; font-size: 14px; transition: background 150ms; }
+.nexus-menu-row:last-child { border-bottom: 0; }
+.nexus-menu-row:hover { background: #f4f9f7; }
+.nexus-quick-select { min-height: 36px; flex-shrink: 0; border: 1px solid #e5e9ec; border-radius: 999px; background: #f8faf9; padding: 6px 10px; font-size: 11px; color: #334155; }
+.nexus-detail-grid { display: grid; gap: 16px; grid-template-areas: "media" "price" "risk" "seller" "description" "contact" "safety" "insights"; }
+.nexus-detail-media { grid-area: media; }
+.nexus-detail-price { grid-area: price; }
+.nexus-detail-seller { grid-area: seller; }
+.nexus-detail-description { grid-area: description; }
+.nexus-detail-contact { grid-area: contact; }
+.nexus-detail-safety { grid-area: safety; }
+.nexus-detail-risk { grid-area: risk; }
+.nexus-detail-insights { grid-area: insights; }
+.nexus-example-detail-grid { display: grid; gap: 16px; grid-template-areas: "media" "summary" "description"; }
+.nexus-example-media { grid-area: media; }
+.nexus-example-summary { grid-area: summary; }
+.nexus-example-description { grid-area: description; }
+.nexus-contact-action { min-height: 46px; border-radius: 9px; }
+.nexus-contact-whatsapp { background: #008f62 !important; }
+.nexus-contact-telegram { background: #167aa8 !important; }
+.nexus-sell .nexus-post-form { border: 0; box-shadow: none; padding: 0; }
+.nexus-sell .nexus-post-form > div:first-child { display: none; }
+.nexus-sell .nexus-post-form > .mt-6 { margin-top: 0; }
+.nexus-sell .nexus-post-form textarea { min-height: 112px; }
+.nexus-sell .nexus-post-form .grid { gap: 16px; }
+.nexus-sell .nexus-post-form label { font-size: 13px; }
+.nexus-sell #sell-extra-fields { background: #f7faf9; padding: 16px; }
+.nexus-sell .space-y-8 { row-gap: 20px; }
+.nexus-sell .space-y-8 > :not([hidden]) ~ :not([hidden]) { margin-top: 20px; }
+.nexus-page-heading h1 { font-family: var(--font-geist-sans), Arial, sans-serif; }
+.trade-page-surface button, .trade-page-surface summary { cursor: pointer; }
+.trade-page-surface button:disabled { cursor: not-allowed; }
+@media (min-width: 1024px) {
+  .nexus-detail-grid { grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); grid-template-areas: "media price" "media contact" "seller contact" "description contact" "risk contact" "safety contact" "insights contact"; align-items: start; }
+  .nexus-detail-contact { position: sticky; top: 86px; }
+  .nexus-example-detail-grid { grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); grid-template-areas: "media summary" "description summary"; align-items: start; }
+}
+@media (max-width: 767px) {
+  .nexus-content { padding-top: 12px; gap: 12px; }
+  .nexus-page-heading > div > p { display: none; }
+  .nexus-detail-price > div { padding: 12px; }
+  .nexus-detail-price { border: 0; border-radius: 0; }
+  .nexus-detail-price > div { padding: 0 0 12px; border: 0; }
+  .nexus-detail-description { border: 0; padding: 0; }
+  .nexus-detail-contact { border: 0; }
+  .nexus-detail-contact > div { padding: 12px 0; border: 0; }
+  .nexus-detail-price > div:first-child > p { display: none; }
+  .nexus-detail-price > div:first-child > div:first-child { gap: 4px; }
+  .nexus-detail-price > div:first-child > div:nth-child(2) { margin-top: 8px; }
+  .nexus-detail-price p.text-3xl { font-size: 26px; color: #0f172a; }
+  .nexus-detail-price > div:nth-child(2) { background: white; font-size: 12px; }
+  .nexus-detail-price > div:nth-child(2) > div { gap: 7px 10px; }
+  .nexus-detail-description .trade-kicker { display: none; }
+  .nexus-detail-description h2 { font-size: 16px; margin-top: 0; }
+  .nexus-detail-description > p { font-size: 13px; line-height: 1.65; margin-top: 12px; }
+  .nexus-example-summary dl { margin: 16px 0; padding: 12px 0; }
+  .nexus-example-summary > p:first-child { font-size: 10px; }
+  .nexus-example-description > p { font-size: 13px; line-height: 1.65; }
+  .nexus-listing-card .nexus-card-condition > span:first-child { display: none; }
+}
+
 html,
 body {
   margin: 0;
@@ -68,12 +133,12 @@ textarea {
 
 @layer components {
   .trade-page-surface {
-    @apply min-h-screen overflow-x-hidden bg-[#f8f5ef] text-stone-950;
-    background-image: linear-gradient(180deg, #faf8f3 0%, #f8f5ef 45%, #f4f0e8 100%);
+    @apply min-h-screen text-slate-950;
+    background: #ffffff;
   }
 
   .trade-container {
-    @apply mx-auto w-full max-w-[90rem] min-w-0 px-4 sm:px-6 lg:px-10;
+    @apply mx-auto w-full max-w-[76rem] min-w-0 px-4 sm:px-6 lg:px-10;
   }
 
   .trade-section {
@@ -81,7 +146,7 @@ textarea {
   }
 
   .trade-card {
-    @apply rounded-lg border border-slate-200 bg-white shadow-sm shadow-slate-200/60;
+    @apply rounded-xl border border-slate-200/80 bg-white shadow-none;
   }
 
   .trade-card-elevated {
@@ -101,7 +166,7 @@ textarea {
   }
 
   .trade-input {
-    @apply min-w-0 w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-950 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-amber-600 focus:ring-4 focus:ring-amber-100 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-500;
+    @apply min-w-0 w-full rounded-lg border border-stone-200 bg-white px-3.5 py-2.5 text-sm text-stone-950 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-teal-700 focus:ring-2 focus:ring-teal-100 disabled:cursor-not-allowed disabled:border-stone-200 disabled:bg-stone-100 disabled:text-stone-500;
   }
 
   .trade-field-label {
@@ -117,7 +182,7 @@ textarea {
   }
 
   .trade-button-primary {
-    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-amber-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-amber-900/15 transition hover:bg-amber-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:cursor-not-allowed disabled:bg-stone-400 disabled:shadow-none;
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-[#105651] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#0b4541] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:cursor-not-allowed disabled:bg-stone-400 disabled:shadow-none;
   }
 
   .trade-button-secondary {

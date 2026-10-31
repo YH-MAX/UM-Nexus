@@ -5,7 +5,6 @@ import { BadgeCheck, Heart, Image as ImageIcon, MapPin, ShieldAlert } from "luci
 
 import { buildAuthHref } from "@/lib/auth/return-intent";
 import {
-  formatCategory,
   formatMoney,
   formatPickupLocation,
   formatRelativeTime,
@@ -15,6 +14,7 @@ import {
 
 import { StatusPill, statusTone } from "./status-pill";
 import { ListingPhoto } from "./listing-photo";
+import { listingCardSizes } from "@/lib/trade/image-sizes";
 
 type ListingCardProps = Readonly<{
   listing: Listing;
@@ -83,7 +83,7 @@ export function ListingCard({
           image={primaryImage}
           alt={listing.title}
           className="h-full w-full object-cover transition duration-200 ease-out group-hover:scale-[1.04]"
-          sizes={isList ? "(min-width: 640px) 176px, calc(100vw - 48px)" : "(min-width: 1280px) 280px, (min-width: 1024px) 25vw, (min-width: 640px) 50vw, calc(100vw - 48px)"}
+          sizes={isList ? "(min-width: 640px) 176px, calc(100vw - 48px)" : listingCardSizes}
         />
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-[#f4e9d8] via-[#ebe4dc] to-[#e8dfd4] text-stone-500">
@@ -96,7 +96,7 @@ export function ListingCard({
 
       {!isList ? <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-stone-950/35 to-transparent opacity-90" /> : null}
 
-      <div className="absolute left-3 top-3 flex max-w-[calc(100%-4.5rem)] flex-wrap gap-2">
+      <div className={`absolute left-2 top-2 flex max-w-[calc(100%-3rem)] flex-wrap gap-2 ${listing.status === "available" ? "hidden" : ""}`}>
         <StatusPill
           className="rounded-full border-0 bg-white/95 px-2.5 py-0.5 text-[11px] capitalize shadow-sm ring-1 ring-stone-200/80"
           tone={statusTone(listing.status)}
@@ -116,7 +116,7 @@ export function ListingCard({
   );
 
   const body = (
-    <div className={`flex min-w-0 flex-1 flex-col ${isList ? "justify-center p-4 sm:py-4" : "p-4"}`}>
+    <div className={`flex min-w-0 flex-1 flex-col ${isList ? "justify-center p-4 sm:py-4" : "nexus-card-body p-2.5 sm:p-3"}`}>
       {listing.status === "reserved" && !isList ? (
         <p className="trade-chip mb-2 border-amber-200 bg-amber-50 text-amber-900">Reserved · backup interest welcome</p>
       ) : null}
@@ -127,16 +127,16 @@ export function ListingCard({
       ) : null}
 
       <div className={isList ? "space-y-2" : "space-y-3"}>
-        <div className={`flex gap-3 ${isList ? "items-start" : "items-start justify-between"}`}>
+        <div className={`flex gap-3 ${isList ? "items-start" : "flex-col items-start gap-1"}`}>
           <h2
             className={`min-w-0 font-semibold leading-snug text-stone-950 transition group-hover:text-amber-900/90 ${
-              isList ? "line-clamp-2 text-base sm:text-[17px]" : "line-clamp-1 text-base"
+              isList ? "line-clamp-2 text-base sm:text-[17px]" : "line-clamp-2 text-[13px] sm:text-sm"
             }`}
           >
             {listing.title}
           </h2>
           {!isList ? (
-            <p className="shrink-0 text-right text-base font-bold leading-tight text-amber-700">
+            <p className="text-sm font-semibold leading-tight text-slate-950">
               {formatMoney(listing.price, listing.currency)}
             </p>
           ) : null}
@@ -145,24 +145,16 @@ export function ListingCard({
           <p className="text-lg font-bold text-amber-700">{formatMoney(listing.price, listing.currency)}</p>
         ) : null}
 
-        <p className="line-clamp-1 text-sm text-stone-600">
-          <span className="font-medium text-stone-800">{formatCategory(listing.category)}</span>
-          {condition ? (
-            <span>
-              {" "}
-              · <span className="capitalize">{condition.replaceAll("_", " ")}</span>
-            </span>
-          ) : null}
-        </p>
+        <p className="nexus-card-condition line-clamp-1 text-[10px] text-slate-500 sm:text-xs">{condition ? (condition === "new" ? "New" : `Used · ${condition.replaceAll("_", " ")}`) : "Condition not specified"}</p>
       </div>
 
-      <p className="mt-3 flex min-w-0 items-center gap-1.5 rounded-xl border border-stone-100 bg-stone-50/80 px-3 py-2 text-sm text-stone-600">
+      <p className="hidden mt-3 min-w-0 items-center md:flex gap-1.5 rounded-xl border border-stone-100 bg-stone-50/80 px-3 py-2 text-sm text-stone-600">
         <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-700/90" />
         <span className="truncate">Pickup: {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}</span>
       </p>
 
       <div
-        className={`mt-3 flex items-center gap-3 border-t border-stone-100 pt-3 text-xs font-medium text-stone-500 ${
+        className={`mt-3 hidden items-center gap-3 md:flex border-t border-stone-100 pt-3 text-xs font-medium text-stone-500 ${
           isList ? "flex-wrap sm:flex-nowrap" : "justify-between"
         }`}
       >
@@ -192,7 +184,7 @@ export function ListingCard({
 
   return (
     <article
-      className={`group relative overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-sm transition duration-200 ease-out hover:-translate-y-1 hover:border-stone-300/90 hover:shadow-md ${
+      className={`nexus-listing-card group relative overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors hover:border-teal-300 ${
         isList ? "sm:flex sm:items-stretch" : ""
       }`}
     >
@@ -209,7 +201,7 @@ export function ListingCard({
         onToggleFavorite ? (
           <button
             aria-label={isSaved ? "Remove saved listing" : "Save listing"}
-            className={`absolute flex h-10 w-10 items-center justify-center rounded-full border border-stone-200/90 bg-white text-stone-600 shadow-md transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+            className={`absolute flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-black/20 text-white shadow-sm transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
               isList ? "right-3 top-3" : "right-3 top-3"
             } ${isSaved ? "border-rose-200 text-rose-600" : ""}`}
             onClick={(event) => void handleFavorite(event)}
@@ -220,7 +212,7 @@ export function ListingCard({
         ) : (
           <Link
             aria-label="Sign in to save listing"
-            className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border border-stone-200/90 bg-white text-stone-600 shadow-md transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+            className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-black/20 text-white shadow-sm transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             href={favoriteSignInHref}
           >
             <Heart aria-hidden="true" className="h-4 w-4" />

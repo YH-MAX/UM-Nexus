@@ -6,6 +6,10 @@ import { useEffect, useState } from "react";
 import {
   Bell,
   Diamond,
+  ArrowLeft,
+  Home,
+  Search,
+  Plus,
   Heart,
   LayoutDashboard,
   Megaphone,
@@ -46,11 +50,11 @@ const mainNav: NavItem[] = [
 ];
 
 const mobileNav: NavItem[] = [
-  { label: "Browse", href: "/trade", icon: Store },
-  { label: "Sell", href: "/trade/sell", icon: PlusCircle, kind: "primary" },
-  { label: "Wanted", href: "/trade/want", icon: Megaphone },
+  { label: "Home", href: "/trade", icon: Home },
+  { label: "Explore", href: "/trade/explore", icon: Search },
+  { label: "Sell", href: "/trade/sell", icon: Plus, kind: "primary" },
   { label: "Saved", href: "/trade/saved", icon: Heart },
-  { label: "Me", href: "/trade/dashboard", icon: User },
+  { label: "Profile", href: "/trade/profile", icon: User },
 ];
 
 export function TradeShell({
@@ -62,6 +66,9 @@ export function TradeShell({
   hideHero = false,
 }: TradeShellProps) {
   const pathname = usePathname();
+  const home = pathname === "/trade";
+  const pageTitles: Record<string, string> = { "/trade/explore": "All Items", "/trade/sell": "Post an Item", "/trade/profile": "Profile", "/trade/saved": "Saved Items", "/trade/want": "Wanted Board", "/trade/dashboard": "My Trade", "/trade/notifications": "Alerts", "/trade/moderation": "Safety Review", "/trade/evaluation": "Evaluation", "/trade/launch-checklist": "Launch Checklist" };
+  const mobileTitle = pageTitles[pathname] ?? (pathname.endsWith("/edit") ? "Edit Listing" : "Item Details");
   const { user } = useAuth();
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [unreadAlerts, setUnreadAlerts] = useState(0);
@@ -115,73 +122,30 @@ export function TradeShell({
 
   return (
     <main className="trade-page-surface pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#090807] pt-[env(safe-area-inset-top)] shadow-lg shadow-black/25">
-        <div className="trade-container flex min-h-[72px] items-center justify-between gap-3 py-3 lg:min-h-[76px]">
-          <Link
-            className="flex min-w-0 max-w-[min(100%,14rem)] items-center gap-3 rounded-xl pr-2 text-white transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 sm:max-w-none"
-            href="/trade"
-          >
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-500/35 bg-stone-900/80 shadow-inner shadow-black/40">
-              <Diamond aria-hidden="true" className="h-4 w-4 text-amber-400" />
-            </span>
-            <span className="hidden min-w-0 leading-tight sm:block">
-              <span className="block truncate text-[15px] font-semibold tracking-tight">UM Nexus Trade</span>
-              <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-400/95">
-                UM-only marketplace
-              </span>
-            </span>
-            <span className="truncate text-[15px] font-semibold sm:hidden">UM Trade</span>
+      <header className="nexus-header sticky top-0 z-40 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
+        <div className="trade-container flex min-h-[64px] items-center justify-between gap-3 py-2.5">
+          <Link aria-label="UM Nexus Trade — home" className={`nexus-brand flex min-w-0 items-center gap-2.5 ${home ? "" : "hidden md:flex"}`} href="/trade">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e9f5f3] text-[#0c514d]"><Diamond aria-hidden="true" className="h-6 w-6" /></span>
+            <span className="min-w-0"><span className="block text-lg font-bold tracking-tight text-[#104f4b]">UM NEXUS</span><span className="block text-[10px] text-slate-500">Your campus. Your marketplace.</span></span>
           </Link>
-
-          <nav aria-label="Trade navigation" className="hidden items-center gap-1.5 lg:flex">
-            {mainNav.map((item) => (
-              <DesktopNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} pathname={pathname} />
-            ))}
+          {!home ? <div className="flex min-w-0 flex-1 items-center md:hidden"><Link aria-label="Back to marketplace" className="nexus-icon-button" href="/trade"><ArrowLeft aria-hidden="true" className="h-5 w-5" /></Link><span aria-level={pathname === "/trade/explore" || pathname === "/trade/sell" ? 1 : undefined} className={`flex-1 truncate text-center text-sm font-semibold ${pathname === "/trade/profile" ? "pr-10" : ""}`} role={pathname === "/trade/explore" || pathname === "/trade/sell" ? "heading" : undefined}>{mobileTitle}</span></div> : null}
+          <nav aria-label="Trade navigation" className="hidden items-center gap-1 lg:flex">
+            {mainNav.map((item) => <DesktopNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} pathname={pathname} />)}
+            <Link className="trade-button-ghost" href="/trade/explore">Explore</Link>
           </nav>
-
-          <div className="hidden items-center gap-2 md:flex">
-            <UtilityLink
-              active={isActiveRoute(pathname, "/trade/notifications")}
-              href="/trade/notifications"
-              icon={Bell}
-              label="Alerts"
-              unreadCount={unreadAlerts}
-            />
-            <UtilityLink
-              active={isActiveRoute(pathname, "/trade/profile")}
-              href="/trade/profile"
-              icon={User}
-              label="Profile"
-              subtitle={user?.email ?? undefined}
-            />
-          </div>
-
-          <div className="flex items-center gap-2 md:hidden">
-            <UtilityLink
-              active={isActiveRoute(pathname, "/trade/notifications")}
-              href="/trade/notifications"
-              icon={Bell}
-              label="Alerts"
-              mobile
-              unreadCount={unreadAlerts}
-            />
-            <UtilityLink
-              active={isActiveRoute(pathname, "/trade/profile")}
-              href="/trade/profile"
-              icon={User}
-              label="Profile"
-              mobile
-            />
+          <div className={`flex items-center gap-1 ${pathname === "/trade/profile" ? "hidden md:flex" : ""}`}>
+            <UtilityLink active={isActiveRoute(pathname, "/trade/notifications")} href="/trade/notifications" icon={Bell} label="Alerts" mobile unreadCount={unreadAlerts} />
+            <span className="hidden md:inline-flex"><UtilityLink active={isActiveRoute(pathname, "/trade/profile")} href="/trade/profile" icon={User} label="Profile" mobile /></span>
           </div>
         </div>
       </header>
 
-      <div className={`trade-container flex flex-col ${hideHero ? "gap-6 py-6 lg:py-8" : "gap-6 py-6 lg:py-8"}`}>
+      <div className={`trade-container nexus-content flex flex-col gap-5 py-4 lg:py-6 ${pathname === "/trade/sell" ? "nexus-sell" : ""}`}>
         {!hideHero ? (
-          <section className="flex min-w-0 flex-col gap-4 border-b border-stone-200/80 pb-6 md:flex-row md:items-end md:justify-between">
+          <section className="nexus-page-heading flex min-w-0 flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div className="min-w-0 max-w-3xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">{eyebrow}</p>
-              <h1 className="mt-2 text-[2rem] font-semibold leading-tight text-stone-950 sm:text-4xl">{title}</h1>
+              <p className="hidden text-[11px] font-semibold uppercase tracking-[0.18em] text-teal-800 md:block">{eyebrow}</p>
+              <h1 className="mt-2 text-xl font-semibold leading-tight text-slate-950 sm:text-3xl">{title}</h1>
               {description ? (
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-stone-600 sm:text-base">{description}</p>
               ) : null}
@@ -189,13 +153,13 @@ export function TradeShell({
             {action ? <div className="flex shrink-0 flex-wrap gap-2">{action}</div> : null}
           </section>
         ) : null}
-        {showOnboarding ? <TradeOnboardingCard onDismiss={dismissOnboarding} /> : null}
+        {showOnboarding && home ? <div className="hidden md:block"><TradeOnboardingCard onDismiss={dismissOnboarding} /></div> : null}
         {children}
       </div>
 
       <nav
         aria-label="Mobile trade navigation"
-        className="fixed inset-x-0 bottom-0 z-50 border-t border-stone-200/90 bg-[#faf8f3]/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-12px_32px_rgba(17,16,14,0.12)] backdrop-blur-xl md:hidden"
+        className="nexus-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-slate-200/80 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 backdrop-blur-xl md:hidden"
       >
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
           {mobileNav.map((item) => (
@@ -208,136 +172,20 @@ export function TradeShell({
 }
 
 function TradeOnboardingCard({ onDismiss }: Readonly<{ onDismiss: () => void }>) {
-  return (
-    <section className="trade-alert rounded-2xl border-amber-200/80 bg-gradient-to-br from-amber-50 to-[#fffdf8] text-amber-950 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 gap-3">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-white text-amber-700 shadow-sm">
-            <ShieldCheck aria-hidden="true" className="h-5 w-5" />
-          </span>
-          <div className="min-w-0">
-            <p className="font-semibold text-stone-950">Welcome to UM Nexus Trade.</p>
-            <p className="mt-1 text-sm text-stone-600">
-              Buy and sell safely inside the University of Malaya campus community.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-          <Link
-            className="trade-button-secondary border-amber-200 bg-white px-3 py-2 text-stone-900 hover:border-amber-300 hover:bg-amber-50"
-            href="/trade"
-          >
-            Browse
-          </Link>
-          <Link
-            className="trade-button-primary px-3 py-2 shadow-md shadow-amber-900/10"
-            href="/trade/sell"
-          >
-            Sell an item
-          </Link>
-          <Link
-            className="trade-button-secondary border-amber-200 bg-white px-3 py-2 text-stone-900 hover:border-amber-300 hover:bg-amber-50"
-            href="/trade/profile"
-          >
-            Complete profile
-          </Link>
-          <button
-            aria-label="Dismiss welcome banner"
-            className="trade-button-ghost text-stone-600 hover:bg-amber-100/60 hover:text-stone-950"
-            onClick={onDismiss}
-            type="button"
-          >
-            <X aria-hidden="true" className="h-4 w-4" />
-            Dismiss
-          </button>
-        </div>
-      </div>
-    </section>
-  );
+  return <section className="flex items-center gap-2 rounded-lg bg-[#f0f8f6] px-3 py-2 text-xs text-[#155c55]"><ShieldCheck aria-hidden="true" className="h-4 w-4 shrink-0" /><span className="flex-1">A marketplace for the UM community. <Link className="underline" href="/safety">Trade safely</Link></span><button aria-label="Dismiss welcome banner" className="nexus-icon-button" onClick={onDismiss} type="button"><X aria-hidden="true" className="h-4 w-4" /></button></section>;
 }
 
-function DesktopNavLink({ active, item, pathname }: Readonly<{ active: boolean; item: NavItem; pathname: string }>) {
+function DesktopNavLink({ active, item }: Readonly<{ active: boolean; item: NavItem; pathname: string }>) {
   const Icon = item.icon;
-  const demoteSellCta =
-    (pathname === "/trade/saved" || pathname.startsWith("/trade/dashboard")) && item.href === "/trade/sell";
-
-  if (item.kind === "primary" && !demoteSellCta) {
-    return (
-      <Link
-        className={`inline-flex h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 px-4 text-sm font-semibold text-stone-950 shadow-md shadow-amber-900/20 transition duration-200 hover:brightness-105 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 ${
-          active ? "ring-2 ring-amber-200/90 ring-offset-2 ring-offset-[#090807]" : ""
-        }`}
-        href={item.href}
-      >
-        <Icon aria-hidden="true" className="h-4 w-4 text-stone-950" />
-        {item.label}
-      </Link>
-    );
-  }
-
-  const inactiveSecondary =
-    "border border-white/10 bg-white/5 text-stone-200 hover:border-amber-400/30 hover:bg-white/10 hover:text-white";
-  const inactiveNormal =
-    "border border-transparent bg-transparent text-stone-300 hover:border-white/10 hover:bg-white/5 hover:text-white";
-  const activePill =
-    "border border-amber-200/60 bg-[#f5f0e6] text-stone-950 shadow-md shadow-black/20";
-
-  const className =
-    item.kind === "secondary"
-      ? `${active ? activePill : inactiveSecondary}`
-      : `${active ? activePill : inactiveNormal}`;
-
-  return (
-    <Link
-      className={`inline-flex h-11 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${className}`}
-      href={item.href}
-    >
-      <Icon
-        aria-hidden="true"
-        className={`h-4 w-4 ${
-          (item.href === "/trade/saved" || item.href === "/trade/dashboard") && active
-            ? "text-[#A85F00]"
-            : active
-              ? "text-amber-800"
-              : ""
-        }`}
-      />
-      <span className={(item.href === "/trade/saved" || item.href === "/trade/dashboard") && active ? "text-[#111111]" : ""}>
-        {item.label}
-      </span>
-    </Link>
-  );
+  return <Link aria-current={active ? "page" : undefined} className={`inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors ${item.kind === "primary" ? "bg-[#105651] text-white" : active ? "bg-[#edf6f3] text-[#105651]" : "text-slate-600 hover:bg-slate-50"}`} href={item.href}><Icon aria-hidden="true" className="h-4 w-4" />{item.label}</Link>;
 }
 
-function MobileNavLink({ active, item, pathname }: Readonly<{ active: boolean; item: NavItem; pathname: string }>) {
+function MobileNavLink({ active, item }: Readonly<{ active: boolean; item: NavItem; pathname: string }>) {
   const Icon = item.icon;
-  const demoteSellCta =
-    (pathname === "/trade/saved" || pathname.startsWith("/trade/dashboard")) && item.href === "/trade/sell";
-  const isGold = item.kind === "primary" && !demoteSellCta;
-
-  return (
-    <Link
-      className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-2 text-[11px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
-        active ? "text-stone-950" : isGold ? "text-amber-800" : "text-stone-500"
-      }`}
-      href={item.href}
-    >
-      <span
-        className={`flex h-9 w-10 items-center justify-center rounded-xl transition ${
-          isGold
-            ? "bg-gradient-to-br from-amber-400 to-amber-600 text-stone-950 shadow-sm"
-            : active
-              ? item.href === "/trade/saved" || item.href === "/trade/dashboard"
-                ? "bg-[#f5f0e6] text-[#A85F00] ring-1 ring-amber-200/80"
-                : "bg-[#f5f0e6] text-amber-900 ring-1 ring-amber-200/80"
-              : "bg-transparent text-stone-500"
-        }`}
-      >
-        <Icon aria-hidden="true" className="h-5 w-5" />
-      </span>
-      {item.label}
-    </Link>
-  );
+  const primary = item.kind === "primary";
+  return <Link aria-current={active ? "page" : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] font-medium ${active ? "text-[#0b514c]" : "text-slate-500"}`} href={item.href}>
+    <span className={primary ? "-mt-7 flex h-12 w-12 items-center justify-center rounded-full border-4 border-white bg-[#105651] text-white shadow-md" : "flex h-7 w-8 items-center justify-center"}><Icon aria-hidden="true" className={primary ? "h-6 w-6" : `h-[21px] w-[21px] ${active ? "stroke-[2.3]" : "stroke-[1.6]"}`} /></span>{item.label}
+  </Link>;
 }
 
 function UtilityLink({
@@ -361,18 +209,18 @@ function UtilityLink({
     <Link
       aria-label={label}
       className={`relative inline-flex items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
-        mobile ? "h-10 w-10 border-white/15 bg-white/5 p-0 text-stone-100" : "min-h-10 border-white/15 bg-white/5 px-3 py-2 text-stone-100"
-      } ${active ? "border-amber-400/50 bg-[#f5f0e6] text-stone-950 shadow-inner" : "hover:border-amber-400/25 hover:bg-white/10"}`}
+        mobile ? "h-10 w-10 border-transparent bg-transparent p-0 text-[#0c514d]" : "min-h-10 border-slate-200 bg-white px-3 py-2 text-slate-700"
+      } ${active ? "border-teal-200 bg-teal-50 text-teal-900" : "hover:bg-slate-50"}`}
       href={href}
     >
-      <Icon aria-hidden="true" className={`h-4 w-4 shrink-0 ${active ? "text-amber-900" : ""}`} />
+      <Icon aria-hidden="true" className={`h-4 w-4 shrink-0 ${active ? "text-teal-900" : ""}`} />
       {!mobile ? (
         <span className="hidden max-w-[11rem] truncate sm:inline">
           {subtitle ?? label}
         </span>
       ) : null}
       {label === "Alerts" && unreadCount > 0 ? (
-        <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-amber-500 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-stone-950 ring-2 ring-[#090807]">
+        <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-teal-700 px-1.5 py-0.5 text-center text-[10px] font-bold leading-none text-white ring-2 ring-white">
           {unreadCount > 9 ? "9+" : unreadCount}
         </span>
       ) : null}
@@ -381,6 +229,7 @@ function UtilityLink({
 }
 
 const TRADE_APP_ROUTE_SEGMENTS = new Set([
+  "explore",
   "sell",
   "saved",
   "want",
