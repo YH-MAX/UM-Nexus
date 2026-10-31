@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { LucideIcon } from "lucide-react";
-import { Cormorant_Garamond, Montserrat } from "next/font/google";
+import { luxuryDisplay } from "@/lib/fonts/display";
+import { luxuryBody } from "@/lib/fonts/body";
 import {
   ArrowUpRight,
   BookOpen,
@@ -20,19 +21,7 @@ import {
   Store,
 } from "lucide-react";
 
-const luxuryDisplay = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-luxury-display",
-  display: "swap",
-});
 
-const luxuryBody = Montserrat({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-  variable: "--font-luxury-body",
-  display: "swap",
-});
 
 export const metadata = {
   title: "UM Nexus Trade · The Campus Marketplace",

@@ -1,21 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { Cormorant_Garamond, Montserrat } from "next/font/google";
+import { luxuryDisplay } from "@/lib/fonts/display";
+import { luxuryBody } from "@/lib/fonts/body";
 import { ArrowLeft, Diamond } from "lucide-react";
 
-const luxuryDisplay = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-luxury-display",
-  display: "swap",
-});
 
-const luxuryBody = Montserrat({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-  variable: "--font-luxury-body",
-  display: "swap",
-});
 
 type AuthPageShellProps = Readonly<{
   children: ReactNode;

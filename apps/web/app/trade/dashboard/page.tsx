@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Cormorant_Garamond } from "next/font/google";
+import { tradeDisplay } from "@/lib/fonts/display";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
@@ -59,12 +59,6 @@ const tabs: Array<{ id: DashboardTab; label: string }> = [
   { id: "sold", label: "Sold" },
 ];
 
-const tradeDisplay = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  display: "swap",
-  variable: "--font-trade-dashboard-display",
-});
 
 function TradeStatCard({
   label,

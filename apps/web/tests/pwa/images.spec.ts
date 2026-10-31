@@ -76,3 +76,24 @@ test("image optimizer resizes and rejects unapproved sources", async ({ request 
     expect((await request.get(`/_next/image?url=${encodeURIComponent(url)}&w=96&q=75`)).status()).toBe(400);
   }
 });
+
+test("bundled fonts load as cacheable local WOFF2 assets", async ({ page, request }) => {
+  const fonts = new Set<string>();
+  const external: string[] = [];
+  page.on("request", (request) => {
+    if (/\/_next\/static\/media\/.*\.woff2/.test(request.url())) fonts.add(request.url());
+    if (/fonts\.(googleapis|gstatic)\.com/.test(request.url())) external.push(request.url());
+  });
+  for (const path of ["/trade", "/login"]) {
+    await page.goto(path);
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  }
+  expect(fonts.size).toBeGreaterThanOrEqual(3);
+  expect(external).toEqual([]);
+  for (const url of fonts) {
+    const response = await request.get(url);
+    expect(response.ok()).toBe(true);
+    expect(response.headers()["cache-control"]).toContain("immutable");
+    expect((await response.body()).subarray(0, 4).toString()).toBe("wOF2");
+  }
+});

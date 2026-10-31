@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Cormorant_Garamond } from "next/font/google";
+import { wantDisplay } from "@/lib/fonts/display";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -80,12 +80,6 @@ const closeReasons = [
   { value: "other", label: "Other" },
 ] as const;
 
-const wantDisplay = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  display: "swap",
-  variable: "--font-want-display",
-});
 
 const suggestionPresets = [
   {

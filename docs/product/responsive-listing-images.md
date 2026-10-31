@@ -21,3 +21,7 @@ The browser selects widths using responsive `sizes`. The main detail photo loads
 The optimizer accepts only this project's public storage path and the bundled hashed-photo directory. Other hosts, private/API routes and arbitrary local files are not approved image sources. Data/blob previews, development uploads and legacy external URLs retain ordinary image rendering rather than being proxied through the optimizer.
 
 This does not change account/contact caching, storage permissions, the service worker or hosting plans. Image caching reduces repeat image work; it cannot remove origin wake-up delays after idle.
+
+## Build reliability
+
+The first Render build of this release exposed a Google Fonts loader failure on the sell and wanted routes. The same Cormorant Garamond, Montserrat and Geist Latin font families are now bundled in `apps/web/fonts`, with their SIL OFL licenses and source/digest records. `next/font/local` retains the existing weights, CSS variables and swap behavior, while removing the Google font download dependency from builds. Next.js emits hashed font assets with its standard static-asset cache policy.

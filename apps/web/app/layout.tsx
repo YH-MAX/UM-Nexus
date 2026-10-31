@@ -1,16 +1,12 @@
 import type { Metadata } from "next";
 import type { Viewport } from "next";
-import { Geist } from "next/font/google";
+import { geistSans } from "@/lib/fonts/geist";
 
 import { Providers } from "@/app/providers";
 import { PwaRuntime } from "@/components/pwa-runtime";
 
 import "./globals.css";
 
-const geistSans = Geist({
-  subsets: ["latin"],
-  variable: "--font-geist-sans",
-});
 
 export const metadata: Metadata = {
   applicationName: "UM Nexus",

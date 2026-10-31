@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Cormorant_Garamond } from "next/font/google";
+import { sellDisplay } from "@/lib/fonts/display";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   type ChangeEvent,
@@ -155,11 +155,6 @@ const initialListingPayload: ListingPayload = {
   contact_value: "",
 };
 
-const sellDisplay = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  display: "swap",
-});
 
 export default function SellPage() {
   const router = useRouter();

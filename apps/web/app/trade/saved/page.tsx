@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Cormorant_Garamond } from "next/font/google";
+import { savedDisplay } from "@/lib/fonts/display";
 import { useEffect, useMemo, useState } from "react";
 import {
   Bell,
@@ -35,12 +35,6 @@ import {
   type ListingFavorite,
 } from "@/lib/trade/api";
 
-const savedDisplay = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  display: "swap",
-  variable: "--font-saved-display",
-});
 
 type SavedListFilters = {
   search: string;

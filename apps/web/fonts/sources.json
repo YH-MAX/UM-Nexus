@@ -1,0 +1,32 @@
+[
+  {
+    "family": "cormorant-garamond",
+    "subset": "latin",
+    "cssSource": "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300..700&display=swap",
+    "source": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3bmX5slCNuHLi8bLeY9MK7whWMhyjYqXtK.woff2",
+    "license": "SIL OFL 1.1",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/OFL.txt",
+    "sha256": "d80df8ff5aecd299a61549f9e29ab1ed0b9b05f4ea71d50fe978e07d5240b235",
+    "bytes": 37640
+  },
+  {
+    "family": "montserrat",
+    "subset": "latin",
+    "cssSource": "https://fonts.googleapis.com/css2?family=Montserrat:wght@300..700&display=swap",
+    "source": "https://fonts.gstatic.com/s/montserrat/v31/JTUSjIg1_i6t8kCHKm459Wlhyw.woff2",
+    "license": "SIL OFL 1.1",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/OFL.txt",
+    "sha256": "06b16db7a969135d48d38c49183be7fb88d4452e2a3011957c7851941f4e4879",
+    "bytes": 37956
+  },
+  {
+    "family": "geist",
+    "subset": "latin",
+    "cssSource": "https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap",
+    "source": "https://fonts.gstatic.com/s/geist/v5/gyByhwUxId8gMEwcGFU.woff2",
+    "license": "SIL OFL 1.1",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/geist/OFL.txt",
+    "sha256": "19f9c92546aa300c312235e3125af1b81394d8db9a4bc4a425cd5b641d2d54e1",
+    "bytes": 29400
+  }
+]

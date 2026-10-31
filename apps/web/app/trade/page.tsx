@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Cormorant_Garamond } from "next/font/google";
+import { marketplaceDisplay as displaySerif } from "@/lib/fonts/display";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -42,12 +42,6 @@ import {
   type ListingsPage,
 } from "@/lib/trade/api";
 
-const displaySerif = Cormorant_Garamond({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
-  variable: "--font-marketplace-display",
-  display: "swap",
-});
 
 const initialFilters: ListingFilters = {
   search: "",
