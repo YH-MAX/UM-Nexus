@@ -183,6 +183,25 @@ export const listingExamples: ListingExample[] = Array.from(
   }),
 ).flat();
 
+export function getListingExample(id: string): ListingExample | undefined {
+  return listingExamples.find((item) => item.id === id);
+}
+
+const categoryDescriptions: Record<string, string> = {
+  textbooks_notes: "A study reference for lectures, coursework and revision. For a real listing, include the edition, course relevance, annotations and any missing pages.",
+  electronics: "A practical addition to a student study setup. For a real listing, describe compatibility, working condition, included accessories and any battery or connection issues.",
+  dorm_room: "An everyday item for a more organised student room. For a real listing, include dimensions, material, signs of use and what is included.",
+  kitchen_appliances: "A compact appliance idea for everyday meal preparation. For a real listing, include capacity, working condition, cleaning details and accessories, and check your accommodation's appliance rules.",
+  furniture: "A space-conscious furniture idea for studying or room storage. For a real listing, include measurements, material, stability, visible wear and collection arrangements.",
+  clothing: "An idea for campus, presentations or everyday wear. For a real listing, include the labelled size, measurements, material, care details and any visible wear.",
+  sports_hobby: "An idea for staying active or enjoying time between classes. For a real listing, describe the size, condition, included equipment and any wear that affects safe use.",
+  free_items: "An example of useful items that could be passed on to another student for free. For a real listing, describe the quantity, cleanliness, condition and collection arrangements.",
+};
+
+export function describeListingExample(item: ListingExample): string {
+  return `${item.title}. ${categoryDescriptions[item.category]} This is a fictional example; the photo and price are references, and no item is offered for sale.`;
+}
+
 export function findListingExamples(filters: {
   search: string;
   category: string;

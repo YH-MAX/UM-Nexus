@@ -65,20 +65,21 @@ function ExampleCollection({ filters, viewMode }: Readonly<{ filters: ListingFil
           const photo = examplePhotos[item.id];
           return (
             <article aria-label={`Demo item: ${item.title}`} className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-sm ${viewMode === "list" ? "sm:flex" : ""}`} key={item.id}>
-              <div className={`relative flex items-center justify-center overflow-hidden bg-[#f1ede7] ${viewMode === "list" ? "h-40 sm:h-auto sm:w-44 sm:shrink-0" : "aspect-[4/3]"}`}>
+              <Link aria-label={`View ${item.title}`} href={`/trade/${item.id}`} className={`relative flex items-center justify-center overflow-hidden bg-[#f1ede7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-600 ${viewMode === "list" ? "h-40 sm:h-auto sm:w-44 sm:shrink-0" : "aspect-[4/3]"}`}>
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img alt={photo.alt} className="absolute inset-0 h-full w-full object-contain" decoding="async" height={480} loading="lazy" src={photo.src} width={640} />
                 ) : <Icon aria-hidden="true" className="h-16 w-16 text-amber-800/70" strokeWidth={1.25} />}
                 <span className="absolute left-3 top-3 rounded-full border border-amber-200 bg-white/95 px-3 py-1 text-xs font-semibold text-amber-900 shadow-sm">Demo · not for sale</span>
                 <span className="absolute bottom-3 rounded-full bg-white/95 px-2 py-0.5 text-[11px] text-stone-600 shadow-sm">{photo?.kind === "ai" ? "AI reference photo" : photo ? "Reference photo" : "Category illustration"}</span>
-              </div>
+              </Link>
               <div className="flex min-w-0 flex-1 flex-col p-4">
                 <p className="text-xs font-medium text-stone-500">{formatCategory(item.category)}</p>
-                <h3 className="mt-2 text-base font-semibold leading-snug text-stone-950">{item.title}</h3>
+                <h3 className="mt-2 text-base font-semibold leading-snug text-stone-950"><Link className="hover:underline focus-visible:underline" href={`/trade/${item.id}`}>{item.title}</Link></h3>
                 <p className="mt-3 text-sm text-stone-600">Example price <span className="font-semibold text-amber-800">{item.price === 0 ? "Free" : formatMoney(item.price)}</span></p>
                 <p className="mb-4 mt-2 text-xs leading-5 text-stone-500">Fictional example · no seller or pickup available.</p>
-                <Link aria-label={`Post your own item like ${item.title}`} className="trade-button-secondary mt-auto w-full text-center text-xs" href="/trade/sell">Post a similar item</Link>
+                <Link aria-label={`View details of ${item.title}`} className="trade-button-secondary mt-auto w-full text-center text-xs" href={`/trade/${item.id}`}>View item</Link>
+                <Link aria-label={`Post your own item like ${item.title}`} className="mt-3 text-center text-xs font-medium text-amber-800 underline underline-offset-4" href="/trade/sell">Post a similar item</Link>
                 {photo ? (
                   <details className="mt-3 text-[11px] leading-5 text-stone-500">
                     <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">{photo.kind === "ai" ? "About this photo" : "Photo credit"}</summary>
