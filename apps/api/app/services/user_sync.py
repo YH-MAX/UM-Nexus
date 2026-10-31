@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.auth.jwt import TokenClaims
 from app.core.config import get_settings
+from app.db.insert_once import insert_once
 from app.models import AppRole, Profile, User
 
 
@@ -67,26 +68,35 @@ def ensure_local_user(db: Session, token_claims: TokenClaims) -> User:
     user = db.scalar(stmt)
 
     if user is None:
-        ensure_beta_capacity(db, normalized_email)
-        user = User(
-            id=str(token_claims.sub),
-            email=normalized_email,
+        try:
+            ensure_beta_capacity(db, normalized_email)
+        except HTTPException:
+            # Another request may have admitted this same user into the last spot.
+            if db.scalar(stmt) is None:
+                raise
+        insert_once(
+            db,
+            User.__table__,
+            {"id": str(token_claims.sub), "email": normalized_email},
+            conflict_columns=("id",),
         )
-        user.profile = Profile(app_role=AppRole.STUDENT, verified_um_email=True)
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        return db.scalar(stmt) or user
+        user = db.scalar(stmt.execution_options(populate_existing=True))
+        if user is None:
+            raise RuntimeError("The authenticated user could not be synchronized.")
 
     if user.email != normalized_email:
         user.email = normalized_email
 
     if user.profile is None:
-        user.profile = Profile(app_role=AppRole.STUDENT, verified_um_email=True)
+        insert_once(
+            db,
+            Profile.__table__,
+            {"user_id": user.id, "app_role": AppRole.STUDENT, "verified_um_email": True},
+            conflict_columns=("user_id",),
+        )
     else:
         user.profile.verified_um_email = True
 
     db.add(user)
     db.commit()
-    db.refresh(user)
-    return db.scalar(stmt) or user
+    return db.scalar(stmt.execution_options(populate_existing=True)) or user

@@ -3,9 +3,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import asc, desc, false, func, or_, select
+from sqlalchemy import asc, desc, false, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
+
+from app.db.insert_once import insert_once
 
 from app.models import (
     AdminAction,
@@ -236,21 +238,25 @@ class TradeRepository:
         viewer_user_id: str | None = None,
         viewed_on: date | None = None,
     ) -> bool:
-        view = ListingView(
-            listing_id=listing.id,
-            viewer_user_id=viewer_user_id,
-            viewer_fingerprint=viewer_fingerprint,
-            viewed_on=viewed_on or datetime.now(UTC).date(),
+        inserted = insert_once(
+            self.db,
+            ListingView.__table__,
+            {
+                "listing_id": listing.id,
+                "viewer_user_id": viewer_user_id,
+                "viewer_fingerprint": viewer_fingerprint,
+                "viewed_on": viewed_on or datetime.now(UTC).date(),
+            },
+            conflict_columns=("listing_id", "viewer_fingerprint", "viewed_on"),
         )
-        self.db.add(view)
-        try:
-            listing.view_count = int(listing.view_count or 0) + 1
-            self.db.add(listing)
-            self.db.commit()
-            return True
-        except IntegrityError:
-            self.db.rollback()
-            return False
+        if inserted:
+            self.db.execute(
+                update(Listing)
+                .where(Listing.id == listing.id)
+                .values(view_count=func.coalesce(Listing.view_count, 0) + 1)
+            )
+        self.db.commit()
+        return inserted
 
     def create_media_asset(self, values: dict) -> MediaAsset:
         media_asset = MediaAsset(**values)
