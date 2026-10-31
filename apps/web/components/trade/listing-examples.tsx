@@ -7,6 +7,20 @@ import { Armchair, BookOpen, CookingPot, Gift, Laptop, Lightbulb, PlusCircle, Sh
 import type { ListingFilters } from "@/components/trade/marketplace-filter-panel";
 import { formatCategory, formatMoney } from "@/lib/trade/api";
 import { findListingExamples, listingExamples } from "@/lib/trade/listing-examples";
+import photoData from "@/lib/trade/example-photos.json";
+
+type ExamplePhoto = {
+  kind?: string;
+  src: string;
+  alt: string;
+  author: string;
+  license: string;
+  licenseUrl: string;
+  sourceUrl: string;
+  sourceTitle: string;
+  changes: string;
+};
+const examplePhotos: Record<string, ExamplePhoto> = photoData;
 
 const categoryIcons = {
   textbooks_notes: BookOpen,
@@ -36,7 +50,7 @@ function ExampleCollection({ filters, viewMode }: Readonly<{ filters: ListingFil
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">Campus inspiration · {listingExamples.length} examples</p>
           <h2 className="mt-2 text-xl font-semibold text-stone-950" id="listing-examples-heading">Have something like this?</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-600">
-            Demo items for posting inspiration, not real offers. Prices are illustrative. Share your own item and photos to start a real campus trade.
+            Demo items for posting inspiration, not real offers. Prices and reference photos are illustrative. Share your own item and photos to start a real campus trade.
           </p>
         </div>
         <Link className="trade-button-primary shrink-0" href="/trade/sell">
@@ -48,12 +62,16 @@ function ExampleCollection({ filters, viewMode }: Readonly<{ filters: ListingFil
       <div className={viewMode === "grid" ? "grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : "flex flex-col gap-4"}>
         {examples.slice(0, limit).map((item) => {
           const Icon = categoryIcons[item.category as keyof typeof categoryIcons];
+          const photo = examplePhotos[item.id];
           return (
             <article aria-label={`Demo item: ${item.title}`} className={`overflow-hidden rounded-2xl border border-stone-200 bg-[#fffdf8] shadow-sm ${viewMode === "list" ? "sm:flex" : ""}`} key={item.id}>
-              <div aria-hidden="true" className={`relative flex items-center justify-center bg-gradient-to-br from-[#f4e9d8] via-[#ebe4dc] to-[#e8dfd4] ${viewMode === "list" ? "h-40 sm:h-auto sm:w-44 sm:shrink-0" : "aspect-[4/3]"}`}>
-                <span className="absolute left-3 top-3 rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-semibold text-amber-900">Demo · not for sale</span>
-                <Icon className="h-16 w-16 text-amber-800/70" strokeWidth={1.25} />
-                <span className="absolute bottom-3 text-[11px] text-stone-600">Category illustration</span>
+              <div className={`relative flex items-center justify-center overflow-hidden bg-[#f1ede7] ${viewMode === "list" ? "h-40 sm:h-auto sm:w-44 sm:shrink-0" : "aspect-[4/3]"}`}>
+                {photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img alt={photo.alt} className="absolute inset-0 h-full w-full object-contain" decoding="async" height={480} loading="lazy" src={photo.src} width={640} />
+                ) : <Icon aria-hidden="true" className="h-16 w-16 text-amber-800/70" strokeWidth={1.25} />}
+                <span className="absolute left-3 top-3 rounded-full border border-amber-200 bg-white/95 px-3 py-1 text-xs font-semibold text-amber-900 shadow-sm">Demo · not for sale</span>
+                <span className="absolute bottom-3 rounded-full bg-white/95 px-2 py-0.5 text-[11px] text-stone-600 shadow-sm">{photo?.kind === "ai" ? "AI reference photo" : photo ? "Reference photo" : "Category illustration"}</span>
               </div>
               <div className="flex min-w-0 flex-1 flex-col p-4">
                 <p className="text-xs font-medium text-stone-500">{formatCategory(item.category)}</p>
@@ -61,6 +79,17 @@ function ExampleCollection({ filters, viewMode }: Readonly<{ filters: ListingFil
                 <p className="mt-3 text-sm text-stone-600">Example price <span className="font-semibold text-amber-800">{item.price === 0 ? "Free" : formatMoney(item.price)}</span></p>
                 <p className="mb-4 mt-2 text-xs leading-5 text-stone-500">Fictional example · no seller or pickup available.</p>
                 <Link aria-label={`Post your own item like ${item.title}`} className="trade-button-secondary mt-auto w-full text-center text-xs" href="/trade/sell">Post a similar item</Link>
+                {photo ? (
+                  <details className="mt-3 text-[11px] leading-5 text-stone-500">
+                    <summary className="cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-500">{photo.kind === "ai" ? "About this photo" : "Photo credit"}</summary>
+                    {photo.kind === "ai" ? <p className="mt-1">AI-generated reference image for this fictional example. Not a seller&apos;s item photo.</p> : <p className="mt-1 break-words">
+                      <a className="underline underline-offset-2" href={photo.sourceUrl} rel="noopener noreferrer" target="_blank">{photo.sourceTitle}</a>
+                      {" · "}{photo.author}{" · "}
+                      <a className="underline underline-offset-2" href={photo.licenseUrl} rel="noopener noreferrer" target="_blank">{photo.license}</a>
+                      {" · "}{photo.changes}
+                    </p>}
+                  </details>
+                ) : null}
               </div>
             </article>
           );
