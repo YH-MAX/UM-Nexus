@@ -1,5 +1,16 @@
 # UM Nexus：自有域名 + Render 免费托管
 
+## 已上线的试用环境（2026-10-31）
+
+- PWA：<https://um-nexus-pwa.onrender.com/trade>，Render 服务名 `um-nexus-pwa`，Free，Oregon。
+- API：<https://um-nexus-api.onrender.com/health/ready>，沿用 `um-nexus-api`，Free，Oregon。
+- 应用发布 commit：`b22b29c1435f21a0811446ff97fe80cfcd075b37`；后续文档/服务名调整不改变该应用构建。
+- API CORS 已保留原有 Vercel 和本机地址，并追加 `https://um-nexus-pwa.onrender.com`。账号所有者已确认保存新域名的 Supabase Site URL 和 Redirect URLs。
+- 线上已验证：前后端均为 live、数据库 readiness HTTP 200、商品加载、手机无横向溢出、安装检查无错误、独立模式跳过 landing、PWA 静态资源、断网页和恢复重试、Google 授权入口生成正确的新站回调地址。
+- 真实账号完整登录、验证邮件和实机安装仍需账号所有者验收；未自动发送验证邮件或代用户登录。
+- 尚未购买或绑定自有域名。后续购买后执行本文第 5 节；本环境继续受免费额度和休眠限制。
+- 本次通过 Render 连接直接创建前端、更新 API CORS；根目录 Blueprint 是部署参考，未来同步前先检查计划，避免重复创建服务或覆盖已保存的设置。
+
 ## 当前方案
 
 - `apps/web`：Next.js 网页与 PWA，Render **Free Web Service**。
