@@ -10,10 +10,11 @@ test("120 disclosed demo items are pageable and never contact fake sellers", asy
   });
   await page.goto("/trade");
   const examples = page.getByRole("region", { name: "Have something like this?" });
+  await examples.scrollIntoViewIfNeeded();
   await expect(examples.getByText("Campus inspiration · 120 examples")).toBeVisible();
   await expect(examples.getByText(/Demo items for posting inspiration, not real offers/)).toBeVisible();
-  await expect(examples.getByRole("article")).toHaveCount(24);
-  for (let i = 0; i < 4; i++) await examples.getByRole("button", { name: /More demo items/ }).click();
+  await expect(examples.getByRole("article")).toHaveCount(8);
+  for (let i = 0; i < 5; i++) await examples.getByRole("button", { name: /More demo items/ }).click();
   await expect(examples.getByRole("article")).toHaveCount(120);
   await expect(examples.getByRole("button", { name: /More demo items/ })).toHaveCount(0);
   await expect(examples.getByText("Demo · not for sale", { exact: true })).toHaveCount(120);
@@ -32,6 +33,7 @@ test("demo cards open item details with photo zoom, related items and real posti
     if (/\/api\/v1\/listings\/example-/.test(request.url())) exampleRequests.push(request.url());
   });
   await page.goto("/trade");
+  await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
   await page.getByRole("link", { name: "View Scientific calculator with slide cover", exact: true }).click();
   await expect(page).toHaveURL(/\/trade\/example-electronics-1$/);
   await expect(page.getByRole("heading", { name: "Scientific calculator with slide cover", level: 1 })).toBeVisible();
@@ -90,12 +92,13 @@ test("all 120 reference photos are served as valid local WebP assets", async ({ 
 test("demo search resets pagination and keeps real status filters honest", async ({ page }) => {
   await page.goto("/trade");
   const examples = page.getByRole("region", { name: "Have something like this?" });
+  await examples.scrollIntoViewIfNeeded();
   await examples.getByRole("button", { name: /More demo items/ }).click();
   await page.getByPlaceholder(/Search textbooks/).fill("scientific calculator");
   await expect(examples.getByRole("article")).toHaveCount(1);
   await expect(examples.getByRole("heading", { name: "Scientific calculator with slide cover" })).toBeVisible();
   await page.getByPlaceholder(/Search textbooks/).fill("");
-  await expect(examples.getByRole("article")).toHaveCount(24);
+  await expect(examples.getByRole("article")).toHaveCount(8);
   await page.getByRole("button", { name: "Filters", exact: true }).click();
   await page.getByRole("combobox", { name: "Status", exact: true }).selectOption("sold");
   await page.getByRole("button", { name: "Close filters" }).last().click();

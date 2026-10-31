@@ -4,6 +4,7 @@ import { geistSans } from "@/lib/fonts/geist";
 
 import { Providers } from "@/app/providers";
 import { PwaRuntime } from "@/components/pwa-runtime";
+import { PublicBrowseBootstrap } from "@/components/public-browse-bootstrap";
 
 import "./globals.css";
 
@@ -41,6 +42,7 @@ type RootLayoutProps = Readonly<{
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html className={geistSans.variable} lang="en">
+      <head><PublicBrowseBootstrap /></head>
       <body className="min-h-screen antialiased" suppressHydrationWarning>
         <Providers>{children}</Providers>
         <PwaRuntime />

@@ -214,7 +214,9 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page).toHaveURL(/\/trade\/explore$/);
     await expect(page.getByRole("heading", { name: "All Items", exact: true }).first()).toBeVisible();
     if (isMobile) {
+      await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
       const cards = page.getByRole("article", { name: /^Demo item:/ });
+      await expect(cards).toHaveCount(8);
       const first = await cards.nth(0).boundingBox();
       const second = await cards.nth(1).boundingBox();
       expect(first && second && Math.abs(first.y - second.y) < 2 && second.x > first.x).toBeTruthy();

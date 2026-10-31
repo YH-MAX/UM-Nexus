@@ -17,6 +17,7 @@ import { ListingPhoto } from "./listing-photo";
 import { listingCardSizes } from "@/lib/trade/image-sizes";
 
 type ListingCardProps = Readonly<{
+  eager?: boolean;
   listing: Listing;
   isSaved?: boolean;
   onToggleFavorite?: (listingId: string, nextSaved: boolean) => void | Promise<void>;
@@ -42,6 +43,7 @@ function sellerInitials(name: string): string {
 }
 
 export function ListingCard({
+  eager = false,
   listing,
   isSaved = false,
   onToggleFavorite,
@@ -80,6 +82,7 @@ export function ListingCard({
     >
       {primaryImage?.public_url ? (
         <ListingPhoto
+          eager={eager}
           image={primaryImage}
           alt={listing.title}
           className="h-full w-full object-cover transition duration-200 ease-out group-hover:scale-[1.04]"
@@ -189,6 +192,7 @@ export function ListingCard({
       }`}
     >
       <Link
+        prefetch={false}
         aria-label={`Open ${listing.title}`}
         className={`min-w-0 text-left ${isList ? "flex w-full flex-1 flex-col sm:flex-row" : "block"}`}
         href={href}
@@ -211,6 +215,7 @@ export function ListingCard({
           </button>
         ) : (
           <Link
+            prefetch={false}
             aria-label="Sign in to save listing"
             className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-black/20 text-white shadow-sm transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             href={favoriteSignInHref}

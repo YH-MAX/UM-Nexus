@@ -32,11 +32,13 @@ test("mobile cards choose thumbnails and reuse them from browser cache", async (
   try {
     const page = await context.newPage();
     await page.goto("http://localhost:3200/trade");
+    await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
     const photo = page.getByRole("article", { name: "Demo item: Scientific calculator with slide cover", exact: true }).getByRole("img");
     await photo.scrollIntoViewIfNeeded();
     const selected = await photo.evaluate(async (node: HTMLImageElement) => { await node.decode(); return new URL(node.currentSrc).pathname; });
     expect(exampleImages["example-electronics-1"].thumbnails.some((image) => image.src === selected)).toBe(true);
     await page.reload();
+    await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
     await photo.scrollIntoViewIfNeeded();
     await photo.evaluate((node: HTMLImageElement) => node.decode());
     const timing = await page.evaluate((src) => {

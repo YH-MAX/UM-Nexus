@@ -28,7 +28,8 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { CategoryPill } from "@/components/trade/category-pill";
 import { EmptyState } from "@/components/trade/empty-state";
 import { ListingCard } from "@/components/trade/listing-card";
-import { ListingExamples } from "@/components/trade/listing-examples";
+import { DeferredListingExamples } from "@/components/trade/deferred-listing-examples";
+import { getInitialBrowsePage } from "@/lib/trade/initial-browse";
 import { LoadingSkeleton } from "@/components/trade/loading-skeleton";
 import { MarketplaceBrowseSidebar } from "@/components/trade/marketplace-browse-sidebar";
 import {
@@ -120,7 +121,7 @@ export default function TradePage() {
       setError(null);
     }
 
-    void getListings(activeFilters, { limit: PAGE_SIZE, offset: 0 })
+    void getInitialBrowsePage(activeFilters)
       .then((result) => {
         if (isMounted) {
           setPage(result);
@@ -455,8 +456,9 @@ export default function TradePage() {
                       : "flex flex-col gap-4"
                   }
                 >
-                  {allListings.map((listing) => (
+                  {allListings.map((listing, index) => (
                     <ListingCard
+                      eager={index < 2}
                       isSaved={savedIds.has(listing.id)}
                       key={listing.id}
                       listing={listing}
@@ -484,7 +486,7 @@ export default function TradePage() {
                 ) : null}
               </>
             )}
-            <ListingExamples filters={{ ...filters, search: debouncedSearch }} viewMode={viewMode} />
+            <DeferredListingExamples filters={{ ...filters, search: debouncedSearch }} viewMode={viewMode} />
           </div>
         </div>
 

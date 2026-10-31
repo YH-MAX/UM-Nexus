@@ -122,7 +122,7 @@ export function TradeShell({
 
   return (
     <main className="trade-page-surface pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
-      <header className="nexus-header sticky top-0 z-40 bg-white/95 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
+      <header className="nexus-header sticky top-0 z-40 bg-white pt-[env(safe-area-inset-top)] md:bg-white/95 md:backdrop-blur-xl">
         <div className="trade-container flex min-h-[64px] items-center justify-between gap-3 py-2.5">
           <Link aria-label="UM Nexus Trade — home" className={`nexus-brand flex min-w-0 items-center gap-2.5 ${home ? "" : "hidden md:flex"}`} href="/trade">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e9f5f3] text-[#0c514d]"><Diamond aria-hidden="true" className="h-6 w-6" /></span>
@@ -159,7 +159,7 @@ export function TradeShell({
 
       <nav
         aria-label="Mobile trade navigation"
-        className="nexus-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-slate-200/80 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 backdrop-blur-xl md:hidden"
+        className="nexus-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-slate-200/80 bg-white px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 md:hidden"
       >
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
           {mobileNav.map((item) => (
@@ -177,13 +177,13 @@ function TradeOnboardingCard({ onDismiss }: Readonly<{ onDismiss: () => void }>)
 
 function DesktopNavLink({ active, item }: Readonly<{ active: boolean; item: NavItem; pathname: string }>) {
   const Icon = item.icon;
-  return <Link aria-current={active ? "page" : undefined} className={`inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors ${item.kind === "primary" ? "bg-[#105651] text-white" : active ? "bg-[#edf6f3] text-[#105651]" : "text-slate-600 hover:bg-slate-50"}`} href={item.href}><Icon aria-hidden="true" className="h-4 w-4" />{item.label}</Link>;
+  return <Link aria-current={active ? "page" : undefined} className={`inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors ${item.kind === "primary" ? "bg-[#105651] text-white" : active ? "bg-[#edf6f3] text-[#105651]" : "text-slate-600 hover:bg-slate-50"}`} prefetch={item.href === "/trade" || item.href === "/trade/explore"} href={item.href}><Icon aria-hidden="true" className="h-4 w-4" />{item.label}</Link>;
 }
 
 function MobileNavLink({ active, item }: Readonly<{ active: boolean; item: NavItem; pathname: string }>) {
   const Icon = item.icon;
   const primary = item.kind === "primary";
-  return <Link aria-current={active ? "page" : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] font-medium ${active ? "text-[#0b514c]" : "text-slate-500"}`} href={item.href}>
+  return <Link aria-current={active ? "page" : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[10px] font-medium ${active ? "text-[#0b514c]" : "text-slate-500"}`} prefetch={item.href === "/trade" || item.href === "/trade/explore"} href={item.href}>
     <span className={primary ? "-mt-7 flex h-12 w-12 items-center justify-center rounded-full border-4 border-white bg-[#105651] text-white shadow-md" : "flex h-7 w-8 items-center justify-center"}><Icon aria-hidden="true" className={primary ? "h-6 w-6" : `h-[21px] w-[21px] ${active ? "stroke-[2.3]" : "stroke-[1.6]"}`} /></span>{item.label}
   </Link>;
 }
@@ -207,6 +207,7 @@ function UtilityLink({
 }>) {
   return (
     <Link
+      prefetch={false}
       aria-label={label}
       className={`relative inline-flex items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition duration-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400 ${
         mobile ? "h-10 w-10 border-transparent bg-transparent p-0 text-[#0c514d]" : "min-h-10 border-slate-200 bg-white px-3 py-2 text-slate-700"

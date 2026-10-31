@@ -22,7 +22,7 @@ export function ListingPhoto({ image, alt, className, sizes, eager = false }: Re
 }>) {
   if (!image.public_url) return null;
   const source = optimizedSource(image);
-  if (source) return <Image alt={alt} className={className} fill loading={eager ? "eager" : "lazy"} sizes={sizes} src={source} />;
+  if (source) return <Image alt={alt} className={className} fill fetchPriority={eager ? "high" : "auto"} loading={eager ? "eager" : "lazy"} sizes={sizes} src={source} />;
   // Keep data/blob previews, development uploads and legacy external URLs usable.
   // eslint-disable-next-line @next/next/no-img-element
   return <img alt={alt} className={className} decoding="async" loading={eager ? "eager" : "lazy"} src={image.public_url} />;
