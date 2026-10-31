@@ -1329,6 +1329,17 @@ export async function reportUser(
   });
 }
 
+export type ListingContact = {
+  listing_id: string;
+  contact_method: string | null;
+  contact_value: string | null;
+  contact_url: string | null;
+};
+
+export async function getListingContact(listingId: string, signal?: AbortSignal): Promise<ListingContact> {
+  return fetchJson<ListingContact>(`/listings/${listingId}/contact`, { signal });
+}
+
 export async function createContactRequest(
   listingId: string,
   payload: {

@@ -200,7 +200,7 @@ const sentWantedResponse = {
 };
 
 test.describe("authenticated Trade product workflows", () => {
-  test("buyer can save, request contact, and report from listing detail", async ({ page }) => {
+  test("buyer can save, contact directly, and report from listing detail", async ({ page }) => {
     await loginAs(page, buyerUser);
     const state = await mockTradeApi(page);
 
@@ -211,11 +211,10 @@ test.describe("authenticated Trade product workflows", () => {
     await expect(page.getByText(/Listing saved/i)).toBeVisible();
     expect(state.favorites).toContain("listing-1");
 
-    await page.getByPlaceholder("@username").fill("@buyer_um");
-    await page.getByLabel(/I understand UM Nexus does not hold payment/i).check();
-    await page.getByRole("button", { name: /I'm interested/i }).first().click();
-    await expect(page.getByText(/Request sent/i)).toBeVisible();
-    expect(state.contactRequestCreated).toBe(true);
+    await expect(page.getByRole("link", { name: "Message on Telegram" }).first()).toHaveAttribute("href", "https://t.me/seller_um");
+    await expect(page.getByText(/No approval needed/)).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveCount(0);
+    expect(state.contactRequestCreated).toBe(false);
 
     await page.getByRole("button", { name: /Report listing/i }).click();
     await expect(page.getByText(/Report submitted/i)).toBeVisible();
@@ -240,6 +239,55 @@ test.describe("authenticated Trade product workflows", () => {
 
     await expect(page).toHaveURL(/\/trade\/listing-new$/);
     expect(state.publishedListingCreated).toBe(true);
+  });
+
+  test("seller can select and publish a custom contact email", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    await page.goto("/trade/sell");
+    await page.getByLabel("Title").fill("Desk lamp near KK12");
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Category").selectOption("dorm_room");
+    await page.getByLabel("Condition").selectOption("good");
+    await page.getByLabel("Pickup location").selectOption("kk1");
+    await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
+    await page.getByLabel("Contact method").selectOption("email");
+    await page.getByLabel("Contact value").fill("seller+campus@example.com");
+    await page.getByRole("button", { name: /Continue to review/i }).click();
+    const published = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname.endsWith("/listings"));
+    await page.getByRole("button", { name: "Publish with Warnings" }).click();
+    expect((await published).postDataJSON()).toMatchObject({ contact_method: "email", contact_value: "seller+campus@example.com" });
+    await expect(page).toHaveURL(/\/trade\/listing-new$/);
+  });
+
+  for (const [method, label, href] of [
+    ["whatsapp", "Chat on WhatsApp", "https://wa.me/60123456789"],
+    ["email", "Email seller", "mailto:seller@siswa.um.edu.my"],
+  ] as const) {
+    test(`buyer gets the seller-selected ${method} action without approval`, async ({ page }) => {
+      await loginAs(page, buyerUser);
+      const state = await mockTradeApi(page, { contactMethod: method });
+      await page.goto("/trade/listing-1");
+      await expect(page.getByRole("link", { name: label }).first()).toHaveAttribute("href", href);
+      expect(state.contactRequestCreated).toBe(false);
+      await expect(page.getByRole("button", { name: /I'm interested/i })).toHaveCount(0);
+    });
+  }
+
+  test("unavailable contact displays a retry without falling back to requests", async ({ page }) => {
+    await loginAs(page, buyerUser);
+    const state = await mockTradeApi(page, { contactUnavailable: true });
+    await page.goto("/trade/listing-1");
+    await expect(page.getByRole("button", { name: "Retry contact details" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Message on Telegram" })).toHaveCount(0);
+    expect(state.contactRequestCreated).toBe(false);
+  });
+
+  test("guest must sign in before any seller contact is fetched", async ({ page }) => {
+    const state = await mockTradeApi(page);
+    await page.goto("/trade/listing-1");
+    await expect(page.getByText("Sign in with your UM account to contact this seller directly.")).toBeVisible();
+    expect(state.contactReads).toBe(0);
   });
 
   test("seller uploaded photo appears on the published listing", async ({ page }) => {
@@ -417,6 +465,8 @@ test.describe("authenticated Trade product workflows", () => {
 
     await page.goto("/trade/listing-1/edit");
     await expect(page.getByRole("heading", { name: /Edit listing/i })).toBeVisible();
+    await expect(page.getByLabel("Contact value")).toHaveValue("@seller_um");
+    await expect(page.getByLabel("Contact method").locator('option[value="in_app"]')).toHaveCount(0);
 
     await page.getByLabel("Title").fill("Casio Calculator - Good Condition");
     await page.getByLabel("Contact value").fill("@aina_um");
@@ -450,10 +500,11 @@ async function loginAs(page: Page, user: { id: string; email: string }) {
   }, user);
 }
 
-async function mockTradeApi(page: Page, options: { failImageUploads?: boolean } = {}) {
+async function mockTradeApi(page: Page, options: { failImageUploads?: boolean; contactMethod?: "telegram" | "whatsapp" | "email"; contactUnavailable?: boolean } = {}) {
   const state = {
     favorites: [] as string[],
     contactRequestCreated: false,
+    contactReads: 0,
     reportCreated: false,
     publishedListingCreated: false,
     uploadedImages: [] as MockListingImage[],
@@ -471,6 +522,17 @@ async function mockTradeApi(page: Page, options: { failImageUploads?: boolean } 
     const url = new URL(request.url());
     const path = url.pathname.replace(/^.*\/api\/v1/, "");
     const method = request.method();
+
+    if (method === "GET" && /^\/listings\/[^/]+\/contact$/.test(path)) {
+      state.contactReads++;
+      if (options.contactUnavailable) return json(route, { detail: "The seller needs to update their contact method." }, 409);
+      const contactMethod = options.contactMethod ?? "telegram";
+      return json(route, {
+        listing_id: path.split("/")[2], contact_method: contactMethod,
+        contact_value: contactMethod === "telegram" ? "@seller_um" : contactMethod === "whatsapp" ? "+60123456789" : "seller@siswa.um.edu.my",
+        contact_url: contactMethod === "telegram" ? "https://t.me/seller_um" : contactMethod === "whatsapp" ? "https://wa.me/60123456789" : "mailto:seller@siswa.um.edu.my",
+      });
+    }
 
     if (method === "POST" && path === "/analytics/events") {
       return json(route, { id: "event-1" });

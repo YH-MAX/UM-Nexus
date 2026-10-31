@@ -4,7 +4,7 @@ import { Flag, ShieldCheck, Store } from "lucide-react";
 const safetyRules = [
   "Meet in public campus areas such as FSKTM, Main Library, UM Sentral, faculty spaces, or residential-college common areas.",
   "Check the item before payment and do not transfer money before seeing the item.",
-  "Keep contact details private until a seller accepts a contact request.",
+  "Use the seller-selected contact method after signing in with your UM account.",
   "Report suspicious listings, unsafe transaction requests, fake photos, or prohibited items.",
 ];
 
@@ -61,8 +61,8 @@ export default function SafetyPage() {
             </div>
             <h2 className="mt-4 text-xl font-semibold">Contact privacy</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Phone numbers and handles are not public by default. Buyer and seller contact details are shown only after
-              the seller accepts a request.
+              Seller phone numbers and handles stay out of the public feed. Signed-in UM buyers can use the contact method
+              chosen for an available listing directly, without waiting for approval.
             </p>
           </section>
         </aside>

@@ -20,6 +20,8 @@ import {
   Trash2,
 } from "lucide-react";
 
+import { DirectContactAction, DirectSellerContact, useSellerContact, type SellerContactState } from "@/components/trade/direct-seller-contact";
+
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
 import { buildAuthHref } from "@/lib/auth/return-intent";
@@ -33,8 +35,6 @@ import {
   addFavorite,
   applyRecommendedPrice,
   contactMatch,
-  contactMethods,
-  createContactRequest,
   deleteListing,
   enrichListing,
   formatCategory,
@@ -42,12 +42,10 @@ import {
   formatPickupLocation,
   formatRelativeTime,
   getFavorites,
-  getCurrentUser,
   getListing,
   getListingMatches,
   getSellerDisplayName,
   getTradeResultStatus,
-  isProfileComplete,
   publishListing,
   removeFavorite,
   reportListing,
@@ -57,8 +55,6 @@ import {
   trackProductEvent,
   updateListingStatus,
   type Listing,
-  type CurrentProfile,
-  type ListingPayload,
   type PriceSimulation,
   type TradeMatch,
   type TradeResultStatus,
@@ -74,7 +70,6 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   const { user } = useAuth();
   const processedIntentRef = useRef<string | null>(null);
   const [listing, setListing] = useState<Listing | null>(null);
-  const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(null);
   const [resultStatus, setResultStatus] = useState<TradeResultStatus | null>(null);
   const [matches, setMatches] = useState<TradeMatch[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -83,12 +78,6 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   const [isSaved, setIsSaved] = useState(false);
   const [simulationPrice, setSimulationPrice] = useState("");
   const [simulation, setSimulation] = useState<PriceSimulation | null>(null);
-  const [contactDraft, setContactDraft] = useState({
-    message: "I am interested in this item. Is it still available?",
-    buyer_contact_method: "in_app" as NonNullable<ListingPayload["contact_method"]>,
-    buyer_contact_value: "",
-    safety_acknowledged: false,
-  });
   const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,38 +128,6 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   }, [listingId]);
 
   useEffect(() => {
-    if (!user) {
-      setCurrentProfile(null);
-      return;
-    }
-    let isMounted = true;
-    void getCurrentUser()
-      .then((current) => {
-        if (!isMounted) {
-          return;
-        }
-        setCurrentProfile(current.profile);
-        const preferred = contactMethods.some((method) => method.value === current.profile.contact_preference)
-          ? current.profile.contact_preference
-          : "in_app";
-        setContactDraft((draft) => ({
-          ...draft,
-          buyer_contact_method: preferred as NonNullable<ListingPayload["contact_method"]>,
-          buyer_contact_value: current.profile.contact_value ?? draft.buyer_contact_value,
-          safety_acknowledged: Boolean(current.profile.trade_safety_acknowledged_at),
-        }));
-      })
-      .catch(() => {
-        if (isMounted) {
-          setCurrentProfile(null);
-        }
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, [user]);
-
-  useEffect(() => {
     if (resultStatus?.status !== "pending" && resultStatus?.status !== "running") {
       return;
     }
@@ -200,7 +157,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
         router.replace(`/trade/${listing.id}`);
       });
     } else if (intent === "contact_listing") {
-      setActionNotice("You are back on this listing. Review the safety reminder and send the contact request when ready.");
+      setActionNotice("You are back on this listing. Use the seller's selected contact method to get in touch directly.");
       router.replace(`/trade/${listing.id}`);
     } else if (intent === "report_listing") {
       setActionNotice("You are back on this listing. Use Report listing when you are ready to submit the report.");
@@ -361,45 +318,6 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
     }, "Unable to update listing status.");
   }
 
-  async function handleContactRequest() {
-    if (!listing) {
-      return;
-    }
-    if (!user) {
-      router.push(buildAuthHref("login", { returnTo: `/trade/${listing.id}`, intent: "contact_listing", listingId: listing.id }));
-      return;
-    }
-    if (!isProfileComplete(currentProfile)) {
-      setError("Complete your trade profile before contacting sellers.");
-      return;
-    }
-    if (!currentProfile?.trade_safety_acknowledged_at && !contactDraft.safety_acknowledged) {
-      setError("Confirm the safety reminder before sending your first contact request.");
-      return;
-    }
-    if ((contactDraft.buyer_contact_method === "telegram" || contactDraft.buyer_contact_method === "whatsapp") && !contactDraft.buyer_contact_value.trim()) {
-      setError("Enter your Telegram or WhatsApp contact before sending the request.");
-      return;
-    }
-    await runAction(async () => {
-      await createContactRequest(listing.id, {
-        message: contactDraft.message.trim() || undefined,
-        buyer_contact_method: contactDraft.buyer_contact_method,
-        buyer_contact_value:
-          contactDraft.buyer_contact_method === "telegram" || contactDraft.buyer_contact_method === "whatsapp"
-            ? contactDraft.buyer_contact_value.trim()
-            : undefined,
-        safety_acknowledged: contactDraft.safety_acknowledged,
-      });
-      void trackProductEvent({
-        event_type: "contact_request_sent",
-        entity_type: "listing",
-        entity_id: listing.id,
-      });
-      setActionNotice("Request sent. The seller can accept or reject your request. You'll be notified when they respond.");
-    }, "Unable to send contact request.");
-  }
-
   async function handleContactTopMatch() {
     const topMatch = matches[0];
     if (!topMatch) {
@@ -444,12 +362,13 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   }
 
   const isSeller = Boolean(user && listing && user.id === listing.seller_id);
-  const profileIncomplete = user ? !isProfileComplete(currentProfile) : false;
+  const contactAvailable = Boolean(listing && ["available", "reserved"].includes(listing.status));
+  const sellerContact = useSellerContact(listingId, user?.id, Boolean(user && !isSeller && contactAvailable));
 
   return (
     <TradeShell
       title={listing?.title ?? "Listing detail"}
-      description="Review the item, seller, pickup location, and safety details before requesting contact."
+      description="Review the item, seller, pickup location, and safety details before contacting the seller."
     >
       {error ? (
         <div className="trade-alert trade-alert-danger flex gap-3">
@@ -540,7 +459,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
       <section className="trade-card p-5 text-center">
                   <p className="text-sm font-semibold text-slate-900">Looking for more campus items?</p>
                   <p className="mx-auto mt-1 max-w-md text-sm text-slate-600">
-                    Compare price, pickup area, and seller trust signals before sending a request.
+                    Compare price, pickup area, and seller trust signals before contacting a seller.
                   </p>
                   <Link className="trade-button-secondary mt-3" href="/trade">
                     Browse marketplace
@@ -551,15 +470,12 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
 
             {/* Right sticky card */}
             <ListingSummaryCard
-              contactDraft={contactDraft}
+              sellerContact={sellerContact}
               isActing={isActing}
               isSaved={isSaved}
               isSeller={isSeller}
               listing={listing}
-              profile={currentProfile}
               user={user}
-              onContactDraftChange={setContactDraft}
-              onContactRequest={handleContactRequest}
               onFavorite={handleFavorite}
               onReportListing={handleReportListing}
               onReportSeller={handleReportSeller}
@@ -569,24 +485,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
             {/* Mobile sticky bottom CTA */}
             {!isSeller && user && ["available", "reserved"].includes(listing.status) ? (
               <div className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-40 px-4 md:hidden">
-                {profileIncomplete ? (
-                  <Link
-                    className="trade-button-primary block w-full py-3 text-center shadow-lg shadow-emerald-900/20"
-                    href="/trade/profile"
-                  >
-                    Complete Profile
-                  </Link>
-                ) : (
-                  <button
-                    className="trade-button-primary w-full py-3 shadow-lg shadow-emerald-900/20"
-                    disabled={isActing}
-                    onClick={() => void handleContactRequest()}
-                    type="button"
-                  >
-                    <MessageCircle aria-hidden="true" className="h-4 w-4" />
-                    I&apos;m interested
-                  </button>
-                )}
+                <DirectContactAction state={sellerContact} />
               </div>
             ) : null}
           </div>
@@ -700,39 +599,23 @@ function ImageGallery({ listing }: Readonly<{ listing: Listing }>) {
 // ─── ListingSummaryCard ───────────────────────────────────────────────────────
 
 function ListingSummaryCard({
-  contactDraft,
+  sellerContact,
   isActing,
   isSaved,
   isSeller,
   listing,
-  profile,
   user,
-  onContactDraftChange,
-  onContactRequest,
   onFavorite,
   onReportListing,
   onReportSeller,
   onStatus,
 }: Readonly<{
-  contactDraft: {
-    message: string;
-    buyer_contact_method: NonNullable<ListingPayload["contact_method"]>;
-    buyer_contact_value: string;
-    safety_acknowledged: boolean;
-  };
+  sellerContact: SellerContactState;
   isActing: boolean;
   isSaved: boolean;
   isSeller: boolean;
   listing: Listing;
-  profile: CurrentProfile | null;
   user: ReturnType<typeof useAuth>["user"];
-  onContactDraftChange: React.Dispatch<React.SetStateAction<{
-    message: string;
-    buyer_contact_method: NonNullable<ListingPayload["contact_method"]>;
-    buyer_contact_value: string;
-    safety_acknowledged: boolean;
-  }>>;
-  onContactRequest: () => Promise<void>;
   onFavorite: () => Promise<void>;
   onReportListing: () => Promise<void>;
   onReportSeller: () => Promise<void>;
@@ -751,7 +634,7 @@ function ListingSummaryCard({
         </div>
         <h2 className="mt-2 text-lg font-semibold leading-snug text-slate-950">{listing.title}</h2>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          Request contact only when you are ready to arrange a safe campus pickup.
+          Contact the seller when you are ready to arrange a safe campus pickup.
         </p>
       </div>
 
@@ -778,18 +661,11 @@ function ListingSummaryCard({
           isSeller ? (
             <SellerActions isActing={isActing} listing={listing} onStatus={onStatus} />
           ) : (
-            <BuyerRequestForm
-              contactDraft={contactDraft}
-              disabled={isActing || !["available", "reserved"].includes(listing.status)}
-              listingStatus={listing.status}
-              profile={profile}
-              onContactDraftChange={onContactDraftChange}
-              onContactRequest={onContactRequest}
-            />
+            <DirectSellerContact state={sellerContact} available={["available", "reserved"].includes(listing.status)} />
           )
         ) : (
           <RequireAuthCard
-            description="Sign in with your UM account to request seller contact details."
+            description="Sign in with your UM account to contact this seller directly."
             intent="contact_listing"
             listingId={listing.id}
             returnTo={`/trade/${listing.id}`}
@@ -826,131 +702,6 @@ function ListingSummaryCard({
   );
 }
 
-// ─── BuyerRequestForm ─────────────────────────────────────────────────────────
-
-function BuyerRequestForm({
-  contactDraft,
-  disabled,
-  listingStatus,
-  profile,
-  onContactDraftChange,
-  onContactRequest,
-}: Readonly<{
-  contactDraft: {
-    message: string;
-    buyer_contact_method: NonNullable<ListingPayload["contact_method"]>;
-    buyer_contact_value: string;
-    safety_acknowledged: boolean;
-  };
-  disabled: boolean;
-  listingStatus: string;
-  profile: CurrentProfile | null;
-  onContactDraftChange: React.Dispatch<React.SetStateAction<{
-    message: string;
-    buyer_contact_method: NonNullable<ListingPayload["contact_method"]>;
-    buyer_contact_value: string;
-    safety_acknowledged: boolean;
-  }>>;
-  onContactRequest: () => Promise<void>;
-}>) {
-  // Gate: show completion CTA when profile is incomplete
-  if (!isProfileComplete(profile)) {
-    return (
-      <div className="trade-alert trade-alert-warning grid gap-3">
-        <p className="text-sm font-semibold text-amber-950">Complete your profile to contact this seller.</p>
-        <p className="text-sm leading-6 text-amber-900">
-          Add your name and contact method so sellers can identify you.
-        </p>
-        <Link className="trade-button-primary" href="/trade/profile">
-          Complete Profile
-        </Link>
-      </div>
-    );
-  }
-
-  const needsContactValue = contactDraft.buyer_contact_method === "telegram" || contactDraft.buyer_contact_method === "whatsapp";
-  const needsSafetyAck = !profile?.trade_safety_acknowledged_at;
-
-  return (
-    <div className="grid gap-3">
-      <div>
-        <p className="text-sm font-semibold text-slate-950">Request seller contact</p>
-        <p className="mt-1 text-sm leading-6 text-slate-600">
-          Your message and selected contact method will be shown to the seller. Their contact details are shared only if they accept.
-        </p>
-      </div>
-      {listingStatus === "reserved" ? (
-        <p className="trade-alert trade-alert-warning p-3">
-          This item is currently reserved. You can still request backup interest, but the seller may already be discussing it with another buyer.
-        </p>
-      ) : null}
-      <label className="grid gap-2">
-            <span className="trade-field-kicker">Message</span>
-        <textarea
-          className="trade-input min-h-24 resize-none"
-          value={contactDraft.message}
-          onChange={(event) => onContactDraftChange((current) => ({ ...current, message: event.target.value }))}
-        />
-      </label>
-      <label className="grid gap-2">
-          <span className="trade-field-kicker">Your contact method</span>
-        <select
-          className="trade-input"
-          value={contactDraft.buyer_contact_method}
-          onChange={(event) =>
-            onContactDraftChange((current) => ({
-              ...current,
-              buyer_contact_method: event.target.value as NonNullable<ListingPayload["contact_method"]>,
-              buyer_contact_value: event.target.value === "email" || event.target.value === "in_app" ? "" : current.buyer_contact_value,
-            }))
-          }
-        >
-          {contactMethods.map((method) => (
-            <option key={method.value} value={method.value}>
-              {method.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {needsContactValue ? (
-        <label className="grid gap-2">
-          <span className="trade-field-kicker">Contact value</span>
-          <input
-            className="trade-input"
-            placeholder={contactDraft.buyer_contact_method === "telegram" ? "@username" : "+60..."}
-            value={contactDraft.buyer_contact_value}
-            onChange={(event) => onContactDraftChange((current) => ({ ...current, buyer_contact_value: event.target.value }))}
-          />
-        </label>
-      ) : null}
-      {needsSafetyAck ? (
-        <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
-          <input
-            checked={contactDraft.safety_acknowledged}
-            className="mt-0.5 shrink-0"
-            onChange={(event) =>
-              onContactDraftChange((current) => ({ ...current, safety_acknowledged: event.target.checked }))
-            }
-            type="checkbox"
-          />
-          <span>I understand UM Nexus does not hold payments, and I will check the item before paying.</span>
-        </label>
-      ) : null}
-      <button
-        className="trade-button-primary w-full"
-        disabled={disabled}
-        onClick={() => void onContactRequest()}
-        type="button"
-      >
-        <MessageCircle aria-hidden="true" className="h-4 w-4" />
-        I&apos;m interested
-      </button>
-    </div>
-  );
-}
-
-// ─── SellerActions ────────────────────────────────────────────────────────────
-
 function SellerActions({
   isActing,
   listing,
@@ -964,7 +715,7 @@ function SellerActions({
     <div className="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
       <div>
         <p className="font-semibold text-slate-950">Seller controls</p>
-        <p className="mt-1 leading-6">This is your listing. Manage status or review buyer requests from My Trade.</p>
+        <p className="mt-1 leading-6">This is your listing. Manage its status and seller contact method from My Trade.</p>
       </div>
       <Link className="trade-button-primary w-full" href={`/trade/${listing.id}/edit`}>
         <Pencil aria-hidden="true" className="h-4 w-4" />
@@ -1029,7 +780,7 @@ function SellerCard({ listing }: Readonly<{ listing: Listing }>) {
         </span>
       </div>
       <p className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm leading-6 text-emerald-900">
-        Contact details are shared only after the seller accepts a buyer request.
+        Signed-in UM buyers can contact the seller directly using the contact method selected for this listing.
       </p>
     </section>
   );

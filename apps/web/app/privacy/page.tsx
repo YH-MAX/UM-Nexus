@@ -12,7 +12,7 @@ const privacyPoints = [
   },
   {
     title: "Contact privacy",
-    body: "Seller and buyer contact values are hidden from the public feed and shown only after the seller accepts a contact request.",
+    body: "Seller contact values stay out of the public feed. Signed-in UM students can access the contact method selected for an available listing directly, without seller approval. Historical contact requests and wanted responses retain their existing participant permissions.",
   },
   {
     title: "AI usage",

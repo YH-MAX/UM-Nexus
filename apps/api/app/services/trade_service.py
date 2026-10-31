@@ -23,7 +23,9 @@ from app.models import (
     WantedResponse,
 )
 from app.repositories.trade import TradeRepository
+from app.services.direct_contact import direct_contact_destination
 from app.schemas.listing import (
+    ListingContactRead,
     ListingFavoriteRead,
     ListingCreate,
     ListingImageCreate,
@@ -187,6 +189,28 @@ def get_listing(
         if refreshed is not None:
             return refreshed
     return listing
+
+
+def get_listing_contact(db: Session, listing_id: str, current_user: User) -> ListingContactRead:
+    listing = get_listing(db, listing_id, viewer=current_user)
+    is_owner = listing.seller_id == current_user.id
+    if not is_owner and (
+        listing.status not in {"available", "reserved"}
+        or listing.moderation_status not in {"clear", "flagged", "approved"}
+        or not listing.seller or listing.seller.status != "active"
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This listing is not available for contact.")
+    value = _seller_contact_value(listing)
+    try:
+        value, url = direct_contact_destination(listing.contact_method, value)
+    except ValueError as error:
+        if not is_owner:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The seller needs to update their contact method before buyers can contact them directly.",
+            ) from error
+        url = None
+    return ListingContactRead(listing_id=listing.id, contact_method=listing.contact_method, contact_value=value, contact_url=url)
 
 
 def update_listing(db: Session, listing_id: str, payload: ListingUpdate, current_user: User | None = None) -> Listing:
@@ -1876,6 +1900,19 @@ def _prepare_listing_values(values: dict, existing: Listing | None = None, *, fo
 
     contact_method = prepared.get("contact_method", existing.contact_method if existing else None)
     contact_value = prepared.get("contact_value", existing.contact_value if existing else None)
+    validate_contact = for_publish or (
+        existing is not None and existing.status in {"available", "reserved"}
+        and bool({"contact_method", "contact_value"} & set(prepared))
+    )
+    if validate_contact:
+        try:
+            if contact_method == "email" and not contact_value:
+                prepared["contact_value"] = None  # Resolve to the seller's verified email on authenticated reads.
+            else:
+                normalized_value, _ = direct_contact_destination(contact_method, contact_value)
+                prepared["contact_value"] = normalized_value
+        except ValueError as error:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
     if contact_method in {"telegram", "whatsapp"} and for_publish and not contact_value:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

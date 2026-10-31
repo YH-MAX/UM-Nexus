@@ -30,13 +30,14 @@ import {
   X,
 } from "lucide-react";
 
+import { sellerContactMethods as contactMethods, sellerContactError } from "@/lib/trade/direct-contact";
+
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
 import { StatusPill } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   conditionOptions,
-  contactMethods,
   createListing,
   deleteListing,
   formatCategory,
@@ -432,7 +433,7 @@ export default function SellPage() {
       setEditableDraft({
         ...nextDraft.listing_payload,
         condition_label: nextDraft.listing_payload.condition_label ?? "good",
-        contact_method: nextDraft.listing_payload.contact_method ?? "telegram",
+        contact_method: contactMethods.some((method) => method.value === nextDraft.listing_payload.contact_method) ? nextDraft.listing_payload.contact_method : "email",
       });
       setSelectedPriceType("fair_price");
       addMessage({ role: "agent", body: nextDraft.assistant_message });
@@ -595,7 +596,7 @@ export default function SellPage() {
 
   function updateDraftField(field: keyof ListingPayload, value: string | number | undefined) {
     setIsDirty(true);
-    setEditableDraft((current) => (current ? { ...current, [field]: value } : current));
+    setEditableDraft((current) => (current ? { ...current, [field]: value, ...(field === "contact_method" ? { contact_value: "" } : {}) } : current));
   }
 
   function applyPriceOption(option: SellAgentDraft["price_options"][number]) {
@@ -1375,7 +1376,7 @@ function ManualListingPanel({
 
       <div className="mt-6 rounded-2xl border border-stone-100 bg-[#faf7f0]/50 p-4" id="sell-extra-fields">
         <p className="text-sm font-semibold text-stone-900">Contact for buyers</p>
-        <p className="mt-1 text-xs text-[#6B6257]">Required before publish — how buyers can reach you after a contact request.</p>
+        <p className="mt-1 text-xs text-[#6B6257]">Choose how signed-in UM buyers can contact you directly. No approval is required.</p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <EditableSelect
             label="Contact method"
@@ -1386,7 +1387,7 @@ function ManualListingPanel({
           <EditableField
             id="sell-contact-value"
             label="Contact value"
-            placeholder="Handle or phone"
+            placeholder="@username, +60123456789, or email"
             value={draft.contact_value ?? ""}
             onChange={(value) => onUpdateDraftField("contact_value", value || undefined)}
           />
@@ -2050,9 +2051,9 @@ function DraftReviewPanel({
             </div>
 
             <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4">
-              <h3 className="text-sm font-semibold text-cyan-950">Contact request setup</h3>
+              <h3 className="text-sm font-semibold text-cyan-950">Direct buyer contact</h3>
               <p className="mt-1 text-sm leading-6 text-cyan-900">
-                Your contact stays hidden until you accept a buyer request.
+                Your selected contact is available directly to signed-in UM buyers. Email can use your verified UM address.
               </p>
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <EditableSelect
@@ -2586,7 +2587,7 @@ function prepareListingPayload(payload: ListingPayload, mode: "draft" | "publish
   const conditionLabel = isDraft
     ? (payload.condition_label || payload.condition || "good")
     : (payload.condition_label || payload.condition || "");
-  const contactMethod = payload.contact_method || "in_app";
+  const contactMethod = contactMethods.some((method) => method.value === payload.contact_method) ? payload.contact_method! : "email";
   return {
     ...payload,
     title: payload.title.trim(),
@@ -2598,7 +2599,7 @@ function prepareListingPayload(payload: ListingPayload, mode: "draft" | "publish
     pickup_location: pickupLocation,
     pickup_area: pickupLocation,
     contact_method: contactMethod,
-    contact_value: contactMethod === "telegram" || contactMethod === "whatsapp" ? payload.contact_value?.trim() : undefined,
+    contact_value: payload.contact_value?.trim() || (contactMethod === "email" ? "" : undefined),
   };
 }
 
@@ -2626,17 +2627,13 @@ function validateManualListing(payload: ListingPayload, profile: CurrentProfile 
     return "Price must be 0 or more.";
   }
   if (!isContactReady(prepared)) {
-    return "Choose a contact method. Telegram and WhatsApp need a contact value before publishing.";
+    return sellerContactError(prepared.contact_method, prepared.contact_value);
   }
   return null;
 }
 
 function isContactReady(payload: ListingPayload): boolean {
-  const method = payload.contact_method || "in_app";
-  if (method === "telegram" || method === "whatsapp") {
-    return Boolean(payload.contact_value?.trim());
-  }
-  return true;
+  return sellerContactError(payload.contact_method, payload.contact_value) === null;
 }
 
 function SendIcon() {

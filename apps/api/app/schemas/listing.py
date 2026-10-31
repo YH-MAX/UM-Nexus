@@ -233,6 +233,13 @@ class ListingRead(BaseModel):
     seller: SellerSummary | None = None
 
 
+class ListingContactRead(BaseModel):
+    listing_id: str
+    contact_method: str | None
+    contact_value: str | None
+    contact_url: str | None
+
+
 class ListingReportCreate(BaseModel):
     report_type: ListingReportReason = Field(..., min_length=1, max_length=100)
     reason: str | None = Field(default=None, max_length=2000)

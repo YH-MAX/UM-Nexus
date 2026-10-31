@@ -576,7 +576,7 @@ function PublicSellerPreviewCard({
         <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/80 p-3 text-sm leading-relaxed text-emerald-900">
           <div className="flex gap-2">
             <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
-            <p>Your contact details are shared only after a buyer&apos;s request is accepted.</p>
+            <p>Choose a contact method for each listing. Signed-in UM buyers can contact you directly, without approval.</p>
           </div>
         </div>
       </div>
@@ -594,7 +594,7 @@ function PrivacySafetyCard() {
         <div>
           <h2 className="text-lg font-semibold text-stone-950">Privacy &amp; safety</h2>
           <p className="mt-2 text-sm leading-relaxed text-stone-600">
-            We keep your contact details hidden from other students until you accept their request.
+            Contact details stay out of the public feed. Your chosen listing contact is available directly to signed-in UM buyers.
           </p>
           <Link className="mt-3 inline-flex text-sm font-semibold text-amber-700 transition hover:text-amber-800" href="/safety">
             Learn how we protect you →

@@ -94,8 +94,8 @@ const tradeSteps: ReadonlyArray<{
   },
   {
     numeral: "II",
-    title: "Request",
-    body: "Send a private contact request. The seller decides if and when their details are revealed.",
+    title: "Contact",
+    body: "Contact the seller directly using their chosen WhatsApp, Telegram, or email. No approval wait.",
     icon: Send,
   },
   {
@@ -124,7 +124,7 @@ const trustPillars: ReadonlyArray<{
   },
   {
     title: "Private Contact",
-    body: "Contact details stay hidden until the seller accepts your request. No exposure to strangers.",
+    body: "Seller-selected contact details are available to signed-in UM students. No approval needed.",
     icon: KeyRound,
   },
   {

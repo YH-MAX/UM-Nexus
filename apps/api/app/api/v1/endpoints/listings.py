@@ -8,6 +8,7 @@ from app.auth.dependencies import get_optional_authenticated_user, require_authe
 from app.db.session import get_db
 from app.schemas.listing import (
     ListingCreate,
+    ListingContactRead,
     ListingFavoriteRead,
     ListingImageCreate,
     ListingImageRead,
@@ -33,6 +34,7 @@ from app.services.trade_service import (
     add_favorite,
     delete_listing,
     get_listing,
+    get_listing_contact,
     publish_listing,
     remove_favorite,
     remove_listing_image,
@@ -246,6 +248,18 @@ def create_listing_report_endpoint(
 ) -> ListingReportRead:
     report = create_listing_report(db, str(listing_id), payload, current_user)
     return ListingReportRead.model_validate(report)
+
+
+@router.get("/{listing_id}/contact", response_model=ListingContactRead)
+def get_listing_contact_endpoint(
+    listing_id: UUID,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_authenticated_user),
+) -> ListingContactRead:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = "Authorization"
+    return get_listing_contact(db, str(listing_id), current_user)
 
 
 @router.post("/{listing_id}/contact-requests", response_model=ContactRequestRead, status_code=status.HTTP_201_CREATED)

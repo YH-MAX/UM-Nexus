@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import { Camera, Save, Trash2, UploadCloud } from "lucide-react";
 
+import { sellerContactMethods as contactMethods, sellerContactError } from "@/lib/trade/direct-contact";
+
 import { RequireAuthCard } from "@/components/auth/require-auth-card";
 import { useAuth } from "@/components/auth/auth-provider";
 import { PriceText } from "@/components/trade/price-text";
@@ -13,7 +15,7 @@ import { StatusPill, statusTone } from "@/components/trade/status-pill";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   conditionOptions,
-  contactMethods,
+  getListingContact,
   formatCategory,
   formatPickupLocation,
   getListing,
@@ -65,12 +67,21 @@ export function EditListingClient({ listingId }: EditListingClientProps) {
   useEffect(() => {
     let isMounted = true;
     void getListing(listingId)
-      .then((nextListing) => {
+      .then(async (nextListing) => {
         if (!isMounted) {
           return;
         }
+        const contact = user?.id === nextListing.seller_id ? await getListingContact(nextListing.id) : null;
+        if (!isMounted) return;
         setListing(nextListing);
-        setForm(listingToPayload(nextListing));
+        setForm({
+          ...listingToPayload(nextListing),
+          ...(contact ? {
+            contact_method: contactMethods.some((method) => method.value === contact.contact_method)
+              ? contact.contact_method as ListingPayload["contact_method"] : "email",
+            contact_value: contact.contact_value ?? "",
+          } : {}),
+        });
       })
       .catch((nextError) => {
         if (isMounted) {
@@ -86,7 +97,7 @@ export function EditListingClient({ listingId }: EditListingClientProps) {
     return () => {
       isMounted = false;
     };
-  }, [listingId]);
+  }, [listingId, user?.id]);
 
   useEffect(() => {
     return () => {
@@ -106,6 +117,7 @@ export function EditListingClient({ listingId }: EditListingClientProps) {
     setForm((current) => ({
       ...current,
       [field]: value,
+      ...(field === "contact_method" ? { contact_value: "" } : {}),
       ...(field === "category" && value === "free_items" ? { price: 0 } : {}),
       ...(field === "pickup_location" ? { pickup_area: String(value ?? "") } : {}),
     }));
@@ -214,7 +226,7 @@ export function EditListingClient({ listingId }: EditListingClientProps) {
         <section className="trade-card p-6">
           <h2 className="text-xl font-semibold">Only the seller can edit this listing</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            You can still browse the listing, save it, or submit a contact request from the detail page.
+            You can still browse the listing, save it, or contact the seller directly from the detail page.
           </p>
           <Link className="trade-button-primary mt-5" href={`/trade/${listing.id}`}>
             Open listing
@@ -281,6 +293,7 @@ export function EditListingClient({ listingId }: EditListingClientProps) {
 
             <section className="trade-card p-5">
               <h2 className="text-xl font-semibold">Price, pickup, and contact</h2>
+              <p className="trade-helper-text">Signed-in UM buyers can use this contact directly. WhatsApp needs a country code; leave email blank to use your verified UM email.</p>
               <div className="mt-5 grid gap-4 sm:grid-cols-2">
                 <NumberField disabled={soldLocked || isSaving || form.category === "free_items"} label="Price (RM)" value={form.price} onChange={(value) => updateField("price", value)} />
                 <NumberField disabled={soldLocked || isSaving} label="Original price (optional)" value={form.original_price ?? 0} onChange={(value) => updateField("original_price", value || undefined)} />
@@ -533,7 +546,7 @@ function listingToPayload(listing: Listing): ListingPayload {
     residential_college: listing.residential_college ?? undefined,
     contact_method: contactMethods.some((method) => method.value === listing.contact_method)
       ? (listing.contact_method as ListingPayload["contact_method"])
-      : "in_app",
+      : "email",
     contact_value: "",
   };
 }
@@ -553,10 +566,7 @@ function preparePayload(payload: ListingPayload): Partial<ListingPayload> {
     pickup_location: pickupLocation,
     pickup_area: pickupLocation,
     pickup_note: payload.pickup_note?.trim() || undefined,
-    contact_value:
-      payload.contact_method === "telegram" || payload.contact_method === "whatsapp"
-        ? payload.contact_value?.trim() || undefined
-        : undefined,
+    contact_value: payload.contact_value?.trim() || (payload.contact_method === "email" ? "" : undefined),
   };
 }
 
@@ -580,12 +590,8 @@ function validatePayload(payload: ListingPayload): string | null {
   if (Number(prepared.price) < 0) {
     return "Price must be 0 or more.";
   }
-  if (!prepared.contact_method) {
-    return "Choose a contact method before saving.";
-  }
-  if ((prepared.contact_method === "telegram" || prepared.contact_method === "whatsapp") && !prepared.contact_value) {
-    return "Add your Telegram or WhatsApp contact before saving.";
-  }
+  const contactError = sellerContactError(prepared.contact_method, prepared.contact_value);
+  if (contactError) return contactError;
   return null;
 }
 
