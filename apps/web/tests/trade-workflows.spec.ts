@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { exampleImages } from "../lib/trade/example-images";
 import { expect, type Page, type Request, type Route, test } from "@playwright/test";
+import { mockVisualViewport } from "./helpers/mobile-viewport";
 
 const now = "2026-05-05T08:00:00.000Z";
 
@@ -202,6 +203,197 @@ const sentWantedResponse = {
 };
 
 test.describe("authenticated Trade product workflows", () => {
+  test("mobile UX: posting review leads with the item and collapses optional guidance", async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    await page.goto("/trade/sell");
+    await page.getByLabel("Title").fill("Desk lamp near KK12");
+    await page.getByLabel("Category").selectOption("dorm_room");
+    await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
+    await page.getByLabel("Description").fill("A compact study lamp in good working condition.");
+    await page.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Pickup location").selectOption("kk1");
+    await page.getByLabel("Contact value").fill("@aina_um");
+    await page.getByRole("button", { name: "Continue to review" }).click();
+    const preview = page.getByRole("region", { name: "Your listing preview" });
+    const review = page.getByRole("region", { name: "Publish review" });
+    for (const width of [375, 390, 430]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(preview).toContainText("Desk lamp near KK12");
+      await expect(preview).toContainText(/RM\s*25/);
+      await expect(preview).toContainText("Pickup: KK1");
+      expect((await preview.boundingBox())!.y).toBeLessThan((await review.boundingBox())!.y);
+      await expect(review.getByText("Add at least 3 photos", { exact: true })).toBeHidden();
+      await expect(page.getByRole("region", { name: "Posting actions" })).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "Mobile trade navigation" })).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`review-${width}.png`) });
+    }
+    await review.getByText(/Optional quality suggestions/).click();
+    await expect(review.getByText("Add at least 3 photos", { exact: true })).toBeVisible();
+    await page.getByRole("region", { name: "Posting actions" }).getByRole("button", { name: "Back", exact: true }).click();
+    await expect(page.getByLabel("Price")).toHaveValue("25");
+  });
+
+  test("mobile UX: product actions replace tabs across phone and tablet widths", async ({ page }) => {
+    await loginAs(page, buyerUser);
+    await mockTradeApi(page);
+    await page.goto("/trade/listing-1");
+    const actions = page.getByRole("region", { name: "Product actions", exact: true });
+    for (const width of [375, 390, 430, 768, 820, 1023]) {
+      await page.setViewportSize({ width, height: 844 });
+      await expect(actions).toBeVisible();
+      await expect(page.getByRole("navigation", { name: "Mobile trade navigation" })).toHaveCount(0);
+      await expect(actions.getByRole("link", { name: "Message on Telegram" })).toHaveAttribute("href", "https://t.me/seller_um");
+      const bounds = (await actions.boundingBox())!;
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(845);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+    await actions.getByRole("button", { name: "Favorite", exact: true }).click();
+    await expect(actions.getByRole("button", { name: "Saved", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await page.setViewportSize({ width: 1024, height: 844 });
+    await expect(actions).toBeHidden();
+    await expect(page.getByRole("navigation", { name: "Trade navigation", exact: true })).toBeVisible();
+  });
+
+  test("mobile UX: Safari visual keyboard keeps posting fields and actions accessible", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockVisualViewport(page);
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    await page.goto("/trade/sell");
+    const actions = page.getByRole("region", { name: "Posting actions" });
+    await expect(actions).toBeVisible();
+    const field = page.getByLabel("Description");
+    await field.focus();
+    await page.evaluate(() => window.resizeTestKeyboard(400));
+    await expect(page.getByRole("main")).toHaveAttribute("data-keyboard-open", "true");
+    await expect.poll(async () => {
+      const bounds = (await actions.boundingBox())!;
+      return Math.abs(bounds.y + bounds.height - 400);
+    }).toBeLessThan(3);
+    await expect.poll(async () => {
+      const input = (await field.boundingBox())!;
+      return input.y + input.height - (await actions.boundingBox())!.y;
+    }).toBeLessThanOrEqual(-8);
+    expect(await field.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+    await actions.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await expect(page.getByLabel("Title")).toHaveAttribute("aria-invalid", "true");
+    await expect(page.locator("#sell-title-error")).toBeInViewport();
+    await page.evaluate(() => { (document.activeElement as HTMLElement)?.blur(); window.resizeTestKeyboard(innerHeight); });
+    await expect(page.getByRole("main")).toHaveAttribute("data-keyboard-open", "false");
+  });
+
+  test("mobile UX: layout keyboard resizing keeps a single posting action bar", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    await page.goto("/trade/sell");
+    const field = page.getByLabel("Description");
+    await field.focus();
+    await page.setViewportSize({ width: 390, height: 420 });
+    const actions = page.getByRole("region", { name: "Posting actions" });
+    await expect(actions).toBeVisible();
+    const bounds = (await actions.boundingBox())!;
+    expect(Math.abs(bounds.y + bounds.height - 420)).toBeLessThan(3);
+    await expect(page.getByRole("navigation", { name: "Mobile trade navigation" })).toHaveCount(0);
+    await field.fill("A compact desk lamp in good condition.");
+    await expect(field).toHaveValue("A compact desk lamp in good condition.");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(actions).toBeVisible();
+  });
+
+  test("AI listing assistance runs only when requested and leaves manual posting available", async ({ page }) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    let requests = 0;
+    await page.route("**/ai/trade/sell-agent/draft", (route) => {
+      requests++;
+      return json(route, { detail: "AI temporarily unavailable" }, 503);
+    });
+    await page.goto("/trade/sell");
+    await expect(page.getByRole("button", { name: "Generate AI draft", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Try AI Assistant", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Generate AI draft", exact: true })).toBeDisabled();
+    expect(requests).toBe(0);
+    await page.getByLabel("Message the sell agent").fill("A desk lamp in good condition for RM25");
+    await page.getByRole("button", { name: "Generate AI draft", exact: true }).click();
+    await expect(page.getByRole("main").getByRole("alert").first()).toHaveText("AI temporarily unavailable");
+    expect(requests).toBe(1);
+    await expect(page.getByRole("button", { name: "Continue to price & pickup" })).toBeEnabled();
+  });
+
+  test("three-step posting retains edits and photos, validates details and saves drafts", async ({ page }, testInfo) => {
+    await loginAs(page, sellerUser);
+    await mockTradeApi(page);
+    await page.goto("/trade/sell");
+    await expect(page.getByRole("list", { name: "Listing progress" }).getByRole("listitem")).toHaveCount(3);
+    await page.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await expect(page.getByRole("main").getByRole("alert")).toContainText("Add a title");
+    await page.getByLabel("Title").fill("Desk lamp near KK12");
+    await page.getByLabel("Category").selectOption("dorm_room");
+    await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
+    await page.getByLabel("Description").fill("Compact lamp in good condition for a study desk.");
+    await page.locator('input[type="file"]').first().setInputFiles({ name: "lamp.webp", mimeType: "image/webp", buffer: readFileSync("public" + exampleImages["example-electronics-1"].full.src) });
+    await page.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await expect(page.getByRole("heading", { name: "Price & pickup", exact: true })).toBeFocused();
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Pickup location").selectOption("kk1");
+    await page.getByLabel("Contact value").fill("@aina_um");
+    await page.screenshot({ path: testInfo.outputPath("posting-price-pickup.png") });
+    await page.getByRole("button", { name: /^(Back|Back to details)$/ }).click();
+    await expect(page.getByLabel("Title")).toHaveValue("Desk lamp near KK12");
+    await expect(page.getByRole("img", { name: "Main listing photo", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await expect(page.getByLabel("Price")).toHaveValue("25");
+    await expect(page.getByLabel("Pickup location")).toHaveValue("kk1");
+    await page.getByRole("button", { name: "Continue to review" }).click();
+    await expect(page.getByRole("heading", { name: "Review & publish", exact: true })).toBeFocused();
+    const headingBounds = await page.getByRole("heading", { name: "Review & publish", exact: true }).boundingBox();
+    const headerBounds = await page.locator(".nexus-header").boundingBox();
+    expect(headingBounds!.y).toBeGreaterThanOrEqual(headerBounds!.height);
+    await expect(page.getByRole("list", { name: "Listing progress" })).toBeInViewport();
+    await page.screenshot({ path: testInfo.outputPath("posting-review.png") });
+    await page.getByRole("button", { name: "Improve Listing", exact: true }).click();
+    await expect(page.getByLabel("Description")).toHaveValue("Compact lamp in good condition for a study desk.");
+    const saved = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname.endsWith("/listings"));
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    expect((await saved).url()).toContain("publish=false");
+    await expect(page.getByText("Draft saved. You can finish it from your dashboard.", { exact: true })).toBeVisible();
+  });
+
+  test("returning from an item restores search, filters, loaded pages and scroll", async ({ page, isMobile }) => {
+    await loginAs(page, buyerUser);
+    await mockTradeApi(page);
+    await page.route("**/api/v1/listings?*", (route) => {
+      const offset = Number(new URL(route.request().url()).searchParams.get("offset") ?? 0);
+      return json(route, {
+        items: Array.from({ length: 24 }, (_, i) => ({ ...baseListing, id: `listing-${offset + i + 1}`, title: `Calculator ${offset + i + 1}` })),
+        total: 48, limit: 24, offset, has_more: offset === 0,
+      });
+    });
+    await page.route("**/api/v1/listings/listing-40", (route) => json(route, { ...baseListing, id: "listing-40", title: "Calculator 40" }));
+    await page.goto("/trade/explore?search=calculator&category=electronics&condition=good&pickup_location=kk1&min_price=10&max_price=100&sort=price_low_high");
+    await page.getByRole("button", { name: /Load more/ }).click();
+    await expect(page.locator(".nexus-listing-card")).toHaveCount(48);
+    const link = page.getByRole("link", { name: "Open Calculator 40", exact: true });
+    await link.scrollIntoViewIfNeeded();
+    const scrollY = await page.evaluate(() => window.scrollY);
+    const browseUrl = new URL(page.url()).pathname + new URL(page.url()).search;
+    await link.click();
+    await expect(page).toHaveURL(/\/trade\/listing-40$/);
+    expect(await page.evaluate((url) => JSON.parse(sessionStorage.getItem("um-nexus:browse:" + url) ?? "null")?.scrollY, browseUrl)).toBe(scrollY);
+    if (isMobile) await page.getByRole("link", { name: "Back to marketplace" }).click();
+    else await page.goBack();
+    await expect(page.getByRole("searchbox", { name: "Search marketplace" })).toHaveValue("calculator");
+    await expect(page.locator(".nexus-listing-card")).toHaveCount(48);
+    await expect.poll(async () => Math.abs((await page.evaluate(() => window.scrollY)) - scrollY)).toBeLessThan(100);
+    const params = new URL(page.url()).searchParams;
+    expect(Object.fromEntries(params)).toMatchObject({ category: "electronics", condition: "good", pickup_location: "kk1", min_price: "10", max_price: "100", sort: "price_low_high" });
+  });
+
   test("reference design supports home, explore, photo gallery and profile", async ({ page, isMobile }, testInfo) => {
     await loginAs(page, buyerUser);
     await mockTradeApi(page, { withPhotos: true });
@@ -213,13 +405,11 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByRole("link", { name: "Explore", exact: true }).click();
     await expect(page).toHaveURL(/\/trade\/explore$/);
     await expect(page.getByRole("heading", { name: "All Items", exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("article", { name: /^Demo item:/ })).toHaveCount(0);
     if (isMobile) {
-      await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
-      const cards = page.getByRole("article", { name: /^Demo item:/ });
-      await expect(cards).toHaveCount(8);
-      const first = await cards.nth(0).boundingBox();
-      const second = await cards.nth(1).boundingBox();
-      expect(first && second && Math.abs(first.y - second.y) < 2 && second.x > first.x).toBeTruthy();
+      const cards = page.locator(".nexus-listing-card");
+      await expect(cards.first()).toBeVisible();
+      expect(await cards.first().locator("h2").evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
     }
     await page.screenshot({ path: testInfo.outputPath("reference-explore.png"), fullPage: false });
     await page.locator('a[href="/trade/listing-1"]').first().click();
@@ -231,6 +421,7 @@ test.describe("authenticated Trade product workflows", () => {
     await page.getByRole("button", { name: "View photo 1", exact: true }).click();
     await page.getByRole("button", { name: "Close item photo", exact: true }).click();
     await page.screenshot({ path: testInfo.outputPath("reference-detail.png"), fullPage: false });
+    if (isMobile) await page.getByRole("link", { name: "Back to marketplace", exact: true }).click();
     await page.getByRole("link", { name: "Profile", exact: true }).click();
     await expect(page.getByRole("link", { name: "My Listings", exact: true })).toBeVisible();
     await expect(page.getByRole("link", { name: "Saved Items", exact: true })).toBeVisible();
@@ -246,7 +437,8 @@ test.describe("authenticated Trade product workflows", () => {
     await page.locator('input[type="file"]').first().setInputFiles({ name: "calculator.webp", mimeType: "image/webp", buffer: readFileSync("public" + exampleImages["example-electronics-1"].full.src) });
     await expect(page.getByRole("img", { name: "Main listing photo", exact: true })).toBeVisible();
     await expect(page.getByLabel("Title")).toBeVisible();
-    await expect(page.getByLabel("Contact method")).toBeVisible();
+    await expect(page.getByLabel("Contact method")).toHaveCount(0);
+    await expect(page.getByRole("list", { name: "Listing progress" }).getByRole("listitem")).toHaveCount(3);
     await page.screenshot({ path: testInfo.outputPath("reference-post.png"), fullPage: false });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   });
@@ -292,7 +484,7 @@ test.describe("authenticated Trade product workflows", () => {
       await expect(page.getByRole("heading", { name: baseListing.title, level: 1 })).toBeVisible();
       expect(saves).toEqual([]);
     } finally { release(); }
-    await expect(page.getByRole("button", { name: /Saved/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Saved/i }).first()).toBeVisible();
     expect(saves).toEqual([]);
   });
 
@@ -418,11 +610,12 @@ test.describe("authenticated Trade product workflows", () => {
 
     await page.goto("/trade/sell");
     await page.getByLabel("Title").fill("Desk lamp near KK12");
-    await page.getByLabel("Price").fill("25");
     await page.getByLabel("Category").selectOption("dorm_room");
     await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
-    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
+    await page.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Contact value").fill("@aina_um");
     await page.getByRole("button", { name: /Continue to review/i }).click();
     await expect(page.getByRole("heading", { name: /Ready to publish/i })).toBeVisible();
@@ -437,11 +630,12 @@ test.describe("authenticated Trade product workflows", () => {
     await mockTradeApi(page);
     await page.goto("/trade/sell");
     await page.getByLabel("Title").fill("Desk lamp near KK12");
-    await page.getByLabel("Price").fill("25");
     await page.getByLabel("Category").selectOption("dorm_room");
     await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
-    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
+    await page.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Contact method").selectOption("email");
     await page.getByLabel("Contact value").fill("seller+campus@example.com");
     await page.getByRole("button", { name: /Continue to review/i }).click();
@@ -492,17 +686,19 @@ test.describe("authenticated Trade product workflows", () => {
       buffer: Buffer.from("fake-image-bytes"),
     });
     await page.getByLabel("Title").fill("Desk lamp near KK12");
-    await page.getByLabel("Price").fill("25");
     await page.getByLabel("Category").selectOption("dorm_room");
     await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
-    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
+    await page.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Contact value").fill("@aina_um");
     await page.getByRole("button", { name: /Continue to review/i }).click();
     const publishReview = page.locator("section").filter({
       has: page.getByRole("heading", { name: /Ready to publish/i }),
     });
-    await publishReview.getByRole("button", { name: "Publish Listing" }).click();
+    await expect(publishReview).toBeVisible();
+    await page.getByRole("button", { name: "Publish Listing", exact: true }).click();
 
     await expect(page).toHaveURL(/\/trade\/listing-new$/);
     await expect(page.locator('img[alt="Desk lamp near KK12"]').first()).toBeVisible();
@@ -521,17 +717,19 @@ test.describe("authenticated Trade product workflows", () => {
       buffer: Buffer.from("fake-image-bytes"),
     });
     await page.getByLabel("Title").fill("Desk lamp near KK12");
-    await page.getByLabel("Price").fill("25");
     await page.getByLabel("Category").selectOption("dorm_room");
     await page.getByRole("group", { name: "Condition *", exact: true }).getByText("Good", { exact: true }).click();
-    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Description").fill("Compact lamp in good condition, bright enough for study desk use.");
+    await page.getByRole("button", { name: "Continue to price & pickup" }).click();
+    await page.getByLabel("Price").fill("25");
+    await page.getByLabel("Pickup location").selectOption("kk1");
     await page.getByLabel("Contact value").fill("@aina_um");
     await page.getByRole("button", { name: /Continue to review/i }).click();
     const publishReview = page.locator("section").filter({
       has: page.getByRole("heading", { name: /Ready to publish/i }),
     });
-    await publishReview.getByRole("button", { name: "Publish Listing" }).click();
+    await expect(publishReview).toBeVisible();
+    await page.getByRole("button", { name: "Publish Listing", exact: true }).click();
 
     await expect(page.getByText(/Publish stopped because none of the selected photos uploaded/i)).toBeVisible();
     expect(state.uploadedImages).toHaveLength(0);

@@ -27,18 +27,16 @@ test("versioned photos have correct hashes, dimensions and immutable cache heade
   expect(legacy.headers()["cache-control"]).not.toContain("immutable");
 });
 
-test("mobile cards choose thumbnails and reuse them from browser cache", async ({ browser }) => {
+test("related example cards choose thumbnails and reuse them from browser cache", async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
   try {
     const page = await context.newPage();
-    await page.goto("http://localhost:3200/trade");
-    await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
-    const photo = page.getByRole("article", { name: "Demo item: Scientific calculator with slide cover", exact: true }).getByRole("img");
+    await page.goto("http://localhost:3200/trade/example-electronics-2");
+    const photo = page.locator('a[href="/trade/example-electronics-1"] img');
     await photo.scrollIntoViewIfNeeded();
     const selected = await photo.evaluate(async (node: HTMLImageElement) => { await node.decode(); return new URL(node.currentSrc).pathname; });
     expect(exampleImages["example-electronics-1"].thumbnails.some((image) => image.src === selected)).toBe(true);
     await page.reload();
-    await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
     await photo.scrollIntoViewIfNeeded();
     await photo.evaluate((node: HTMLImageElement) => node.decode());
     const timing = await page.evaluate((src) => {

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import {
   Bell,
   Diamond,
@@ -19,10 +19,13 @@ import {
   User,
   X,
 } from "lucide-react";
+import { lastBrowseUrl } from "@/lib/trade/browse-context";
 import type { LucideIcon } from "lucide-react";
 
 import { useAuth } from "@/components/auth/auth-provider";
 import { getNotificationUnreadCount } from "@/lib/trade/api";
+import { MobileActionBar } from "./mobile-action-bar";
+import { useMobileViewport } from "./use-mobile-viewport";
 
 type TradeShellProps = Readonly<{
   children: React.ReactNode;
@@ -30,6 +33,8 @@ type TradeShellProps = Readonly<{
   title: string;
   description?: string;
   action?: React.ReactNode;
+  mobileActions?: React.ReactNode;
+  mobileActionsLabel?: string;
   /** When true, the page title / description / action hero is omitted (used by marketplace browse layout). */
   hideHero?: boolean;
 }>;
@@ -63,9 +68,14 @@ export function TradeShell({
   title,
   description,
   action,
+  mobileActions,
+  mobileActionsLabel = "Page actions",
   hideHero = false,
 }: TradeShellProps) {
   const pathname = usePathname();
+  const surfaceRef = useRef<HTMLElement>(null);
+  useMobileViewport(surfaceRef, pathname);
+  const router = useRouter();
   const home = pathname === "/trade";
   const pageTitles: Record<string, string> = { "/trade/explore": "All Items", "/trade/sell": "Post an Item", "/trade/profile": "Profile", "/trade/saved": "Saved Items", "/trade/want": "Wanted Board", "/trade/dashboard": "My Trade", "/trade/notifications": "Alerts", "/trade/moderation": "Safety Review", "/trade/evaluation": "Evaluation", "/trade/launch-checklist": "Launch Checklist" };
   const mobileTitle = pageTitles[pathname] ?? (pathname.endsWith("/edit") ? "Edit Listing" : "Item Details");
@@ -121,14 +131,14 @@ export function TradeShell({
   }
 
   return (
-    <main className="trade-page-surface pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
+    <main ref={surfaceRef} className={`trade-page-surface pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0 ${home ? "nexus-marketplace-home" : ""}`}>
       <header className="nexus-header sticky top-0 z-40 bg-white pt-[env(safe-area-inset-top)] md:bg-white/95 md:backdrop-blur-xl">
         <div className="trade-container flex min-h-[64px] items-center justify-between gap-3 py-2.5">
           <Link aria-label="UM Nexus Trade — home" className={`nexus-brand flex min-w-0 items-center gap-2.5 ${home ? "" : "hidden md:flex"}`} href="/trade">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e9f5f3] text-[#0c514d]"><Diamond aria-hidden="true" className="h-6 w-6" /></span>
             <span className="min-w-0"><span className="block text-lg font-bold tracking-tight text-[#104f4b]">UM NEXUS</span><span className="block text-[10px] text-slate-500">Your campus. Your marketplace.</span></span>
           </Link>
-          {!home ? <div className="flex min-w-0 flex-1 items-center md:hidden"><Link aria-label="Back to marketplace" className="nexus-icon-button" href="/trade"><ArrowLeft aria-hidden="true" className="h-5 w-5" /></Link><span aria-level={pathname === "/trade/explore" || pathname === "/trade/sell" ? 1 : undefined} className={`flex-1 truncate text-center text-sm font-semibold ${pathname === "/trade/profile" ? "pr-10" : ""}`} role={pathname === "/trade/explore" || pathname === "/trade/sell" ? "heading" : undefined}>{mobileTitle}</span></div> : null}
+          {!home ? <div className="flex min-w-0 flex-1 items-center md:hidden"><Link aria-label="Back to marketplace" className="nexus-icon-button" href="/trade" onClick={(event) => { if (!event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) { event.preventDefault(); router.push(pathname === "/trade/explore" ? "/trade" : lastBrowseUrl(), { scroll: false }); } }}><ArrowLeft aria-hidden="true" className="h-5 w-5" /></Link><span aria-level={pathname === "/trade/explore" || pathname === "/trade/sell" ? 1 : undefined} className={`flex-1 truncate text-center text-sm font-semibold ${pathname === "/trade/profile" ? "pr-10" : ""}`} role={pathname === "/trade/explore" || pathname === "/trade/sell" ? "heading" : undefined}>{mobileTitle}</span></div> : null}
           <nav aria-label="Trade navigation" className="hidden items-center gap-1 lg:flex">
             {mainNav.map((item) => <DesktopNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} pathname={pathname} />)}
             <Link className="trade-button-ghost" href="/trade/explore">Explore</Link>
@@ -157,16 +167,16 @@ export function TradeShell({
         {children}
       </div>
 
-      <nav
+      {mobileActions ? <MobileActionBar label={mobileActionsLabel}>{mobileActions}</MobileActionBar> : <nav
         aria-label="Mobile trade navigation"
-        className="nexus-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-slate-200/80 bg-white px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 md:hidden"
+        className="nexus-bottom-nav fixed inset-x-0 bottom-0 z-50 border-t border-slate-200/80 bg-white px-2 pb-[env(safe-area-inset-bottom)] pt-1.5 lg:hidden"
       >
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
           {mobileNav.map((item) => (
             <MobileNavLink active={isActiveRoute(pathname, item.href)} item={item} key={item.href} pathname={pathname} />
           ))}
         </div>
-      </nav>
+      </nav>}
     </main>
   );
 }

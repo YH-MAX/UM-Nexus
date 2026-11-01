@@ -7,6 +7,7 @@ import {
   type Dispatch,
   type SetStateAction,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -186,16 +187,29 @@ export default function SellPage() {
   const [publishedListingId, setPublishedListingId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const errorSummaryRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (error && Object.keys(fieldErrors).length === 0) errorSummaryRef.current?.focus();
+  }, [error, fieldErrors]);
   const [qualityReviewMode, setQualityReviewMode] = useState<"manual" | "ai" | null>(null);
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
+  const [sellStep, setSellStep] = useState<1 | 2 | 3>(1);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    const heading = stepHeadingRef.current;
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ block: "start", behavior: "instant" });
+  }, [sellStep]);
   const [isDirty, setIsDirty] = useState(false);
   const [wantedContext, setWantedContext] = useState<WantedPost | null>(null);
 
+  const previewUrls = useRef(new Set<string>());
   useEffect(() => {
-    return () => {
-      images.forEach((image) => URL.revokeObjectURL(image.previewUrl));
-    };
-  }, [images]);
+    const urls = previewUrls.current;
+    return () => { urls.forEach((url) => URL.revokeObjectURL(url)); };
+  }, []);
 
   useEffect(() => {
     if (!isDirty) return;
@@ -293,15 +307,37 @@ export default function SellPage() {
     [freeText, images.length, sellerContext.free_text, sellerContext.product_name],
   );
 
-  const workflowSteps = useMemo(
-    () => [
-      { label: "Photos", subtitle: "Add images", complete: images.length > 0 },
-      { label: "Details", subtitle: "Item information", complete: hasManualMinimum(editableDraft) },
-      { label: "Review", subtitle: "Check & confirm", complete: publishPhase !== "idle" },
-      { label: "Publish", subtitle: "Go live", complete: publishPhase === "ready" },
-    ],
-    [editableDraft, images.length, publishPhase],
-  );
+  function showFieldErrors(errors: Record<string, string>) {
+    setFieldErrors(errors);
+    const firstField = Object.keys(errors)[0];
+    if (!firstField) return false;
+    setError(errors[firstField]);
+    setSellStep(["title", "description", "category", "condition"].includes(firstField) ? 1 : 2);
+    window.setTimeout(() => document.getElementById(`sell-${firstField}`)?.focus(), 0);
+    return true;
+  }
+
+  function continueToPricing() {
+    const errors = listingFieldErrors(editableDraft);
+    const details = Object.fromEntries(Object.entries(errors).filter(([key]) => ["title", "description", "category", "condition"].includes(key)));
+    if (showFieldErrors(details)) return;
+    setError(null);
+    setSellStep(2);
+  }
+
+  function reviewListing(mode: "manual" | "ai") {
+    if (showFieldErrors(listingFieldErrors(editableDraft))) return;
+    const message = validateManualListing(editableDraft, currentProfile);
+    if (message) { setError(message); return; }
+    setError(null);
+    setQualityReviewMode(mode);
+    setSellStep(3);
+  }
+
+  function publishReviewedListing() {
+    if (qualityReviewMode === "ai") void handlePublish();
+    else void handlePublishManual();
+  }
 
   function scrollToAiAssistant() {
     setIsAiPanelOpen(true);
@@ -387,10 +423,12 @@ export default function SellPage() {
     }
 
     setIsDirty(true);
-    setImages((current) => [
-      ...current,
-      ...filesToAdd.map((file) => ({ file, previewUrl: URL.createObjectURL(file) })),
-    ]);
+    const added = filesToAdd.map((file) => {
+      const previewUrl = URL.createObjectURL(file);
+      previewUrls.current.add(previewUrl);
+      return { file, previewUrl };
+    });
+    setImages((current) => [...current, ...added]);
     setError(null);
     addMessage({ role: "seller", body: `Added ${filesToAdd.length} photo(s).` });
     addMessage({ role: "agent", body: "Great. I can use public image URLs for item, condition, and trust reasoning." });
@@ -403,6 +441,7 @@ export default function SellPage() {
       const target = current.find((image) => image.previewUrl === previewUrl);
       if (target) {
         URL.revokeObjectURL(target.previewUrl);
+        previewUrls.current.delete(target.previewUrl);
       }
       return current.filter((image) => image.previewUrl !== previewUrl);
     });
@@ -590,6 +629,13 @@ export default function SellPage() {
 
   function updateDraftField(field: keyof ListingPayload, value: string | number | undefined) {
     setIsDirty(true);
+    setFieldErrors((current) => {
+      const next = { ...current };
+      const key = field === "condition_label" ? "condition" : field === "pickup_location" || field === "pickup_area" ? "pickup" : field === "contact_value" || field === "contact_method" ? "contact-value" : field;
+      delete next[key];
+      return next;
+    });
+    setError(null);
     setEditableDraft((current) => (current ? { ...current, [field]: value, ...(field === "contact_method" ? { contact_value: "" } : {}) } : current));
   }
 
@@ -602,11 +648,18 @@ export default function SellPage() {
 
   const profileReady = isProfileComplete(currentProfile);
   const isBusy = isGenerating || isPublishing || isSavingDraft;
+  const publishDisabled = isBusy || Boolean(publishedListingId && publishPhase !== "idle") || Object.keys(listingFieldErrors(editableDraft)).length > 0 || !profileReady;
+  const publishLabel = images.length === 0 || (editableDraft.description?.trim().length ?? 0) < 40 ? "Publish with Warnings" : "Publish Listing";
 
   return (
-    <TradeShell hideHero title="Sell an item">
+    <TradeShell hideHero title="Sell an item" mobileActionsLabel="Posting actions" mobileActions={user ? <>
+      <button className="trade-button-secondary" disabled={isBusy} onClick={() => sellStep === 1 ? router.push("/trade") : setSellStep(sellStep === 3 ? 2 : 1)} type="button">Back</button>
+      <button className="trade-button-primary nexus-primary-action" disabled={sellStep === 3 ? publishDisabled : isBusy} onClick={() => sellStep === 1 ? continueToPricing() : sellStep === 2 ? reviewListing("manual") : publishReviewedListing()} type="button">
+        {isPublishing ? "Publishing…" : sellStep === 1 ? "Continue to price & pickup" : sellStep === 2 ? "Continue to review" : publishLabel}
+      </button>
+    </> : undefined}>
       {error ? (
-        <p className="trade-alert trade-alert-danger rounded-2xl" role="alert">
+        <p className="trade-alert trade-alert-danger scroll-mt-24 rounded-2xl" id="sell-form-error" ref={errorSummaryRef} role="alert" tabIndex={-1}>
           {error}
         </p>
       ) : null}
@@ -631,28 +684,6 @@ export default function SellPage() {
         </section>
       ) : null}
 
-      {qualityReviewMode ? (
-        <PublishQualityCheckpoint
-          imageCount={images.length}
-          payload={editableDraft}
-          onClose={() => setQualityReviewMode(null)}
-          onImprove={() => setQualityReviewMode(null)}
-          onPublishAnyway={() => {
-            const mode = qualityReviewMode;
-            setQualityReviewMode(null);
-            if (mode === "ai") {
-              void handlePublish();
-            } else {
-              void handlePublishManual();
-            }
-          }}
-          onSaveDraft={() => {
-            setQualityReviewMode(null);
-            void handleSaveManualDraft();
-          }}
-        />
-      ) : null}
-
       {!user ? (
         <RequireAuthCard description="Sign in with your UM account before creating seller listings." intent="sell_item" returnTo="/trade/sell" />
       ) : null}
@@ -661,34 +692,58 @@ export default function SellPage() {
         <div className="space-y-8 pb-4">
           <SellMarketplaceHero />
 
-          <WorkflowProgress steps={workflowSteps} />
+          <WorkflowProgress step={sellStep} disabled={isBusy} onChange={setSellStep} />
+          <h2 className="scroll-mt-40 text-lg font-semibold text-slate-950 outline-none" ref={stepHeadingRef} tabIndex={-1}>
+            {sellStep === 1 ? "Photos & details" : sellStep === 2 ? "Price & pickup" : "Review & publish"}
+          </h2>
+          {sellStep === 3 ? <SellReviewSummary draft={editableDraft} images={images} /> : null}
+          {sellStep === 3 && qualityReviewMode ? (
+            <PublishQualityCheckpoint
+              imageCount={images.length}
+              payload={editableDraft}
+              disabled={publishDisabled}
+              onClose={() => setSellStep(2)}
+              onImprove={() => setSellStep(1)}
+              onPublishAnyway={publishReviewedListing}
+              onSaveDraft={() => {
+                void handleSaveManualDraft();
+              }}
+              suggestions={<><SellListingQualityCard draft={editableDraft} imageCount={images.length} /><SellSafetyCard /></>}
+            />
+          ) : null}
+
+
+          {publishPhase !== "idle" ? <PublishProgress phase={publishPhase} listingId={publishedListingId} onOpenListing={() => { if (publishedListingId) router.push(`/trade/${publishedListingId}`); }} /> : null}
 
 
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:items-start">
             <div className="grid min-w-0 gap-6">
-              <PhotoUploadPanel
+              {sellStep === 1 ? <PhotoUploadPanel
                 cameraInputRef={cameraInputRef}
                 disabled={isBusy}
                 fileInputRef={fileInputRef}
                 images={images}
                 onFileChange={handleImageSelection}
                 onRemoveImage={removeImage}
-              />
+              /> : null}
 
               {!profileReady ? <ProfileRequiredPanel /> : null}
 
-              <ManualListingPanel
+              {sellStep !== 3 ? <ManualListingPanel
+                step={sellStep}
+                errors={fieldErrors}
+                onBack={() => setSellStep(1)}
                 disabled={isBusy}
                 draft={editableDraft}
                 imageCount={images.length}
                 isPublishing={isPublishing}
                 isSavingDraft={isSavingDraft}
-                onPublish={() => setQualityReviewMode("manual")}
+                onPublish={() => sellStep === 1 ? continueToPricing() : reviewListing("manual")}
                 onSaveDraft={handleSaveManualDraft}
                 onUpdateDraftField={updateDraftField}
-              />
+              /> : null}
 
-              <div className="space-y-3" ref={aiAssistantPanelRef}>
+              {sellStep !== 3 ? <div className="space-y-3" ref={aiAssistantPanelRef}>
                 <SellAiAssistantBanner onTryAssistant={scrollToAiAssistant} />
                 <AgentConversationPanel
                   activeClue={activeClue}
@@ -715,19 +770,18 @@ export default function SellPage() {
                   setActiveValue={setActiveValue}
                   setFreeText={setFreeText}
                 />
-              </div>
+              </div> : null}
             </div>
 
             <aside className="grid min-w-0 gap-5 lg:sticky lg:top-24">
-              <SellLivePreviewCard
+              {sellStep !== 3 ? <SellLivePreviewCard
                 currentProfile={currentProfile}
                 draft={editableDraft}
                 images={images}
-              />
-              <SellTipsCard />
-              <SellListingQualityCard draft={editableDraft} imageCount={images.length} />
-              <SellSafetyCard />
-              <DraftReviewPanel
+              /> : null}
+              {sellStep !== 3 ? <SellTipsCard /> : null}
+              {sellStep !== 3 ? <><SellListingQualityCard draft={editableDraft} imageCount={images.length} /><SellSafetyCard /></> : null}
+              {isAiPanelOpen && draft && sellStep !== 3 ? <DraftReviewPanel
                 draft={draft}
                 editableDraft={editableDraft}
                 isGenerating={isGenerating}
@@ -735,12 +789,12 @@ export default function SellPage() {
                 onApplyPriceOption={applyPriceOption}
                 onGenerateDraft={handleGenerateDraft}
                 onOpenListing={() => (publishedListingId ? router.push(`/trade/${publishedListingId}`) : undefined)}
-                onPublish={() => setQualityReviewMode("ai")}
+                onPublish={() => reviewListing("ai")}
                 onUpdateDraftField={updateDraftField}
                 publishPhase={publishPhase}
                 publishedListingId={publishedListingId}
                 selectedPriceType={selectedPriceType}
-              />
+              /> : null}
             </aside>
           </div>
         </div>
@@ -995,117 +1049,52 @@ function ProfileRequiredPanel() {
   );
 }
 
-function PublishQualityCheckpoint({
-  imageCount,
-  payload,
-  onClose,
-  onImprove,
-  onPublishAnyway,
-  onSaveDraft,
-}: Readonly<{
+function SellReviewSummary({ draft, images }: Readonly<{ draft: ListingPayload; images: PreviewFile[] }>) {
+  return <section aria-label="Your listing preview" className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="flex items-start gap-3">
+      {images[0] ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img alt="Listing cover photo" className="h-24 w-24 shrink-0 rounded-lg object-cover" src={images[0].previewUrl} />
+      ) : <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-600">No photo</div>}
+      <div className="min-w-0"><h3 className="break-words text-base font-semibold text-slate-950">{draft.title}</h3><p className="mt-1 text-xl font-bold text-teal-900">{formatMoney(draft.category === "free_items" ? 0 : draft.price, draft.currency)}</p><p className="mt-1 text-sm text-slate-600">{formatCategory(draft.category)} · {(draft.condition_label ?? draft.condition ?? "").replaceAll("_", " ")}</p></div>
+    </div>
+    <p className="mt-3 flex items-start gap-2 text-sm text-slate-700"><MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-teal-800" />Pickup: {formatPickupLocation(draft.pickup_location ?? draft.pickup_area)}</p>
+    <details className="mt-3 border-t border-slate-100 pt-3"><summary className="cursor-pointer text-sm font-medium text-teal-900">Description & contact details</summary><p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-600">{draft.description}</p><p className="mt-2 break-words text-sm text-slate-600">{draft.contact_method}: {draft.contact_value || "Your verified UM email"}</p>{draft.pickup_note ? <p className="mt-2 text-sm text-slate-600">{draft.pickup_note}</p> : null}</details>
+  </section>;
+}
+
+function PublishQualityCheckpoint({ imageCount, payload, disabled, onClose, onImprove, onPublishAnyway, onSaveDraft, suggestions }: Readonly<{
   imageCount: number;
   payload: ListingPayload;
+  disabled: boolean;
   onClose: () => void;
   onImprove: () => void;
   onPublishAnyway: () => void;
   onSaveDraft: () => void;
+  suggestions: React.ReactNode;
 }>) {
-  const prepared = prepareListingPayload(payload, "publish");
-
-  const requiredChecks = [
-    { label: "Title added", ok: prepared.title.trim().length >= 5 },
-    { label: "Price set or free item", ok: prepared.category === "free_items" || prepared.price >= 0 },
-    { label: "Pickup location selected", ok: Boolean(prepared.pickup_location) },
-    { label: "Contact method ready", ok: isContactReady(prepared) },
-  ];
-
-  const recommendedChecks = [
-    { label: "At least one photo added", ok: imageCount > 0 },
-    { label: "Description detail (40+ chars)", ok: Boolean(prepared.description && prepared.description.length >= 40) },
-  ];
-
-  const hasFailedRequired = requiredChecks.some((c) => !c.ok);
-  const hasWarnings = recommendedChecks.some((c) => !c.ok);
-
-  return (
-    <section className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-amber-950">Ready to publish?</h2>
-          <p className="mt-2 text-sm leading-6 text-amber-900">
-            Review before your listing goes live. Required checks must pass; recommended checks improve quality.
-          </p>
-        </div>
-        <button className="trade-button-secondary bg-white" onClick={onClose} type="button">
-          Close
-        </button>
-      </div>
-
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div>
-          <p className="trade-field-kicker mb-2">Required</p>
-          <div className="grid gap-2">
-            {requiredChecks.map((check) => (
-              <div
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
-                  check.ok
-                    ? "border-emerald-200 bg-white text-emerald-800"
-                    : "border-rose-200 bg-rose-50 text-rose-800"
-                }`}
-                key={check.label}
-              >
-                <span aria-hidden="true">{check.ok ? "\u2713" : "\u2717"}</span>
-                {check.label}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div>
-          <p className="trade-field-kicker mb-2">Recommended</p>
-          <div className="grid gap-2">
-            {recommendedChecks.map((check) => (
-              <div
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold ${
-                  check.ok
-                    ? "border-emerald-200 bg-white text-emerald-800"
-                    : "border-amber-200 bg-white text-amber-800"
-                }`}
-                key={check.label}
-              >
-                <span aria-hidden="true">{check.ok ? "\u2713" : "\u26a0"}</span>
-                {check.label}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button className="trade-button-secondary bg-white" onClick={onImprove} type="button">
-          Improve Listing
-        </button>
-        <button className="trade-button-secondary bg-white" onClick={onSaveDraft} type="button">
-          Save Draft
-        </button>
-        <button
-          className="trade-button-primary"
-          disabled={hasFailedRequired}
-          onClick={onPublishAnyway}
-          type="button"
-        >
-          {hasWarnings && !hasFailedRequired ? "Publish with Warnings" : "Publish Listing"}
-        </button>
-      </div>
-      {hasFailedRequired ? (
-        <p className="mt-3 text-sm font-semibold text-rose-700">
-          Fix the required fields above before publishing.
-        </p>
-      ) : null}
-    </section>
-  );
+  const errors = Object.values(listingFieldErrors(payload));
+  const warnings = [imageCount === 0 ? "Add a photo so buyers can see your item." : null, (payload.description?.trim().length ?? 0) < 40 ? "A little more description can help buyers decide." : null].filter(Boolean);
+  return <section aria-label="Publish review" className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+    <h2 className="text-base font-semibold text-slate-950">Ready to publish?</h2>
+    {errors.length ? <div role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-800"><p className="font-semibold">Fix required details before publishing.</p><ul className="mt-2 list-disc pl-5">{errors.map((message) => <li key={message}>{message}</li>)}</ul></div> : <p className="text-sm text-teal-800">Required details are complete. Check your listing above.</p>}
+    <details className="rounded-lg border border-slate-200 p-3">
+      <summary className="min-h-6 cursor-pointer text-sm font-medium text-slate-700">Optional quality suggestions{warnings.length ? ` (${warnings.length})` : ""}</summary>
+      <div className="mt-3 space-y-3">{warnings.map((message) => <p className="text-sm text-amber-900" key={message}>{message}</p>)}{suggestions}</div>
+    </details>
+    <div className="flex flex-wrap gap-2">
+      <button className="trade-button-secondary" disabled={disabled} onClick={onClose} type="button">Close</button>
+      <button className="trade-button-secondary" disabled={disabled} onClick={onImprove} type="button">Improve Listing</button>
+      <button className="trade-button-secondary" disabled={disabled} onClick={onSaveDraft} type="button">Save Draft</button>
+      <button className="trade-button-primary hidden lg:inline-flex" disabled={disabled || errors.length > 0} onClick={onPublishAnyway} type="button">{warnings.length && errors.length === 0 ? "Publish with Warnings" : "Publish Listing"}</button>
+    </div>
+  </section>;
 }
 
 function ManualListingPanel({
+  step,
+  errors,
+  onBack,
   disabled,
   draft,
   imageCount,
@@ -1115,6 +1104,9 @@ function ManualListingPanel({
   onSaveDraft,
   onUpdateDraftField,
 }: Readonly<{
+  step: 1 | 2;
+  errors: Record<string, string>;
+  onBack: () => void;
   disabled: boolean;
   draft: ListingPayload;
   imageCount: number;
@@ -1137,7 +1129,12 @@ function ManualListingPanel({
   }
 
   function focusField(id: string) {
-    window.setTimeout(() => document.getElementById(id)?.focus(), 0);
+    window.setTimeout(() => {
+      const field = document.getElementById(id);
+      const details = field?.closest("details");
+      if (details) details.open = true;
+      field?.focus();
+    }, 0);
   }
 
   function handleDetailChip(kind: string) {
@@ -1150,16 +1147,19 @@ function ManualListingPanel({
       return;
     }
     if (kind === "year") {
+      onBack();
       appendDescriptionHint("Year:");
       focusField("sell-description");
       return;
     }
     if (kind === "color") {
+      onBack();
       appendDescriptionHint("Color:");
       focusField("sell-description");
       return;
     }
     if (kind === "dimensions") {
+      onBack();
       appendDescriptionHint("Dimensions:");
       focusField("sell-description");
       return;
@@ -1190,7 +1190,8 @@ function ManualListingPanel({
         </span>
       </div>
 
-      <div className="mt-6 grid gap-5 lg:grid-cols-2">
+      <fieldset disabled={disabled} className="mt-6 grid gap-5 lg:grid-cols-2">
+        {step === 1 ? <>
         <div className="grid gap-2">
           <div className="flex items-baseline justify-between gap-2">
             <label className="text-sm font-semibold text-stone-900" htmlFor="sell-title">
@@ -1200,17 +1201,22 @@ function ManualListingPanel({
           </div>
           <input
             className="trade-input min-h-[44px] rounded-lg border-stone-200 bg-white"
+            aria-invalid={Boolean(errors.title) || undefined}
+            aria-describedby={errors.title ? "sell-title-error" : undefined}
             id="sell-title"
             maxLength={80}
             placeholder="e.g. IKEA Desk Lamp, Calculus Textbook"
             value={draft.title}
             onChange={(event) => onUpdateDraftField("title", event.target.value)}
           />
+          <FieldError name="title" message={errors.title} />
         </div>
 
         <EditableSelect
           allowEmpty
           emptyLabel="Choose category"
+          id="sell-category"
+          error={errors.category}
           label="Category *"
           options={tradeCategories}
           value={draft.category}
@@ -1221,8 +1227,10 @@ function ManualListingPanel({
             }
           }}
         />
-        <fieldset className="min-w-0" disabled={disabled}><legend className="mb-2 text-sm font-semibold text-slate-900">Condition *</legend><div className="grid grid-cols-4 gap-2">{conditionOptions.map((option) => <label className="cursor-pointer" htmlFor={`sell-condition-${option.value}`} key={option.value}><input checked={draft.condition_label === option.value} className="peer sr-only" id={`sell-condition-${option.value}`} name="listing-condition" onChange={() => onUpdateDraftField("condition_label", option.value)} type="radio" value={option.value} /><span className={`flex min-h-11 items-center justify-center rounded-lg border px-2 text-xs peer-focus-visible:ring-2 peer-focus-visible:ring-teal-500 ${draft.condition_label === option.value ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>{option.label}</span></label>)}</div></fieldset>
+        <fieldset aria-invalid={Boolean(errors.condition) || undefined} aria-describedby={errors.condition ? "sell-condition-error" : undefined} className="min-w-0" disabled={disabled} id="sell-condition" tabIndex={-1}><legend className="mb-2 text-sm font-semibold text-slate-900">Condition *</legend><div className="grid grid-cols-4 gap-2">{conditionOptions.map((option) => <label className="cursor-pointer" htmlFor={`sell-condition-${option.value}`} key={option.value}><input checked={draft.condition_label === option.value} className="peer sr-only" id={`sell-condition-${option.value}`} name="listing-condition" onChange={() => onUpdateDraftField("condition_label", option.value)} type="radio" value={option.value} /><span className={`flex min-h-11 items-center justify-center rounded-lg border px-2 text-xs peer-focus-visible:ring-2 peer-focus-visible:ring-teal-500 ${draft.condition_label === option.value ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}>{option.label}</span></label>)}</div><FieldError name="condition" message={errors.condition} /></fieldset>
 
+        </> : null}
+        {step === 2 ? <>
         <div className="grid gap-2">
           <label className="text-sm font-semibold text-stone-900" htmlFor="sell-price">
             Price <span className="text-rose-600">*</span>
@@ -1233,6 +1241,8 @@ function ManualListingPanel({
             </span>
             <input
               className="trade-input min-h-[44px] rounded-lg border-stone-200 bg-white pl-12"
+              aria-invalid={Boolean(errors.price) || undefined}
+              aria-describedby={errors.price ? "sell-price-error" : undefined}
               id="sell-price"
               inputMode="decimal"
               min="0"
@@ -1243,6 +1253,7 @@ function ManualListingPanel({
               onChange={(event) => onUpdateDraftField("price", Number(event.target.value))}
             />
           </div>
+          <FieldError name="price" message={errors.price} />
         </div>
 
 
@@ -1254,6 +1265,8 @@ function ManualListingPanel({
           <div className="relative">
             <select
               className="trade-input min-h-[46px] appearance-none rounded-xl border-stone-200 bg-white pr-12"
+              aria-invalid={Boolean(errors.pickup) || undefined}
+              aria-describedby={errors.pickup ? "sell-pickup-error" : undefined}
               id="sell-pickup"
               value={draft.pickup_location ?? draft.pickup_area ?? ""}
               onChange={(event) => {
@@ -1271,6 +1284,7 @@ function ManualListingPanel({
             </select>
             <MapPin aria-hidden="true" className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
           </div>
+          <FieldError name="pickup" message={errors.pickup} />
         </div>
 
         <div className="grid gap-2 lg:col-span-2">
@@ -1286,6 +1300,8 @@ function ManualListingPanel({
           />
         </div>
 
+        </> : null}
+        {step === 1 ? <>
         <div className="grid gap-2 lg:col-span-2">
           <div className="flex items-baseline justify-between gap-2">
             <label className="text-sm font-semibold text-stone-900" htmlFor="sell-description">
@@ -1295,15 +1311,20 @@ function ManualListingPanel({
           </div>
           <textarea
             className="trade-input min-h-[140px] resize-y rounded-xl border-stone-200 bg-white py-3"
+            aria-invalid={Boolean(errors.description) || undefined}
+            aria-describedby={errors.description ? "sell-description-error" : undefined}
             id="sell-description"
             maxLength={500}
             placeholder="Describe your item, its condition, and any important details buyers should know..."
             value={draft.description ?? ""}
             onChange={(event) => onUpdateDraftField("description", event.target.value || undefined)}
           />
+          <FieldError name="description" message={errors.description} />
         </div>
-      </div>
+        </> : null}
+      </fieldset>
 
+      {step === 2 ? <>
       <div className="mt-5">
         <p className="text-sm font-semibold text-stone-900">Add details</p>
         <div className="mt-2 flex flex-wrap gap-2">
@@ -1332,6 +1353,7 @@ function ManualListingPanel({
             onChange={(value) => onUpdateDraftField("contact_method", value)}
           />
           <EditableField
+            error={errors["contact-value"]}
             id="sell-contact-value"
             label="Contact value"
             placeholder="@username, +60123456789, or email"
@@ -1364,8 +1386,11 @@ function ManualListingPanel({
         </details>
       </div>
 
+      </> : null}
+
       <div className="mt-8 flex flex-col gap-3 border-t border-stone-100 pt-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          {step === 2 ? <button className="trade-button-secondary hidden lg:inline-flex" disabled={disabled} onClick={onBack} type="button">Back to details</button> : null}
           <button
             className="trade-button-secondary min-h-[44px] rounded-lg border-stone-200 bg-white px-6"
             disabled={disabled || isSavingDraft}
@@ -1374,15 +1399,15 @@ function ManualListingPanel({
           >
             {isSavingDraft ? "Saving..." : "Save draft"}
           </button>
-          <p className="text-xs text-[#6B6257] sm:ml-2">Your draft is saved automatically</p>
+          <p className="text-xs text-[#6B6257] sm:ml-2">Save a draft to finish later from My Trade</p>
         </div>
         <button
-          className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-[#105651] px-6 text-sm font-semibold text-white shadow-md transition hover:bg-[#0b4541] disabled:cursor-not-allowed disabled:opacity-50"
+          className="hidden lg:inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-[#105651] px-6 text-sm font-semibold text-white shadow-md transition hover:bg-[#0b4541] disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled || isPublishing}
           onClick={onPublish}
           type="button"
         >
-          {isPublishing ? "Working..." : "Continue to review"}
+          {isPublishing ? "Working..." : (step === 1 ? "Continue to price & pickup" : "Continue to review")}
           <ArrowRight aria-hidden="true" className="h-4 w-4" />
         </button>
       </div>
@@ -1390,8 +1415,12 @@ function ManualListingPanel({
   );
 }
 
-function WorkflowProgress({ steps }: Readonly<{ steps: Array<{ label: string; subtitle: string; complete: boolean }> }>) {
-  return <ol aria-label="Listing progress" className="hidden md:flex gap-2 overflow-x-auto border-b border-slate-100 pb-3">{steps.map((step, index) => <li className={`flex shrink-0 items-center gap-1.5 text-[10px] sm:text-xs ${step.complete ? "text-teal-800" : "text-slate-500"}`} key={step.label}><span className={`flex h-5 w-5 items-center justify-center rounded-full ${step.complete ? "bg-teal-700 text-white" : "bg-slate-100"}`}>{step.complete ? <Check aria-hidden="true" className="h-3 w-3" /> : index + 1}</span>{step.label}</li>)}</ol>;
+function WorkflowProgress({ step, disabled, onChange }: Readonly<{ step: 1 | 2 | 3; disabled: boolean; onChange: (step: 1 | 2 | 3) => void }>) {
+  return <ol aria-label="Listing progress" className="grid grid-cols-3 gap-2 border-b border-slate-100 pb-3">
+    {["Photos & details", "Price & pickup", "Review & publish"].map((label, index) => (
+      <li key={label}><button aria-current={step === index + 1 ? "step" : undefined} className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-2 text-left text-xs sm:text-sm ${step === index + 1 ? "bg-teal-50 font-semibold text-teal-900" : "text-slate-600"}`} disabled={disabled || index + 1 >= step} onClick={() => onChange((index + 1) as 1 | 2 | 3)} type="button"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-current">{index + 1}</span>{label}</button></li>
+    ))}
+  </ol>;
 }
 
 function PhotoUploadPanel({ cameraInputRef, className, disabled, fileInputRef, images, onFileChange, onRemoveImage }: Readonly<{
@@ -1468,6 +1497,7 @@ function AgentConversationPanel({
       {/* Collapsible header */}
       <button
         className="flex w-full items-center justify-between gap-3 border-b border-stone-100 bg-[#faf7f0]/40 p-5 text-left transition hover:bg-amber-50/30"
+        aria-expanded={isOpen}
         onClick={onToggle}
         type="button"
       >
@@ -2117,34 +2147,22 @@ function DraftInsightTabs({
   );
 }
 
-function EditableField({
-  label,
-  value,
-  onChange,
-  id,
-  placeholder,
-  maxLength,
-}: Readonly<{
+function EditableField({ label, value, onChange, id, error, placeholder, maxLength }: Readonly<{
   label: string;
   value: string;
   onChange: (value: string) => void;
   id?: string;
+  error?: string;
   placeholder?: string;
   maxLength?: number;
 }>) {
-  return (
-    <label className="grid gap-2" htmlFor={id}>
-      <span className="text-sm font-semibold text-stone-900">{label}</span>
-      <input
-        className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white"
-        id={id}
-        maxLength={maxLength}
-        placeholder={placeholder}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
-  );
+  const generatedId = useId();
+  const controlId = id ?? generatedId;
+  return <div className="grid gap-2">
+    <label className="text-sm font-semibold text-stone-900" htmlFor={controlId}>{label}</label>
+    <input aria-invalid={Boolean(error) || undefined} aria-describedby={error ? `${controlId}-error` : undefined} className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white" id={controlId} maxLength={maxLength} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} />
+    {error ? <span className="text-sm text-rose-700" id={`${controlId}-error`}>{error}</span> : null}
+  </div>;
 }
 
 function EditableNumber({
@@ -2172,38 +2190,26 @@ function EditableNumber({
   );
 }
 
-function EditableSelect({
-  allowEmpty = false,
-  emptyLabel = "Not specified",
-  label,
-  value,
-  options,
-  onChange,
-}: Readonly<{
+function EditableSelect({ allowEmpty = false, emptyLabel = "Not specified", label, id, error, value, options, onChange }: Readonly<{
   allowEmpty?: boolean;
   emptyLabel?: string;
   label: string;
+  id?: string;
+  error?: string;
   value: string;
   options: readonly { value: string; label: string }[];
   onChange: (value: string) => void;
 }>) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-sm font-semibold text-stone-900">{label}</span>
-      <select
-        className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      >
-        {allowEmpty ? <option value="">{emptyLabel}</option> : null}
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
+  const generatedId = useId();
+  const controlId = id ?? generatedId;
+  return <div className="grid gap-2">
+    <label className="text-sm font-semibold text-stone-900" htmlFor={controlId}>{label}</label>
+    <select aria-invalid={Boolean(error) || undefined} aria-describedby={error ? `${controlId}-error` : undefined} className="trade-input min-h-[46px] rounded-xl border-stone-200 bg-white" id={controlId} value={value} onChange={(event) => onChange(event.target.value)}>
+      {allowEmpty ? <option value="">{emptyLabel}</option> : null}
+      {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+    </select>
+    {error ? <span className="text-sm text-rose-700" id={`${controlId}-error`}>{error}</span> : null}
+  </div>;
 }
 
 function Metric({
@@ -2318,6 +2324,7 @@ function PublishProgress({
         <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           Your listing was created successfully. One AI step could not complete; this does not affect visibility.
           You can retry AI enrichment from the listing page.
+          {listingId ? <button className="ml-2 font-semibold underline" onClick={onOpenListing} type="button">View your listing</button> : null}
         </p>
       ) : null}
     </div>
@@ -2336,10 +2343,6 @@ function riskTone(level: "low" | "medium" | "high") {
     return "warn" as const;
   }
   return "good" as const;
-}
-
-function hasManualMinimum(payload: ListingPayload): boolean {
-  return Boolean(payload.title.trim() && payload.description?.trim() && payload.category && payload.condition_label);
 }
 
 function prepareListingPayload(payload: ListingPayload, mode: "draft" | "publish" = "draft"): ListingPayload {
@@ -2365,6 +2368,24 @@ function prepareListingPayload(payload: ListingPayload, mode: "draft" | "publish
     contact_method: contactMethod,
     contact_value: payload.contact_value?.trim() || (contactMethod === "email" ? "" : undefined),
   };
+}
+
+function listingFieldErrors(payload: ListingPayload): Record<string, string> {
+  const prepared = prepareListingPayload(payload, "publish");
+  const errors: Record<string, string> = {};
+  if (prepared.title.length < 5 || prepared.title.length > 100) errors.title = "Add a title of 5 to 100 characters.";
+  if (!prepared.description || prepared.description.length < 10 || prepared.description.length > 2000) errors.description = "Add a description of 10 to 2000 characters.";
+  if (!prepared.category) errors.category = "Choose a category.";
+  if (!prepared.condition_label) errors.condition = "Choose a condition.";
+  if (!Number.isFinite(prepared.price) || prepared.price < 0) errors.price = "Price must be 0 or more.";
+  if (!prepared.pickup_location) errors.pickup = "Choose a pickup location.";
+  const contactError = sellerContactError(prepared.contact_method, prepared.contact_value);
+  if (contactError) errors["contact-value"] = contactError;
+  return errors;
+}
+
+function FieldError({ name, message }: Readonly<{ name: string; message?: string }>) {
+  return message ? <p className="text-sm text-rose-700" id={`sell-${name}-error`}>{message}</p> : null;
 }
 
 function validateManualListing(payload: ListingPayload, profile: CurrentProfile | null): string | null {

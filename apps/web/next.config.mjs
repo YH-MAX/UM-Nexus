@@ -19,6 +19,8 @@ if (process.env.SKIP_ENV_VALIDATION !== "true") {
 /** @type {import("next").NextConfig} */
 const nextConfig = {
   poweredByHeader: false,
+  // The development badge otherwise covers the mobile Back button in E2E runs.
+  devIndicators: process.env.NEXT_PUBLIC_E2E_AUTH === "true" ? false : undefined,
   images: {
     qualities: [75],
     minimumCacheTTL: 86400,

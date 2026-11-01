@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     supabase_storage_bucket: str = "listing-images"
     allowed_email_domains: Annotated[tuple[str, ...], NoDecode] = ("siswa.um.edu.my",)
     cors_allowed_origins: Annotated[tuple[str, ...], NoDecode] = DEFAULT_CORS_ALLOWED_ORIGINS
+    cors_additional_origins: Annotated[tuple[str, ...], NoDecode] = ()
     upload_storage_dir: str = "storage/uploads"
     upload_public_base_url: str = "http://localhost:8001/uploads"
     max_upload_file_size_bytes: int = 5 * 1024 * 1024
@@ -142,7 +143,7 @@ class Settings(BaseSettings):
             return normalize_csv_values(value, lowercase=True)
         return normalize_csv_values(value, lowercase=True)
 
-    @field_validator("cors_allowed_origins", mode="before")
+    @field_validator("cors_allowed_origins", "cors_additional_origins", mode="before")
     @classmethod
     def parse_cors_allowed_origins(cls, value: str | tuple[str, ...] | list[str]) -> tuple[str, ...]:
         if isinstance(value, str):

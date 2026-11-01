@@ -105,6 +105,8 @@ CORS_ALLOWED_ORIGINS=https://你的实际前端.onrender.com
 
 有多个允许地址时用英文逗号分隔，origin 不带 `/trade` 等路径，也不带末尾斜杠。不要直接覆盖仍在使用的正式域名。
 
+手机局域网测试也可使用可选的 `CORS_ADDITIONAL_ORIGINS=http://192.168.0.12:3000`。API 会将它与原有 `CORS_ALLOWED_ORIGINS` 合并，不替换现有正式域名；未配置时行为不变。电脑 IP 改变后，需要更新此附加地址。通过 Render MCP 更新环境变量会自动触发一次部署，部署完成后再验证预检响应。
+
 API 健康检查改为 `/health/ready`，部署时除进程启动外还检查数据库连接。这个现有端点的 storage 检查只验证本地目录存在，**不代表 Supabase bucket 的上传权限已验证**；需实际上传图片验收。现有 API Docker 启动时运行 `alembic upgrade head`，先备份数据库，再部署 API。免费服务不使用收费的 pre-deploy command。
 
 在 **Supabase → Authentication → URL Configuration**：

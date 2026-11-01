@@ -2,6 +2,53 @@
 @tailwind components;
 @tailwind utilities;
 
+/* A single bottom surface owns the mobile safe area on each screen. */
+.nexus-mobile-actions {
+  position: fixed;
+  z-index: 50;
+  inset-inline: 0;
+  bottom: var(--keyboard-inset, 0px);
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  padding-top: 10px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+.nexus-mobile-actions button, .nexus-mobile-actions a { min-height: 44px; }
+.nexus-mobile-actions .nexus-primary-action { flex: 1; min-width: 0; }
+.nexus-filter-sheet { max-height: min(86dvh, calc(var(--visible-height, 100dvh) - 16px)); }
+.trade-page-surface input, .trade-page-surface textarea, .trade-page-surface select {
+  scroll-margin-top: calc(80px + env(safe-area-inset-top, 0px));
+  scroll-margin-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+}
+@media (max-width: 1023px) {
+  .trade-page-surface[data-keyboard-open="true"] .nexus-bottom-nav { display: none; }
+  .trade-page-surface[data-keyboard-open="true"] .nexus-mobile-actions { padding-bottom: 8px; }
+  .trade-page-surface[data-keyboard-open="true"] dialog[open] {
+    top: var(--viewport-top, 0px);
+    height: var(--visible-height, 100dvh);
+  }
+}
+
+@media (max-width: 767px) {
+  .nexus-marketplace-home .nexus-header > div { min-height: 52px; padding-block: 4px; }
+  .nexus-marketplace-home .nexus-brand > span:first-child { height: 32px; width: 32px; }
+  .nexus-marketplace-home .nexus-brand > span:last-child > span:last-child { display: none; }
+  .nexus-marketplace-home .nexus-content { padding-top: 8px; }
+  .nexus-marketplace-home .space-y-4 > :not([hidden]) ~ :not([hidden]),
+  .nexus-marketplace-home .space-y-3 > :not([hidden]) ~ :not([hidden]) { margin-top: 8px; }
+  .nexus-marketplace-home .nexus-campus-banner > div:not(.absolute) { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px; min-height: 56px; }
+  .nexus-marketplace-home .nexus-campus-banner > div > p:first-child { font-size: 18px; line-height: 24px; }
+  .nexus-marketplace-home .nexus-campus-banner > div > p:nth-child(2) { display: none; }
+  .nexus-marketplace-home .nexus-campus-banner > div > a { margin-top: 0; min-height: 32px; font-size: 12px; }
+  .nexus-marketplace-home .nexus-category-tiles { gap: 8px; }
+  .nexus-marketplace-home .nexus-category-tiles > button,
+  .nexus-marketplace-home .nexus-category-tiles > a { flex: 0 0 auto; flex-direction: row; min-height: 44px; gap: 6px; padding-right: 8px; }
+  .nexus-marketplace-home .nexus-category-tiles > * > span { height: 28px; width: 28px; border-radius: 8px; }
+  .nexus-marketplace-home .nexus-category-tiles svg { height: 16px; width: 16px; }
+}
+
 /* UM Nexus mobile design: white surfaces, teal actions and compact product cards. */
 .nexus-icon-button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0; }
 .nexus-icon-button:hover { background: #f0f6f4; }

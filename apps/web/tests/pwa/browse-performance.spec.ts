@@ -43,7 +43,7 @@ test("anonymous feed starts before application scripts and is reused after hydra
   expect(requests).toBe(1);
 });
 
-test("mobile skeleton is two columns, chrome has no blur, and offscreen demos wait", async ({ page }) => {
+test("mobile skeleton is two columns, chrome has no blur, and demos stay absent", async ({ page }) => {
   let release!: () => void;
   const feed = new Promise<void>((resolve) => { release = resolve; });
   await page.route("**/api/v1/listings?*", async (route) => { await feed; await route.fulfill({ json: emptyFeed }); });
@@ -58,6 +58,6 @@ test("mobile skeleton is two columns, chrome has no blur, and offscreen demos wa
     await expect(page.getByRole("article", { name: /^Demo item:/ })).toHaveCount(0);
   } finally { release(); }
   await expect(page.getByRole("heading", { name: "No listings yet", exact: true })).toBeVisible();
-  await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
-  await expect(page.getByRole("article", { name: /^Demo item:/ })).toHaveCount(8);
+  await expect(page.getByRole("region", { name: "Have something like this?" })).toHaveCount(0);
+  await expect(page.getByRole("article", { name: /^Demo item:/ })).toHaveCount(0);
 });

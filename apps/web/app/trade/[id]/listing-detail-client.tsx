@@ -417,6 +417,19 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
   return (
     <TradeShell
       hideHero
+      mobileActionsLabel="Product actions"
+      mobileActions={listing ? isSeller ? <>
+        <Link className="trade-button-secondary" href="/trade/dashboard">My Trade</Link>
+        <Link className="trade-button-primary nexus-primary-action" href={`/trade/${listing.id}/edit`}>Edit listing</Link>
+      </> : <>
+        <button aria-pressed={isSaved} className="trade-button-secondary" disabled={isActing || isFavoriteLoading} onClick={() => void handleFavorite()} type="button"><Heart aria-hidden="true" className={`h-4 w-4 ${isSaved ? "fill-current" : ""}`} />{isSaved ? "Saved" : "Favorite"}</button>
+        <div className="nexus-primary-action">
+          {!contactAvailable ? <button className="trade-button-primary w-full" disabled type="button">Item unavailable</button>
+            : !user ? <Link className="trade-button-primary w-full" href={buildAuthHref("login", { returnTo: `/trade/${listing.id}`, intent: "contact_listing", listingId: listing.id })}>Contact seller</Link>
+            : sellerContact.error ? <button className="trade-button-primary w-full" onClick={sellerContact.retry} type="button">Retry contact</button>
+            : <DirectContactAction state={sellerContact} />}
+        </div>
+      </> : undefined}
       title={listing?.title ?? "Listing detail"}
       description="Review the item, seller, pickup location, and safety details before contacting the seller."
     >
@@ -536,12 +549,7 @@ export function ListingDetailClient({ listingId }: ListingDetailPageProps) {
               onStatus={handleListingStatus}
             />
 
-            {/* Mobile sticky bottom CTA */}
-            {!isSeller && user && ["available", "reserved"].includes(listing.status) ? (
-              <div className="fixed inset-x-0 bottom-[calc(86px+env(safe-area-inset-bottom))] z-40 px-4 md:hidden">
-                <DirectContactAction state={sellerContact} />
-              </div>
-            ) : null}
+
           </div>
         </>
       ) : (

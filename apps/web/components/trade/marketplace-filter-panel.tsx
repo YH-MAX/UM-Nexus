@@ -89,6 +89,8 @@ export function MarketplaceFilterPanel({
           className={`trade-input min-h-[42px] rounded-xl border-stone-200 ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
           inputMode="decimal"
           min="0"
+          aria-label="Minimum price"
+          aria-invalid={priceError || undefined}
           placeholder="Min RM"
           type="number"
           value={filters.min_price}
@@ -101,6 +103,8 @@ export function MarketplaceFilterPanel({
           className={`trade-input min-h-[42px] rounded-xl border-stone-200 ${priceError ? "border-rose-300 focus:border-rose-500 focus:ring-rose-100" : ""}`}
           inputMode="decimal"
           min="0"
+          aria-label="Maximum price"
+          aria-invalid={priceError || undefined}
           placeholder="Max RM"
           type="number"
           value={filters.max_price}
@@ -195,6 +199,8 @@ export function MarketplaceFilterPanel({
             className={`trade-input min-h-[42px] rounded-xl border-stone-200 bg-white ${priceError ? "border-rose-300" : ""}`}
             inputMode="decimal"
             min="0"
+            aria-label="Minimum price"
+            aria-invalid={priceError || undefined}
             placeholder="Min RM"
             type="number"
             value={filters.min_price}
@@ -207,6 +213,8 @@ export function MarketplaceFilterPanel({
             className={`trade-input min-h-[42px] rounded-xl border-stone-200 bg-white ${priceError ? "border-rose-300" : ""}`}
             inputMode="decimal"
             min="0"
+            aria-label="Maximum price"
+            aria-invalid={priceError || undefined}
             placeholder="Max RM"
             type="number"
             value={filters.max_price}

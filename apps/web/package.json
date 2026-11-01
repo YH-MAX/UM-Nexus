@@ -9,6 +9,7 @@
     "start": "next start --hostname 0.0.0.0 --port 3000",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx --max-warnings=0",
     "test:e2e": "playwright test",
+    "test:mobile": "playwright test --config playwright.mobile.config.ts",
     "test:smoke": "playwright test tests/smoke.spec.ts",
     "test:pwa": "playwright test --config playwright.pwa.config.ts"
   },

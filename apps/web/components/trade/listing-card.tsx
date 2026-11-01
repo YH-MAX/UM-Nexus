@@ -133,26 +133,26 @@ export function ListingCard({
         <div className={`flex gap-3 ${isList ? "items-start" : "flex-col items-start gap-1"}`}>
           <h2
             className={`min-w-0 font-semibold leading-snug text-stone-950 transition group-hover:text-amber-900/90 ${
-              isList ? "line-clamp-2 text-base sm:text-[17px]" : "line-clamp-2 text-[13px] sm:text-sm"
+              isList ? "line-clamp-2 text-base sm:text-[17px]" : "line-clamp-2 text-sm sm:text-base"
             }`}
           >
             {listing.title}
           </h2>
           {!isList ? (
-            <p className="text-sm font-semibold leading-tight text-slate-950">
+            <p className="text-xl font-bold leading-tight text-[#105651]">
               {formatMoney(listing.price, listing.currency)}
             </p>
           ) : null}
         </div>
         {isList ? (
-          <p className="text-lg font-bold text-amber-700">{formatMoney(listing.price, listing.currency)}</p>
+          <p className="text-xl font-bold text-[#105651]">{formatMoney(listing.price, listing.currency)}</p>
         ) : null}
 
-        <p className="nexus-card-condition line-clamp-1 text-[10px] text-slate-500 sm:text-xs">{condition ? (condition === "new" ? "New" : `Used · ${condition.replaceAll("_", " ")}`) : "Condition not specified"}</p>
+        <p className="nexus-card-condition line-clamp-1 text-xs leading-5 text-slate-600">{condition ? (condition === "new" ? "New" : `Used · ${condition.replaceAll("_", " ")}`) : "Condition not specified"}</p>
       </div>
 
-      <p className="hidden mt-3 min-w-0 items-center md:flex gap-1.5 rounded-xl border border-stone-100 bg-stone-50/80 px-3 py-2 text-sm text-stone-600">
-        <MapPin aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-700/90" />
+      <p className="flex mt-2 min-w-0 items-center gap-1.5 text-xs leading-5 text-slate-600">
+        <MapPin aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-teal-700" />
         <span className="truncate">Pickup: {formatPickupLocation(listing.pickup_location ?? listing.pickup_area)}</span>
       </p>
 
@@ -205,7 +205,7 @@ export function ListingCard({
         onToggleFavorite ? (
           <button
             aria-label={isSaved ? "Remove saved listing" : "Save listing"}
-            className={`absolute flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-black/20 text-white shadow-sm transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+            className={`absolute flex h-11 w-11 items-center justify-center rounded-full border border-white/50 bg-black/20 text-white shadow-sm transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
               isList ? "right-3 top-3" : "right-3 top-3"
             } ${isSaved ? "border-rose-200 text-rose-600" : ""}`}
             onClick={(event) => void handleFavorite(event)}
@@ -217,7 +217,7 @@ export function ListingCard({
           <Link
             prefetch={false}
             aria-label="Sign in to save listing"
-            className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full border border-white/50 bg-black/20 text-white shadow-sm transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+            className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full border border-white/50 bg-black/20 text-white shadow-sm transition duration-200 hover:scale-105 hover:text-rose-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
             href={favoriteSignInHref}
           >
             <Heart aria-hidden="true" className="h-4 w-4" />

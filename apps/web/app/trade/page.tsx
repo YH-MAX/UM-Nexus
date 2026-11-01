@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import campusPhoto from "@/lib/trade/campus-photo.json";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   BookOpen,
@@ -28,7 +28,6 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { CategoryPill } from "@/components/trade/category-pill";
 import { EmptyState } from "@/components/trade/empty-state";
 import { ListingCard } from "@/components/trade/listing-card";
-import { DeferredListingExamples } from "@/components/trade/deferred-listing-examples";
 import { getInitialBrowsePage } from "@/lib/trade/initial-browse";
 import { LoadingSkeleton } from "@/components/trade/loading-skeleton";
 import { MarketplaceBrowseSidebar } from "@/components/trade/marketplace-browse-sidebar";
@@ -37,6 +36,7 @@ import {
   MarketplaceFilterPanel,
   type ListingFilters,
 } from "@/components/trade/marketplace-filter-panel";
+import { readBrowsePosition, saveBrowsePosition } from "@/lib/trade/browse-context";
 import { TradeShell } from "@/components/trade/trade-shell";
 import {
   addFavorite,
@@ -69,19 +69,76 @@ const PAGE_SIZE = 24;
 const emptyPage: ListingsPage = { items: [], total: 0, limit: PAGE_SIZE, offset: 0, has_more: false };
 
 export default function TradePage() {
+  return <Suspense fallback={<LoadingSkeleton />}><TradeBrowsePage /></Suspense>;
+}
+
+function TradeBrowsePage() {
   const { user } = useAuth();
-  const explore = usePathname() === "/trade/explore";
+  const pathname = usePathname();
+  const explore = pathname === "/trade/explore";
+  const searchParams = useSearchParams();
+  const filters = useMemo(() => Object.fromEntries(Object.entries(initialFilters).map(([key, fallback]) => [key, searchParams.get(key) ?? fallback])) as ListingFilters, [searchParams]);
+  const browseUrl = pathname + (searchParams.size ? `?${searchParams.toString()}` : "");
+  const loadedQuery = useRef("");
+  const restoredUrl = useRef("");
+  const departing = useRef(false);
+  const currentUrl = useRef(browseUrl);
+  currentUrl.current = browseUrl;
+  function setFilters(next: ListingFilters) {
+    const params = new URLSearchParams(window.location.search);
+    for (const [key, value] of Object.entries(next)) {
+      if (value && value !== initialFilters[key as keyof ListingFilters]) params.set(key, value);
+      else params.delete(key);
+    }
+    window.history.replaceState(null, "", pathname + (params.size ? `?${params}` : ""));
+  }
   const [allListings, setAllListings] = useState<Listing[]>(() => getCachedListings({ sort: "latest" }, { limit: PAGE_SIZE, offset: 0 })?.items ?? []);
   const [page, setPage] = useState<ListingsPage>(() => getCachedListings({ sort: "latest" }, { limit: PAGE_SIZE, offset: 0 }) ?? emptyPage);
-  const [filters, setFilters] = useState<ListingFilters>(initialFilters);
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(() => !getCachedListings({ sort: "latest" }, { limit: PAGE_SIZE, offset: 0 }));
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const filterDialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    if (!isFilterOpen) return;
+    const dialog = filterDialogRef.current;
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    dialog?.showModal();
+    dialog?.querySelector<HTMLButtonElement>('[aria-label="Close filters"]')?.focus();
+    const trapTab = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !dialog) return;
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled):not([tabindex="-1"]), input:not(:disabled), select:not(:disabled), [tabindex="0"]'))
+        .filter((control) => control.getClientRects().length > 0);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    dialog?.addEventListener("keydown", trapTab);
+    document.body.style.overflow = "hidden";
+    return () => {
+      dialog?.removeEventListener("keydown", trapTab);
+      dialog?.close();
+      document.body.style.overflow = previousOverflow;
+      trigger?.focus({ preventScroll: true });
+    };
+  }, [isFilterOpen]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const viewMode = searchParams.get("view") === "list" ? "list" : "grid";
+  function setViewMode(mode: "grid" | "list") {
+    const params = new URLSearchParams(window.location.search);
+    if (mode === "list") params.set("view", mode); else params.delete("view");
+    window.history.replaceState(null, "", pathname + (params.size ? `?${params}` : ""));
+  }
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -121,9 +178,21 @@ export default function TradePage() {
       setError(null);
     }
 
+    const requestUrl = currentUrl.current;
+    const position = readBrowsePosition(requestUrl);
     void getInitialBrowsePage(activeFilters)
+      .then(async (firstPage) => {
+        let result = firstPage;
+        const items = [...firstPage.items];
+        while (isMounted && result.has_more && items.length < position.count) {
+          result = await getListings(activeFilters, { limit: PAGE_SIZE, offset: result.offset + result.limit });
+          items.push(...result.items);
+        }
+        return { ...result, items };
+      })
       .then((result) => {
         if (isMounted) {
+          loadedQuery.current = JSON.stringify(activeFilters);
           setPage(result);
           setAllListings(result.items);
           setError(null);
@@ -132,6 +201,7 @@ export default function TradePage() {
       })
       .catch((nextError: unknown) => {
         if (isMounted) {
+          loadedQuery.current = JSON.stringify(activeFilters);
           setError(nextError instanceof Error ? nextError.message : "Unable to load listings.");
         }
       })
@@ -153,7 +223,43 @@ export default function TradePage() {
     filters.min_price,
     filters.max_price,
     filters.sort,
+    pathname,
   ]);
+
+
+  useEffect(() => {
+    if (isLoading || filters.search !== debouncedSearch || loadedQuery.current !== JSON.stringify(buildQueryFilters(filters))) return;
+    if (restoredUrl.current !== browseUrl) {
+      const position = readBrowsePosition(browseUrl);
+      const frame = requestAnimationFrame(() => {
+        departing.current = false;
+        window.scrollTo({ top: position.scrollY, behavior: "instant" });
+        restoredUrl.current = browseUrl;
+        saveBrowsePosition(browseUrl, { scrollY: window.scrollY, count: allListings.length });
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [isLoading, allListings.length, browseUrl, filters, debouncedSearch]);
+
+  useEffect(() => {
+    const save = () => {
+      if (!departing.current && restoredUrl.current === browseUrl) saveBrowsePosition(browseUrl, { scrollY: window.scrollY, count: allListings.length });
+    };
+    window.addEventListener("scroll", save, { passive: true });
+    window.addEventListener("pagehide", save);
+    // Capture the position before Next.js changes routes or resets the scroll.
+    const onNavigate = (event: MouseEvent) => {
+      save();
+      const link = event.target instanceof Element ? event.target.closest("a") : null;
+      if (link && link.pathname !== pathname && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && event.button === 0 && link.target !== "_blank") departing.current = true;
+    };
+    document.addEventListener("click", onNavigate, true);
+    return () => {
+      window.removeEventListener("scroll", save);
+      window.removeEventListener("pagehide", save);
+      document.removeEventListener("click", onNavigate, true);
+    };
+  }, [browseUrl, allListings.length, pathname]);
 
   useEffect(() => {
     if (!user) {
@@ -196,6 +302,7 @@ export default function TradePage() {
   async function loadMore() {
     if (!page.has_more || isLoadingMore) return;
     setIsLoadingMore(true);
+    const requestUrl = currentUrl.current;
     const nextOffset = page.offset + page.limit;
     const activeFilters = buildQueryFilters({
       search: debouncedSearch,
@@ -209,6 +316,7 @@ export default function TradePage() {
     });
     try {
       const result = await getListings(activeFilters, { limit: PAGE_SIZE, offset: nextOffset });
+      if (currentUrl.current !== requestUrl) return;
       setPage(result);
       setAllListings((prev) => [...prev, ...result.items]);
       setLastSyncedAt(new Date().toISOString());
@@ -246,7 +354,7 @@ export default function TradePage() {
   }
 
   function updateFilter<K extends keyof ListingFilters>(key: K, value: ListingFilters[K]) {
-    setFilters((current) => ({ ...current, [key]: value }));
+    setFilters({ ...filters, [key]: value });
   }
 
   const showingFrom = allListings.length === 0 ? 0 : 1;
@@ -298,21 +406,30 @@ export default function TradePage() {
                 />
                 <input
                   className="trade-input min-h-[42px] rounded-xl border-slate-200 bg-slate-50 pl-10 pr-3 text-sm shadow-none"
+                  aria-label="Search marketplace"
+                  type="search"
+                  enterKeyHint="search"
                   placeholder="Search textbooks, calculators, fans, monitors..."
                   value={filters.search}
                   onChange={(event) => updateFilter("search", event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                      setDebouncedSearch(event.currentTarget.value);
+                      event.currentTarget.blur();
+                    }
+                  }}
                 />
               </label><button aria-label="Filters" className="nexus-icon-button shrink-0 border border-slate-200" onClick={() => setIsFilterOpen(true)} type="button"><SlidersHorizontal aria-hidden="true" className="h-4 w-4" /></button></div>
               {!explore && !hasFilters ? <section aria-label="Campus marketplace" className="nexus-campus-banner relative isolate overflow-hidden rounded-xl bg-[#105651] text-white">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img alt={campusPhoto.alt} className="absolute inset-0 -z-20 h-full w-full object-cover" height={480} src={campusPhoto.src} width={1200} />
                 <div className="absolute inset-0 -z-10 bg-gradient-to-r from-[#063f4c]/90 via-[#075b64]/60 to-transparent" />
-                <div className="p-5 py-5 sm:p-8"><p className="text-xl font-semibold tracking-tight sm:text-3xl">Buy · Sell · Connect</p><p className="mt-1.5 text-xs text-white/95 sm:text-sm">For a better UM campus life.</p><Link className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-white underline underline-offset-4" href="/trade/explore">Explore the marketplace <ArrowRight aria-hidden="true" className="h-3 w-3" /></Link></div>
+                <div className="p-5 py-5 sm:p-8"><p className="text-xl font-semibold tracking-tight sm:text-3xl">Buy · Sell · Connect</p><p className="mt-1.5 text-xs text-white/95 sm:text-sm">For a better UM campus life.</p><Link className="mt-4 inline-flex items-center gap-1.5 text-xs font-semibold text-white underline underline-offset-4" href="/trade/explore" aria-label="Explore the marketplace"><span className="sm:hidden">Explore</span><span className="hidden sm:inline">Explore the marketplace</span><ArrowRight aria-hidden="true" className="h-3 w-3" /></Link></div>
                 <details className="absolute bottom-1 right-2 max-w-[70%] text-right text-[9px] leading-4 text-white"><summary className="cursor-pointer">Photo credit</summary><p className="rounded bg-black/70 p-2"><a className="underline" href={campusPhoto.source} target="_blank" rel="noreferrer">Campus photo by {campusPhoto.author}</a> · <a className="underline" href={campusPhoto.licenseUrl} target="_blank" rel="noreferrer">{campusPhoto.license}</a> · {campusPhoto.changes}</p></details>
               </section> : null}
               {!explore ? <div aria-label="Campus categories" className="nexus-category-tiles flex gap-3 overflow-x-auto pb-1">
-                {[{ value: "", label: "All", icon: Grid3x3, color: "bg-blue-50 text-blue-600" }, { value: "electronics", label: "Electronics", icon: Monitor, color: "bg-indigo-50 text-indigo-600" }, { value: "textbooks_notes", label: "Books", icon: BookOpen, color: "bg-orange-50 text-orange-600" }, { value: "dorm_room", label: "Home & Living", icon: House, color: "bg-emerald-50 text-emerald-700" }, { value: "clothing", label: "Fashion", icon: Shirt, color: "bg-rose-50 text-rose-600" }].map(({ value, label, icon: Icon, color }) => <button aria-pressed={filters.category === value} className="flex min-w-[60px] flex-1 shrink-0 flex-col items-center gap-1.5 whitespace-nowrap text-[9px] font-medium text-slate-700" key={value} onClick={() => updateFilter("category", value)} type="button"><span className={`flex h-11 w-11 items-center justify-center rounded-xl ${color} ${filters.category === value ? "ring-1 ring-current" : ""}`}><Icon aria-hidden="true" className="h-5 w-5" /></span>{label}</button>)}
-                <Link aria-label="Wanted" className="flex min-w-[60px] shrink-0 flex-col items-center gap-1.5 text-[9px] font-medium text-slate-700" href="/trade/want"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><Megaphone aria-hidden="true" className="h-5 w-5" /></span>Wanted</Link>
+                {[{ value: "", label: "All", icon: Grid3x3, color: "bg-blue-50 text-blue-600" }, { value: "electronics", label: "Electronics", icon: Monitor, color: "bg-indigo-50 text-indigo-600" }, { value: "textbooks_notes", label: "Books", icon: BookOpen, color: "bg-orange-50 text-orange-600" }, { value: "dorm_room", label: "Home & Living", icon: House, color: "bg-emerald-50 text-emerald-700" }, { value: "clothing", label: "Fashion", icon: Shirt, color: "bg-rose-50 text-rose-600" }].map(({ value, label, icon: Icon, color }) => <button aria-pressed={filters.category === value} className="flex min-w-[60px] flex-1 shrink-0 flex-col items-center gap-1.5 whitespace-nowrap text-xs font-medium text-slate-700" key={value} onClick={() => updateFilter("category", value)} type="button"><span className={`flex h-11 w-11 items-center justify-center rounded-xl ${color} ${filters.category === value ? "ring-1 ring-current" : ""}`}><Icon aria-hidden="true" className="h-5 w-5" /></span>{label}</button>)}
+                <Link aria-label="Wanted" className="flex min-w-[60px] shrink-0 flex-col items-center gap-1.5 text-xs font-medium text-slate-700" href="/trade/want"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><Megaphone aria-hidden="true" className="h-5 w-5" /></span>Wanted</Link>
               </div> : null}
               <div className={`${explore ? "flex" : "hidden"} min-w-0 gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}>
                 {categoryChips.map((category) => {
@@ -347,7 +464,7 @@ export default function TradePage() {
             {explore ? <div className="hidden lg:block"><MarketplaceFilterPanel {...filterPanelProps} layout="bar" /></div> : null}
 
 
-            {!isLoading ? (
+            {(hasFilters || !isLoading) ? (
               <section className={`${hasFilters ? "flex" : "hidden md:flex"} flex-wrap items-center justify-between gap-3 text-xs`}>
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   {filters.search ? (
@@ -486,25 +603,26 @@ export default function TradePage() {
                 ) : null}
               </>
             )}
-            <DeferredListingExamples filters={{ ...filters, search: debouncedSearch }} viewMode={viewMode} />
           </div>
         </div>
 
         {isFilterOpen ? (
-          <div className="fixed inset-0 z-[60]">
+          <dialog aria-labelledby="marketplace-filters-title" className="fixed inset-0 m-0 h-[100dvh] max-h-none w-screen max-w-none border-0 bg-transparent p-0 text-slate-950 backdrop:bg-transparent" onCancel={() => setIsFilterOpen(false)} ref={filterDialogRef}>
             <button
-              aria-label="Close filters"
+              aria-hidden="true"
+              tabIndex={-1}
               className="absolute inset-0 bg-stone-950/50 backdrop-blur-sm"
               onClick={() => setIsFilterOpen(false)}
               type="button"
             />
-            <div className="absolute inset-x-0 bottom-0 max-h-[86vh] overflow-y-auto rounded-t-3xl lg:bottom-10 lg:left-1/2 lg:right-auto lg:w-[520px] lg:-translate-x-1/2 lg:rounded-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-2xl">
+            <div className="nexus-filter-sheet absolute inset-x-0 bottom-0 max-h-[86dvh] flex flex-col overflow-hidden rounded-t-3xl lg:bottom-10 lg:left-1/2 lg:right-auto lg:w-[520px] lg:-translate-x-1/2 lg:rounded-3xl border border-stone-200 bg-[#fffdf8] p-5 shadow-2xl">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-700">Marketplace</p>
-                  <h2 className="text-lg font-semibold text-stone-950">Filters</h2>
+                  <h2 className="text-lg font-semibold text-stone-950" id="marketplace-filters-title">Filters</h2>
                 </div>
                 <button
+                  autoFocus
                   aria-label="Close filters"
                   className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-700 transition hover:bg-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                   onClick={() => setIsFilterOpen(false)}
@@ -513,11 +631,17 @@ export default function TradePage() {
                   <X aria-hidden="true" className="h-5 w-5" />
                 </button>
               </div>
-              <div className="mt-5">
+              <div className="mt-5 min-h-0 overflow-y-auto overscroll-contain">
                 <MarketplaceFilterPanel {...filterPanelProps} layout="sidebar" />
               </div>
+              <div className="shrink-0 border-t border-slate-200 bg-[#fffdf8] pt-4 pb-[env(safe-area-inset-bottom)]">
+                <button className="trade-button-primary min-h-12 w-full" disabled={!!priceError || isLoading || filters.search !== debouncedSearch} onClick={() => setIsFilterOpen(false)} type="button">
+                  {isLoading ? "Loading results…" : error ? "Show results" : `Show ${page.total} results`}
+                </button>
+                <p aria-live="polite" className="sr-only">{priceError ? "Minimum price must not exceed maximum price." : `${page.total} matching listings`}</p>
+              </div>
             </div>
-          </div>
+          </dialog>
         ) : null}
       </TradeShell>
     </div>

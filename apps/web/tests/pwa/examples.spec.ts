@@ -3,38 +3,25 @@ import photos from "../../lib/trade/example-photos.json";
 import { listingExamples } from "../../lib/trade/listing-examples";
 import { exampleImages } from "../../lib/trade/example-images";
 
-test("120 disclosed demo items are pageable and never contact fake sellers", async ({ page }) => {
-  const writes: string[] = [];
-  page.on("request", (request) => {
-    if (request.url().includes("/api/v1/") && request.method() !== "GET" && request.method() !== "OPTIONS") writes.push(request.url());
-  });
-  await page.goto("/trade");
-  const examples = page.getByRole("region", { name: "Have something like this?" });
-  await examples.scrollIntoViewIfNeeded();
-  await expect(examples.getByText("Campus inspiration · 120 examples")).toBeVisible();
-  await expect(examples.getByText(/Demo items for posting inspiration, not real offers/)).toBeVisible();
-  await expect(examples.getByRole("article")).toHaveCount(8);
-  for (let i = 0; i < 5; i++) await examples.getByRole("button", { name: /More demo items/ }).click();
-  await expect(examples.getByRole("article")).toHaveCount(120);
-  await expect(examples.getByRole("button", { name: /More demo items/ })).toHaveCount(0);
-  await expect(examples.getByText("Demo · not for sale", { exact: true })).toHaveCount(120);
-  await expect(examples.getByRole("img")).toHaveCount(120);
-  expect(await examples.getByRole("img").evaluateAll((images) => images.every((image) => image.getAttribute("src")?.startsWith("/example-photos/") && image.getAttribute("loading") === "lazy"))).toBe(true);
-  expect(await examples.locator('a[href^="/trade/"]').evaluateAll((links) => links.every((link) => /^\/trade\/(sell|example-[a-z_]+-\d+)$/.test(link.getAttribute("href") || "")))).toBe(true);
-  await examples.getByRole("link", { name: /Post your own item like Scientific calculator/ }).click();
-  await expect(page).toHaveURL(/\/trade\/sell$/);
-  await expect(page.getByRole("heading", { name: /Sign in required/i })).toBeVisible();
-  expect(writes).toEqual([]);
+test("default production feeds never append demo items or fetch their photos", async ({ page }) => {
+  const examplePhotos: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("/example-photos/")) examplePhotos.push(request.url()); });
+  await page.route("**/api/v1/listings?*", (route) => route.fulfill({ json: { items: [], total: 0, limit: 24, offset: 0, has_more: false } }));
+  for (const path of ["/trade", "/trade/explore"]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: "No listings yet", exact: true })).toBeVisible();
+    await expect(page.getByRole("article", { name: /^Demo item:/ })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Have something like this?" })).toHaveCount(0);
+  }
+  expect(examplePhotos).toEqual([]);
 });
 
-test("demo cards open item details with photo zoom, related items and real posting entry", async ({ page }) => {
+test("direct demo links open item details with photo zoom, related items and real posting entry", async ({ page }) => {
   const exampleRequests: string[] = [];
   page.on("request", (request) => {
     if (/\/api\/v1\/listings\/example-/.test(request.url())) exampleRequests.push(request.url());
   });
-  await page.goto("/trade");
-  await page.getByRole("region", { name: "Have something like this?" }).scrollIntoViewIfNeeded();
-  await page.getByRole("link", { name: "View Scientific calculator with slide cover", exact: true }).click();
+  await page.goto("/trade/example-electronics-1");
   await expect(page).toHaveURL(/\/trade\/example-electronics-1$/);
   await expect(page.getByRole("heading", { name: "Scientific calculator with slide cover", level: 1 })).toBeVisible();
   await expect(page.getByRole("note")).toContainText("Demo · not for sale.");
@@ -89,18 +76,16 @@ test("all 120 reference photos are served as valid local WebP assets", async ({ 
   }
 });
 
-test("demo search resets pagination and keeps real status filters honest", async ({ page }) => {
+test("search and status filtering keep production browsing free of demos", async ({ page }) => {
+  await page.route("**/api/v1/listings?*", (route) => route.fulfill({ json: { items: [], total: 0, limit: 24, offset: 0, has_more: false } }));
   await page.goto("/trade");
-  const examples = page.getByRole("region", { name: "Have something like this?" });
-  await examples.scrollIntoViewIfNeeded();
-  await examples.getByRole("button", { name: /More demo items/ }).click();
   await page.getByPlaceholder(/Search textbooks/).fill("scientific calculator");
-  await expect(examples.getByRole("article")).toHaveCount(1);
-  await expect(examples.getByRole("heading", { name: "Scientific calculator with slide cover" })).toBeVisible();
-  await page.getByPlaceholder(/Search textbooks/).fill("");
-  await expect(examples.getByRole("article")).toHaveCount(8);
+  await expect(page.getByRole("heading", { name: "No matching listings", exact: true })).toBeVisible();
+  await expect(page.getByRole("article", { name: /^Demo item:/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Filters", exact: true }).click();
-  await page.getByRole("combobox", { name: "Status", exact: true }).selectOption("sold");
-  await page.getByRole("button", { name: "Close filters" }).last().click();
-  await expect(examples).toHaveCount(0);
+  const dialog = page.getByRole("dialog", { name: "Filters", exact: true });
+  await dialog.getByRole("combobox", { name: "Status", exact: true }).selectOption("sold");
+  await dialog.getByRole("button", { name: /Show .*results/ }).click();
+  await expect(page.getByRole("article", { name: /^Demo item:/ })).toHaveCount(0);
+  expect(new URL(page.url()).searchParams.get("status")).toBe("sold");
 });
